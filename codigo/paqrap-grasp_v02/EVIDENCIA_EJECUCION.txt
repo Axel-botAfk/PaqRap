@@ -1,0 +1,10 @@
+$ javac -encoding UTF-8 -d build $(find src/main/java -name "*.java")
+$ java -cp build com.paqrap.demo.VerificacionGrasp
+OK - 5 verificaciones de GRASP superadas, incluida la busqueda local.
+
+$ java -cp build com.paqrap.demo.DemoGrasp
+=== SOLUCION GRASP ===
+R-1 | almacen=ALM-I1 | vehiculo=MOTO-01 | pedidos=[P-001] | carga=4/8 | km=2.00 | costo=S/ 12.00
+R-2 | almacen=ALM-C | vehiculo=AUTO-01 | pedidos=[P-002, P-003] | carga=9/24 | km=17.00 | costo=S/ 136.00
+No asignados: []
+Costo total: S/ 148.00

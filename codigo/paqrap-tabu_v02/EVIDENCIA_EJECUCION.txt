@@ -1,0 +1,28 @@
+java -cp target/classes com.paqrap.demo.DemoTabuDataset
+=== DATASET DE PRUEBA: GRASP vs BUSQUEDA TABU ===
+Pedidos de entrada: 13
+Almacenes: 3
+Vehiculos: 8
+
+=== GRASP ===
+R-1    | almacen=ALM-C   | vehiculo=MOTO-C-01  | pedidos=[P-011, P-007]                   | carga= 6/ 8 | km= 28.64 | costo=S/   171.84
+R-2    | almacen=ALM-I1  | vehiculo=BICI-I1-01 | pedidos=[P-001, P-008]                   | carga= 4/ 4 | km=  7.07 | costo=S/    21.21
+R-3    | almacen=ALM-I1  | vehiculo=AUTO-I1-01 | pedidos=[P-006, P-009, P-003]            | carga=15/24 | km= 36.27 | costo=S/   290.16
+R-4    | almacen=ALM-I2  | vehiculo=AUTO-I2-01 | pedidos=[P-004, P-005, P-010]            | carga=14/24 | km= 16.59 | costo=S/   132.72
+R-5    | almacen=ALM-I2  | vehiculo=BICI-I2-01 | pedidos=[P-012]                          | carga= 3/ 4 | km=  8.00 | costo=S/    24.00
+R-6    | almacen=ALM-I2  | vehiculo=MOTO-I2-01 | pedidos=[P-002]                          | carga= 3/ 8 | km= 11.52 | costo=S/    69.12
+No asignados: [P-013]
+Costo total: S/ 709.05 | Distancia total: 108.09 km
+
+=== GRASP + Búsqueda Tabú ===
+R-1    | almacen=ALM-I1  | vehiculo=MOTO-I1-01 | pedidos=[P-007]                          | carga= 5/ 8 | km=  7.07 | costo=S/    42.42
+R-2    | almacen=ALM-I1  | vehiculo=BICI-I1-01 | pedidos=[P-008, P-011]                   | carga= 3/ 4 | km= 11.96 | costo=S/    35.88
+R-3    | almacen=ALM-I1  | vehiculo=AUTO-I1-01 | pedidos=[P-001, P-002, P-003, P-009]     | carga=13/24 | km= 12.06 | costo=S/    96.48
+R-4    | almacen=ALM-I2  | vehiculo=AUTO-I2-01 | pedidos=[P-004, P-010]                   | carga=11/24 | km= 11.53 | costo=S/    92.24
+R-5    | almacen=ALM-I2  | vehiculo=BICI-I2-01 | pedidos=[P-012]                          | carga= 3/ 4 | km=  8.00 | costo=S/    24.00
+R-T7   | almacen=ALM-C   | vehiculo=MOTO-C-01  | pedidos=[P-006]                          | carga= 7/ 8 | km=  8.00 | costo=S/    48.00
+R-T31  | almacen=ALM-I2  | vehiculo=MOTO-I2-01 | pedidos=[P-005]                          | carga= 3/ 8 | km=  2.80 | costo=S/    16.80
+No asignados: [P-013]
+Costo total: S/ 355.82 | Distancia total: 61.42 km
+
+Mejora de la busqueda tabu: S/ 353.23 (49.8%)

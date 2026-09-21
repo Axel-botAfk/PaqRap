@@ -3,13 +3,21 @@ package com.paqrap.modelo;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
+/**
+ * Pedido tal como llega en el archivo de ventas: {@code ##d##h##m:posX,posY,cIdCliente,qq,hl}.
+ *
+ * El plazo se guarda como número de horas ({@code hl}) y no como un conjunto cerrado de
+ * valores, porque el archivo puede traer cualquier entero. La fecha límite se calcula desde
+ * la fecha de registro y no incluye la hora de acondicionamiento en el cliente, que según el
+ * caso queda fuera del plazo comprometido.
+ */
 public final class Pedido {
     private final String id;
     private final String clienteId;
     private final Ubicacion destino;
     private final int cantidad;
     private final LocalDateTime fechaRegistro;
-    private final TipoEntrega tipoEntrega;
+    private final int horasPlazo;
     private final LocalDateTime fechaLimite;
 
     public Pedido(
@@ -18,7 +26,7 @@ public final class Pedido {
             Ubicacion destino,
             int cantidad,
             LocalDateTime fechaRegistro,
-            TipoEntrega tipoEntrega
+            int horasPlazo
     ) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("El id del pedido es obligatorio.");
@@ -30,13 +38,16 @@ public final class Pedido {
         if (cantidad <= 0) {
             throw new IllegalArgumentException("La cantidad del pedido debe ser mayor que cero.");
         }
+        if (horasPlazo <= 0) {
+            throw new IllegalArgumentException("El plazo del pedido debe ser mayor que cero.");
+        }
         this.fechaRegistro = Objects.requireNonNull(fechaRegistro, "La fecha de registro es obligatoria.");
-        this.tipoEntrega = Objects.requireNonNull(tipoEntrega, "El tipo de entrega es obligatorio.");
 
         this.id = id;
         this.clienteId = clienteId;
         this.cantidad = cantidad;
-        this.fechaLimite = fechaRegistro.plusHours(tipoEntrega.getHorasPlazo());
+        this.horasPlazo = horasPlazo;
+        this.fechaLimite = fechaRegistro.plusHours(horasPlazo);
     }
 
     public String getId() {
@@ -59,10 +70,15 @@ public final class Pedido {
         return fechaRegistro;
     }
 
-    public TipoEntrega getTipoEntrega() {
-        return tipoEntrega;
+    public int getHorasPlazo() {
+        return horasPlazo;
     }
 
+    public TipoEntrega getTipoEntrega() {
+        return TipoEntrega.de(horasPlazo);
+    }
+
+    /** Instante máximo de <b>llegada</b> al cliente. */
     public LocalDateTime getFechaLimite() {
         return fechaLimite;
     }

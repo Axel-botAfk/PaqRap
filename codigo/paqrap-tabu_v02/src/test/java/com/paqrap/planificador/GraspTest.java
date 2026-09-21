@@ -1,232 +1,184 @@
 package com.paqrap.planificador;
 
+import com.paqrap.datos.DatosCaso;
+import com.paqrap.demo.EscenarioDemo;
 import com.paqrap.modelo.Almacen;
-import com.paqrap.modelo.EstadoVehiculo;
-import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
-import com.paqrap.modelo.TipoEntrega;
 import com.paqrap.modelo.TipoVehiculo;
-import com.paqrap.modelo.Ubicacion;
-import com.paqrap.modelo.Vehiculo;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GraspTest {
+    private static final LocalDateTime AHORA = LocalDateTime.of(2026, 9, 8, 8, 0);
+    private static final int CAPACIDAD_AUTO =
+            TipoVehiculo.AUTO.getEspecificacionDelCaso().capacidadPaquetes();
+
+    /** Cuatro pedidos de 8 unidades: no caben en un solo viaje de un auto. */
+    private static EscenarioDemo conUnSoloAuto(List<com.paqrap.modelo.Pedido> pedidos) {
+        return EscenarioDemo.pequeno(AHORA)
+                .conVehiculos(List.of(
+                        EscenarioDemo.unidad(TipoVehiculo.AUTO, 1, DatosCaso.UBICACION_CENTRAL)
+                ))
+                .conPedidos(pedidos);
+    }
 
     @Test
-    void debeConstruirRutasConAlmacenVehiculoYPedidos() {
-        Escenario e = escenarioBase();
+    void debeConstruirViajesConAlmacenUnidadYPedidos() {
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA);
+        Evaluador evaluador = new Evaluador(escenario.distancias());
 
-        Solucion solucion = e.grasp.construir(
-                e.ahora,
-                e.pedidos,
-                e.almacenes,
-                e.vehiculos,
-                new Parametros(20, 0.30, 12345L)
-        );
+        Solucion solucion = new Grasp(evaluador)
+                .planificar(escenario.estado(), Parametros.constructor(30, 0.30, 1L).construir());
 
-        assertFalse(solucion.getRutas().isEmpty());
-        assertTrue(solucion.getPedidosNoAsignados().isEmpty());
+        assertFalse(solucion.getRutas().isEmpty(), "GRASP no generó ningún viaje.");
+        assertTrue(evaluador.evaluarPlan(solucion, escenario.estado()).factible());
 
-        int pedidosAsignados = solucion.getRutas().stream()
-                .mapToInt(r -> r.getPedidos().size())
-                .sum();
-
-        assertEquals(e.pedidos.size(), pedidosAsignados);
-
-        for (Ruta ruta : solucion.getRutas()) {
-            assertNotNull(ruta.getAlmacen());
-            assertNotNull(ruta.getVehiculo());
-            assertFalse(ruta.getPedidos().isEmpty());
-            assertTrue(ruta.getCargaTotal() <= ruta.getVehiculo().getCapacidad());
-            assertTrue(ruta.getCostoTotal() >= 0);
+        for (Ruta viaje : solucion.getRutas()) {
+            assertFalse(viaje.estaVacia());
+            assertTrue(viaje.getCargaTotal() <= viaje.getVehiculo().getCapacidad());
         }
     }
 
     @Test
     void noDebeAsignarPedidoQueExcedeCapacidadDeTodaLaFlota() {
-        LocalDateTime ahora = LocalDateTime.of(2026, 9, 8, 8, 0);
-        Ubicacion centralU = new Ubicacion("CENTRAL");
-        Ubicacion cliente = new Ubicacion("CLIENTE-X");
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA).conPedidos(List.of(
+                EscenarioDemo.pedido("P-GRANDE", 29, 16, CAPACIDAD_AUTO + 1, AHORA, 36)
+        ));
 
-        Almacen central = Almacen.central("ALM-C", centralU);
-        Vehiculo auto = new Vehiculo(
-                "AUTO-01", TipoVehiculo.AUTO, EstadoVehiculo.DISPONIBLE, centralU);
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(10, 0.30, 2L).construir());
 
-        Pedido imposible = new Pedido(
-                "P-X",
-                "C-X",
-                cliente,
-                25,
-                ahora,
-                TipoEntrega.REGULAR_36H
-        );
-
-        MatrizDistancias matriz = new MatrizDistancias();
-        matriz.registrar(centralU, cliente, 1);
-
-        Grasp grasp = new Grasp(matriz);
-        Solucion solucion = grasp.construir(
-                ahora,
-                List.of(imposible),
-                List.of(central),
-                List.of(auto),
-                new Parametros(1, 0, 1L)
-        );
-
-        assertTrue(solucion.getRutas().isEmpty());
-        assertEquals(List.of(imposible), solucion.getPedidosNoAsignados());
+        assertEquals(1, solucion.getCantidadPedidosNoAsignados());
+        assertEquals(0, solucion.getCantidadRutas());
     }
 
     @Test
     void debeUsarCentralComoRespaldoSiIntermedioNoTieneStock() {
-        LocalDateTime ahora = LocalDateTime.of(2026, 9, 8, 8, 0);
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA)
+                .conAlmacenes(List.of(
+                        Almacen.central(DatosCaso.ID_CENTRAL, DatosCaso.UBICACION_CENTRAL),
+                        Almacen.intermedio(DatosCaso.ID_NOR_OESTE, DatosCaso.UBICACION_NOR_OESTE, 0),
+                        Almacen.intermedio(DatosCaso.ID_ESTE, DatosCaso.UBICACION_ESTE, 0)
+                ))
+                .conVehiculos(List.of(
+                        EscenarioDemo.unidad(TipoVehiculo.AUTO, 1, DatosCaso.UBICACION_CENTRAL)
+                ))
+                .conPedidos(List.of(EscenarioDemo.pedido("P-001", 29, 16, 3, AHORA, 12)));
 
-        Ubicacion centralU = new Ubicacion("CENTRAL");
-        Ubicacion intermedioU = new Ubicacion("INTERMEDIO");
-        Ubicacion clienteU = new Ubicacion("CLIENTE");
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(10, 0.0, 3L).construir());
 
-        Almacen central = Almacen.central("ALM-C", centralU);
-        Almacen intermedio = Almacen.intermedio("ALM-I", intermedioU, 1);
-
-        Vehiculo moto = new Vehiculo(
-                "MOTO-01", TipoVehiculo.MOTO, EstadoVehiculo.DISPONIBLE, centralU);
-
-        Pedido pedido = new Pedido(
-                "P-1",
-                "C-1",
-                clienteU,
-                4,
-                ahora,
-                TipoEntrega.PRIORITARIA_8H
-        );
-
-        MatrizDistancias matriz = new MatrizDistancias();
-        matriz.registrar(centralU, clienteU, 5);
-        matriz.registrar(intermedioU, clienteU, 1);
-
-        Grasp grasp = new Grasp(matriz);
-        Solucion solucion = grasp.construir(
-                ahora,
-                List.of(pedido),
-                List.of(intermedio, central),
-                List.of(moto),
-                new Parametros(1, 0, 8L)
-        );
-
-        assertEquals(1, solucion.getRutas().size());
-        assertEquals("ALM-C", solucion.getRutas().get(0).getAlmacen().getId());
-        assertTrue(solucion.getPedidosNoAsignados().isEmpty());
+        assertEquals(1, solucion.getCantidadRutas());
+        assertEquals(DatosCaso.ID_CENTRAL, solucion.getRuta(0).getAlmacen().getId());
     }
 
     @Test
-    void debeRechazarRutaQueIncumplePlazo() {
-        LocalDateTime ahora = LocalDateTime.of(2026, 9, 8, 8, 0);
+    void debeRechazarViajeQueIncumplePlazo() {
+        // 48 km sobre la retícula para una bicicleta de 12 km/h: cuatro horas de viaje.
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA)
+                .conVehiculos(List.of(
+                        EscenarioDemo.unidad(TipoVehiculo.BICICLETA, 1, DatosCaso.UBICACION_CENTRAL)
+                ))
+                .conPedidos(List.of(EscenarioDemo.pedido("P-LEJOS", 57, 32, 2, AHORA, 1)));
 
-        Ubicacion centralU = new Ubicacion("CENTRAL");
-        Ubicacion clienteU = new Ubicacion("CLIENTE-LEJANO");
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(10, 0.30, 4L).construir());
 
-        Almacen central = Almacen.central("ALM-C", centralU);
-        Vehiculo bicicleta = new Vehiculo(
-                "BICI-01",
-                TipoVehiculo.BICICLETA,
-                EstadoVehiculo.DISPONIBLE,
-                centralU
-        );
-
-        Pedido urgente = new Pedido(
-                "P-U",
-                "C-U",
-                clienteU,
-                1,
-                ahora,
-                TipoEntrega.PRIORITARIA_4H
-        );
-
-        MatrizDistancias matriz = new MatrizDistancias();
-        // 48 km / 12 km/h = 4 h de viaje + 1 h de atención => 5 h, incumple.
-        matriz.registrar(centralU, clienteU, 48);
-
-        Grasp grasp = new Grasp(matriz);
-        Solucion solucion = grasp.construir(
-                ahora,
-                List.of(urgente),
-                List.of(central),
-                List.of(bicicleta),
-                new Parametros(1, 0, 99L)
-        );
-
-        assertTrue(solucion.getRutas().isEmpty());
-        assertEquals(1, solucion.getPedidosNoAsignados().size());
+        assertEquals(1, solucion.getCantidadPedidosNoAsignados());
     }
 
-    private Escenario escenarioBase() {
-        LocalDateTime ahora = LocalDateTime.of(2026, 9, 8, 8, 0);
+    /**
+     * El acondicionamiento en el cliente dura una hora pero queda fuera del plazo comprometido:
+     * una llegada dentro de la fecha límite debe aceptarse aunque la entrega termine después.
+     */
+    @Test
+    void debeAceptarEntregaQueLlegaEnPlazoAunqueElAcondicionamientoLoExceda() {
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA)
+                .conVehiculos(List.of(
+                        EscenarioDemo.unidad(TipoVehiculo.BICICLETA, 1, DatosCaso.UBICACION_CENTRAL)
+                ))
+                .conPedidos(List.of(EscenarioDemo.pedido("P-JUSTO", 27, 20, 2, AHORA, 1)));
 
-        Ubicacion centralU = new Ubicacion("CENTRAL");
-        Ubicacion i1U = new Ubicacion("I1");
-        Ubicacion i2U = new Ubicacion("I2");
-        Ubicacion c1 = new Ubicacion("C1");
-        Ubicacion c2 = new Ubicacion("C2");
-        Ubicacion c3 = new Ubicacion("C3");
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(10, 0.0, 5L).construir());
 
-        Almacen central = Almacen.central("ALM-C", centralU);
-        Almacen i1 = Almacen.intermedio("ALM-I1", i1U, 20);
-        Almacen i2 = Almacen.intermedio("ALM-I2", i2U, 20);
+        assertEquals(0, solucion.getCantidadPedidosNoAsignados());
 
-        Vehiculo auto = new Vehiculo(
-                "AUTO-1", TipoVehiculo.AUTO, EstadoVehiculo.DISPONIBLE, centralU);
-        Vehiculo moto = new Vehiculo(
-                "MOTO-1", TipoVehiculo.MOTO, EstadoVehiculo.DISPONIBLE, i1U);
-        Vehiculo bici = new Vehiculo(
-                "BICI-1", TipoVehiculo.BICICLETA, EstadoVehiculo.DISPONIBLE, i2U);
+        MetricasRuta metricas = new Evaluador(escenario.distancias())
+                .evaluarRuta(solucion.getRuta(0), AHORA);
+        assertTrue(metricas.factible());
+        assertTrue(metricas.duracionHoras() > 1.0,
+                "La duración debe incluir la hora de acondicionamiento.");
+    }
 
-        Pedido p1 = new Pedido(
-                "P1", "C1", c1, 4, ahora, TipoEntrega.PRIORITARIA_4H);
-        Pedido p2 = new Pedido(
-                "P2", "C2", c2, 3, ahora, TipoEntrega.PRIORITARIA_8H);
-        Pedido p3 = new Pedido(
-                "P3", "C3", c3, 6, ahora, TipoEntrega.PRIORITARIA_12H);
+    @Test
+    void debeRecargarElAlmacenIntermedioCada24Horas() {
+        Almacen intermedio = Almacen.intermedio(
+                DatosCaso.ID_ESTE, DatosCaso.UBICACION_ESTE, 10);
+        Inventario inventario = new Inventario(List.of(intermedio), AHORA);
 
-        MatrizDistancias m = new MatrizDistancias();
-        m.registrar(centralU, c1, 10);
-        m.registrar(centralU, c2, 12);
-        m.registrar(centralU, c3, 14);
+        assertEquals(10, inventario.disponible(intermedio, AHORA));
 
-        m.registrar(i1U, c1, 2);
-        m.registrar(i1U, c2, 5);
-        m.registrar(i1U, c3, 8);
-
-        m.registrar(i2U, c1, 7);
-        m.registrar(i2U, c2, 3);
-        m.registrar(i2U, c3, 4);
-
-        m.registrar(c1, c2, 3);
-        m.registrar(c1, c3, 6);
-        m.registrar(c2, c3, 2);
-
-        Grasp grasp = new Grasp(m);
-
-        return new Escenario(
-                ahora,
-                List.of(p1, p2, p3),
-                List.of(central, i1, i2),
-                List.of(auto, moto, bici),
-                grasp
+        inventario.consumir(intermedio, AHORA, 10);
+        assertEquals(0, inventario.disponible(intermedio, AHORA));
+        assertEquals(
+                Almacen.CAPACIDAD_MAXIMA_INTERMEDIO,
+                inventario.disponible(intermedio, AHORA.plusDays(1))
         );
     }
 
-    private record Escenario(
-            LocalDateTime ahora,
-            List<Pedido> pedidos,
-            List<Almacen> almacenes,
-            List<Vehiculo> vehiculos,
-            Grasp grasp
-    ) {
+    /** Con una sola unidad, atender 32 unidades de producto exige encadenar viajes. */
+    @Test
+    void debeEncadenarViajesCuandoLaCargaNoEntraEnUnoSolo() {
+        EscenarioDemo escenario = conUnSoloAuto(List.of(
+                EscenarioDemo.pedido("P-001", 29, 16, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-002", 25, 12, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-003", 30, 18, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-004", 24, 17, 8, AHORA, 36)
+        ));
+
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(20, 0.30, 6L).construir());
+
+        assertEquals(0, solucion.getCantidadPedidosNoAsignados());
+        assertTrue(solucion.getCantidadRutas() >= 2,
+                "32 unidades no caben en un viaje de " + CAPACIDAD_AUTO);
+        for (Ruta viaje : solucion.getRutas()) {
+            assertEquals("TA01", viaje.getVehiculo().getId());
+            assertTrue(viaje.getCargaTotal() <= CAPACIDAD_AUTO);
+        }
+        assertTrue(new Evaluador(escenario.distancias())
+                .evaluarPlan(solucion, escenario.estado()).factible());
+    }
+
+    /**
+     * Si todas las entregas están junto al almacén Este, la unidad debe recargar ahí en lugar
+     * de volver al central a 43 km.
+     */
+    @Test
+    void debeRecargarEnElAlmacenMasCercanoALaZonaDeEntrega() {
+        EscenarioDemo escenario = conUnSoloAuto(List.of(
+                EscenarioDemo.pedido("P-001", 57, 29, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-002", 58, 26, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-003", 59, 28, 8, AHORA, 36),
+                EscenarioDemo.pedido("P-004", 56, 25, 8, AHORA, 36)
+        ));
+
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(20, 0.0, 7L).construir());
+
+        assertEquals(0, solucion.getCantidadPedidosNoAsignados());
+        assertTrue(
+                solucion.getRutas().stream()
+                        .anyMatch(viaje -> viaje.getAlmacen().getId().equals(DatosCaso.ID_ESTE)),
+                "Ningún viaje cargó en el almacén Este."
+        );
     }
 }

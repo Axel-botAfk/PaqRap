@@ -1,42 +1,32 @@
 package com.paqrap.modelo;
 
-import java.util.Objects;
-
 /**
- * Identificador lógico de una ubicación.
+ * Nodo de la retícula: una esquina identificada por sus coordenadas (x, y) en kilómetros.
  *
- * Decisión de diseño para la primera iteración:
- * todavía no se acopla el planificador a coordenadas ni a un grafo real.
- * El identificador podrá mapearse posteriormente a un nodo del componente de rutas.
+ * Los clientes, los almacenes y las unidades de transporte se refieren siempre a un nodo.
+ * Sustituye al identificador lógico de la primera iteración, que impedía calcular distancias
+ * sin una tabla cargada a mano.
  */
-public final class Ubicacion {
-    private final String id;
+public record Ubicacion(int x, int y) {
 
-    public Ubicacion(String id) {
-        if (id == null || id.isBlank()) {
-            throw new IllegalArgumentException("El id de la ubicación es obligatorio.");
+    public Ubicacion {
+        if (!Ciudad.contiene(x, y)) {
+            throw new IllegalArgumentException(
+                    "La ubicación (" + x + "," + y + ") está fuera de la ciudad "
+                            + Ciudad.ANCHO_KM + "x" + Ciudad.ALTO_KM + ".");
         }
-        this.id = id;
     }
 
-    public String getId() {
-        return id;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof Ubicacion that)) return false;
-        return id.equals(that.id);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
+    /**
+     * Distancia sobre la retícula sin considerar bloqueos. Con calles de doble sentido y sin
+     * diagonales, el recorrido más corto entre dos nodos libres es la suma de los catetos.
+     */
+    public double distanciaManhattanKm(Ubicacion otra) {
+        return (Math.abs(x - otra.x) + Math.abs(y - otra.y)) * Ciudad.KM_POR_ARISTA;
     }
 
     @Override
     public String toString() {
-        return id;
+        return "(" + x + "," + y + ")";
     }
 }

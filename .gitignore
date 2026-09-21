@@ -1,0 +1,18 @@
+# Compilados y artefactos de build
+target/
+out/
+bin/
+*.class
+*.jar
+
+# Entornos de desarrollo
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# Sistema operativo
+Thumbs.db
+.DS_Store

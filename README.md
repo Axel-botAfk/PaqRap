@@ -21,13 +21,21 @@ La solución contemplará principalmente:
 
 ## Estado actual
 
-El proyecto se encuentra en la etapa de análisis y definición. El equipo está revisando los requisitos, el alcance y las alternativas de solución antes de seleccionar la base de datos, la arquitectura y las tecnologías definitivas.
+Está implementado el componente planificador con sus dos algoritmos metaheurísticos en Java:
+GRASP para la fase constructiva y búsqueda tabú para la fase de mejora, sobre la ciudad real
+del caso (retícula de 70x50 km), la flota real (10 autos, 15 motos, 12 bicicletas) y los tres
+almacenes en sus posiciones definitivas.
+
+Quedan pendientes los bloqueos de calles, las rutas con recarga en almacenes intermedios, las
+entregas parciales, los turnos con hora de alimentación, las averías, el mantenimiento
+preventivo, la lectura de los archivos de datos, la replanificación y el componente
+visualizador.
 
 ## Estructura
 
 ```text
-codigo/    Código fuente del proyecto
+codigo/
+  paqrap-grasp_v02/   Primera iteración del planificador (congelada como evidencia)
+  paqrap-tabu_v02/    Planificador vigente: GRASP + búsqueda tabú
 ```
-
-Por ahora, el repositorio contiene únicamente esta presentación y la carpeta reservada para el código. La estructura crecerá a medida que el equipo defina y construya la solución.
 

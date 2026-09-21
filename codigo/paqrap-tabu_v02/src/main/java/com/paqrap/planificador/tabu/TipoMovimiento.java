@@ -14,9 +14,9 @@ public enum TipoMovimiento {
     INTERCAMBIAR,
     /** Invertir un tramo de la secuencia de entregas de una ruta (2-opt). */
     INVERTIR,
-    /** Cambiar el vehículo asignado a una ruta conservando su almacén de salida. */
+    /** Cambiar la unidad que realiza el viaje. */
     CAMBIAR_VEHICULO,
-    /** Reasignar la ruta a otro almacén junto con una unidad disponible en él. */
+    /** Cambiar el almacén en el que carga el viaje. */
     CAMBIAR_ALMACEN,
     /** Incorporar al plan un pedido que había quedado sin asignar. */
     ASIGNAR_PENDIENTE

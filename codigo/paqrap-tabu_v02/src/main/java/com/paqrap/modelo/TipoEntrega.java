@@ -1,22 +1,20 @@
 package com.paqrap.modelo;
 
 /**
- * Plazos definidos por el caso PaqRap.
+ * Clasificación del pedido según su plazo.
+ *
+ * El plazo real llega como un número de horas en el archivo de ventas (campo {@code hl}),
+ * de modo que no puede representarse con un conjunto cerrado de valores. Esta clasificación
+ * solo sirve para presentar y priorizar: 36 horas es la venta regular y cualquier plazo
+ * menor corresponde a una entrega priorizada (4, 8, 12 o 18 horas en el caso).
  */
 public enum TipoEntrega {
-    REGULAR_36H(36),
-    PRIORITARIA_4H(4),
-    PRIORITARIA_8H(8),
-    PRIORITARIA_12H(12),
-    PRIORITARIA_18H(18);
+    REGULAR,
+    PRIORITARIA;
 
-    private final int horasPlazo;
+    public static final int HORAS_PLAZO_REGULAR = 36;
 
-    TipoEntrega(int horasPlazo) {
-        this.horasPlazo = horasPlazo;
-    }
-
-    public int getHorasPlazo() {
-        return horasPlazo;
+    public static TipoEntrega de(int horasPlazo) {
+        return horasPlazo >= HORAS_PLAZO_REGULAR ? REGULAR : PRIORITARIA;
     }
 }

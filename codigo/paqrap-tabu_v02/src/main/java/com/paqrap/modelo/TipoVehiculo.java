@@ -1,32 +1,48 @@
 package com.paqrap.modelo;
 
 /**
- * Valores tomados directamente del caso PaqRap.
+ * Tipos de unidad de transporte del caso, con el prefijo con el que se codifican sus
+ * identificadores (TTNN: TA01, TM03, TB10).
+ *
+ * Los valores de capacidad, velocidad y costo son los del enunciado y solo sirven como punto
+ * de partida: los vigentes durante la operación los administra {@link ConfiguracionFlota},
+ * porque pueden cambiarse en caliente.
  */
 public enum TipoVehiculo {
-    AUTO(24, 40.0, 8.0),
-    MOTO(8, 25.0, 6.0),
-    BICICLETA(4, 12.0, 3.0);
+    AUTO("TA", new EspecificacionVehiculo(24, 40.0, 8.0)),
+    MOTO("TM", new EspecificacionVehiculo(8, 25.0, 6.0)),
+    BICICLETA("TB", new EspecificacionVehiculo(4, 12.0, 3.0));
 
-    private final int capacidadPaquetes;
-    private final double velocidadKmH;
-    private final double costoPorKm;
+    private final String prefijo;
+    private final EspecificacionVehiculo especificacionDelCaso;
 
-    TipoVehiculo(int capacidadPaquetes, double velocidadKmH, double costoPorKm) {
-        this.capacidadPaquetes = capacidadPaquetes;
-        this.velocidadKmH = velocidadKmH;
-        this.costoPorKm = costoPorKm;
+    TipoVehiculo(String prefijo, EspecificacionVehiculo especificacionDelCaso) {
+        this.prefijo = prefijo;
+        this.especificacionDelCaso = especificacionDelCaso;
     }
 
-    public int getCapacidadPaquetes() {
-        return capacidadPaquetes;
+    public String getPrefijo() {
+        return prefijo;
     }
 
-    public double getVelocidadKmH() {
-        return velocidadKmH;
+    public EspecificacionVehiculo getEspecificacionDelCaso() {
+        return especificacionDelCaso;
     }
 
-    public double getCostoPorKm() {
-        return costoPorKm;
+    /** Identificador TTNN de la unidad número {@code numero} de este tipo. */
+    public String codigoUnidad(int numero) {
+        if (numero <= 0 || numero > 99) {
+            throw new IllegalArgumentException("El correlativo de la unidad debe estar entre 1 y 99.");
+        }
+        return String.format("%s%02d", prefijo, numero);
+    }
+
+    public static TipoVehiculo porPrefijo(String prefijo) {
+        for (TipoVehiculo tipo : values()) {
+            if (tipo.prefijo.equalsIgnoreCase(prefijo)) {
+                return tipo;
+            }
+        }
+        throw new IllegalArgumentException("Prefijo de tipo de unidad desconocido: " + prefijo);
     }
 }

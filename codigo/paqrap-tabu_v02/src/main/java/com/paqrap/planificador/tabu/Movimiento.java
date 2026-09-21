@@ -87,13 +87,12 @@ public final class Movimiento {
     }
 
     /**
-     * El almacén y el vehículo viajan juntos porque una ruta solo puede salir de un almacén
-     * donde su unidad se encuentre; cambiar el almacén sin cambiar la unidad produciría
-     * siempre un vecino infactible.
+     * Cambiar el almacén de carga de un viaje. Ya no arrastra al vehículo: la unidad puede
+     * trasladarse hasta el almacén que se le indique, y ese traslado se paga en el recorrido.
      */
-    public static Movimiento cambiarAlmacen(int ruta, Almacen almacen, Vehiculo vehiculo) {
+    public static Movimiento cambiarAlmacen(int ruta, Almacen almacen) {
         return new Movimiento(TipoMovimiento.CAMBIAR_ALMACEN, ruta, -1, ruta, -1,
-                null, vehiculo, almacen);
+                null, null, almacen);
     }
 
     public static Movimiento asignarPendiente(Pedido pedido, int rutaDestino, int posicionDestino) {

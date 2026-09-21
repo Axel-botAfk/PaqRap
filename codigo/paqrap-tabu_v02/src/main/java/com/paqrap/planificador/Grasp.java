@@ -1,40 +1,38 @@
 package com.paqrap.planificador;
 
 import com.paqrap.modelo.Almacen;
-import com.paqrap.modelo.EstadoVehiculo;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
-import com.paqrap.modelo.TipoAlmacen;
 import com.paqrap.modelo.Vehiculo;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
-import java.util.Set;
 
 /**
- * Primera iteración funcional de GRASP para PaqRap.
+ * Fase constructiva de GRASP para PaqRap.
  *
  * Alcance:
- * - fase constructiva;
- * - inserciones factibles pedido/almacén/vehículo/ruta;
- * - capacidad, stock, vehículo disponible y plazo;
- * - costo incremental;
+ * - inserciones factibles pedido/almacén/unidad/posición;
+ * - viajes encadenados: una unidad puede hacer varios a lo largo del horizonte, recargando en
+ *   cualquier almacén que tenga producto;
+ * - capacidad por viaje, stock por periodo de reposición, unidad disponible y plazo;
+ * - costo incremental sobre el programa completo de la unidad;
  * - holgura;
  * - LRC controlada por alfa;
  * - selección aleatoria reproducible por semilla;
  * - pedidos no asignados.
  *
  * La fase de mejora vive en {@link com.paqrap.planificador.tabu.BusquedaTabu}, que parte
- * de la solución construida aquí. Aún NO se implementan bloqueos, fallas durante una ruta,
- * alimentación ni replanificación.
+ * de la solución construida aquí. Aún NO se implementan entregas parciales, turnos, averías
+ * ni replanificación.
  */
 public final class Grasp implements Planificador {
     public static final String NOMBRE = "GRASP";
@@ -62,15 +60,7 @@ public final class Grasp implements Planificador {
         Solucion mejor = null;
 
         for (int iteracion = 0; iteracion < parametros.getMaxIteraciones(); iteracion++) {
-            Solucion candidata = construirUnaSolucion(
-                    estado.getReloj(),
-                    estado.getPedidos(),
-                    estado.getAlmacenes(),
-                    estado.getVehiculos(),
-                    parametros.getAlfa(),
-                    random
-            );
-
+            Solucion candidata = construirUnaSolucion(estado, parametros, random);
             if (mejor == null || esMejor(candidata, mejor)) {
                 mejor = candidata;
             }
@@ -96,42 +86,47 @@ public final class Grasp implements Planificador {
         );
     }
 
-    private Solucion construirUnaSolucion(
-            LocalDateTime horaPlanificacion,
-            List<Pedido> pedidos,
-            List<Almacen> almacenes,
-            List<Vehiculo> vehiculos,
-            double alfa,
-            Random random
-    ) {
+    private Solucion construirUnaSolucion(EstadoOperacion estado, Parametros parametros, Random random) {
+        double alfa = parametros.getAlfa();
         Solucion solucion = new Solucion();
         solucion.setAlgoritmo(NOMBRE);
 
-        List<Pedido> pendientes = pedidos.stream()
-                .filter(p -> !p.getFechaRegistro().isAfter(horaPlanificacion))
-                .sorted(Comparator.comparing(Pedido::getFechaLimite))
-                .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+        List<Pedido> pendientes = new ArrayList<>();
+        for (Pedido pedido : estado.getPedidos()) {
+            if (!pedido.getFechaRegistro().isAfter(estado.getReloj())) {
+                pendientes.add(pedido);
+            }
+        }
+        pendientes.sort(Comparator.comparing(Pedido::getFechaLimite));
 
-        ContextoConstruccion contexto = new ContextoConstruccion(almacenes);
+        Contexto contexto = new Contexto(estado, evaluador);
 
         while (!pendientes.isEmpty()) {
-            List<Insercion> inserciones = generarInsercionesFactibles(
-                    solucion,
-                    pendientes,
-                    almacenes,
-                    vehiculos,
-                    horaPlanificacion,
-                    contexto
-            );
+            // Solo compiten los pedidos con el plazo más apretado, que son los únicos que la
+            // lista restringida puede elegir. Generar candidatos para todos los pendientes en
+            // cada inserción volvía la construcción cuadrática con cientos de pedidos en cola.
+            List<Pedido> masUrgentes = grupoMasUrgente(pendientes);
+            List<Insercion> inserciones =
+                    generarInsercionesFactibles(solucion, masUrgentes, estado, contexto, parametros);
 
             if (inserciones.isEmpty()) {
-                solucion.agregarPedidosNoAsignados(pendientes);
-                break;
+                // Solo estos quedan sin atender; el resto de la cola puede seguir siendo viable.
+                solucion.agregarPedidosNoAsignados(masUrgentes);
+                pendientes.removeAll(masUrgentes);
+                continue;
             }
 
+            // La urgencia la define el pedido, no la inserción: primero los plazos más
+            // apretados y, dentro de un mismo pedido, la forma más barata de atenderlo.
+            //
+            // Ordenar por la holgura resultante sería contraproducente ahora que una unidad
+            // puede trasladarse hasta cualquier almacén: justamente las inserciones que cruzan
+            // la ciudad llegan más tarde, dejan menos holgura y quedarían primeras. La holgura
+            // sigue usándose para desempatar, pero prefiriendo la entrega con más margen.
             inserciones.sort(
-                    Comparator.comparingDouble(Insercion::holguraHoras)
+                    Comparator.comparing((Insercion insercion) -> insercion.pedido().getFechaLimite())
                             .thenComparingDouble(Insercion::costoIncremental)
+                            .thenComparing(Comparator.comparingDouble(Insercion::holguraHoras).reversed())
             );
 
             List<Insercion> lrc = construirListaRestringida(inserciones, alfa);
@@ -144,113 +139,45 @@ public final class Grasp implements Planificador {
         return solucion;
     }
 
+    /**
+     * Dos familias de candidatos por cada pedido pendiente: sumarlo a un viaje ya planificado,
+     * o estrenar un viaje con alguna unidad desde algún almacén. En ambos casos el costo se
+     * mide sobre el programa completo de la unidad, porque un viaje nuevo arrastra el traslado
+     * desde donde la unidad quedó, y una entrega intercalada retrasa todo lo que viene después.
+     */
     private List<Insercion> generarInsercionesFactibles(
             Solucion solucion,
             List<Pedido> pendientes,
-            List<Almacen> almacenes,
-            List<Vehiculo> vehiculos,
-            LocalDateTime horaPlanificacion,
-            ContextoConstruccion contexto
+            EstadoOperacion estado,
+            Contexto contexto,
+            Parametros parametros
     ) {
         List<Insercion> resultado = new ArrayList<>();
 
         for (Pedido pedido : pendientes) {
-            // 1) Intentar insertar el pedido en rutas ya creadas.
-            for (Ruta ruta : solucion.getRutas()) {
-                if (!contexto.tieneStock(ruta.getAlmacen(), pedido.getCantidad())) {
+            for (int indiceRuta : viajesCercanos(solucion, pedido,
+                    parametros.getViajesCandidatosPorPedido())) {
+                Ruta viaje = solucion.getRuta(indiceRuta);
+                if (viaje.getCargaTotal() + pedido.getCantidad() > viaje.getVehiculo().getCapacidad()) {
                     continue;
                 }
-                if (ruta.getCargaTotal() + pedido.getCantidad() > ruta.getVehiculo().getCapacidad()) {
-                    continue;
-                }
-
-                for (int posicion = 0; posicion <= ruta.getPedidos().size(); posicion++) {
-                    List<Pedido> secuencia = new ArrayList<>(ruta.getPedidos());
-                    secuencia.add(posicion, pedido);
-
-                    MetricasRuta metricas = evaluador.calcularMetricas(
-                            ruta.getAlmacen(),
-                            ruta.getVehiculo(),
-                            secuencia,
-                            horaPlanificacion
-                    );
-
-                    if (!metricas.factible()) {
-                        continue;
+                for (int posicion = 0; posicion <= viaje.getPedidos().size(); posicion++) {
+                    Insercion candidata = contexto.evaluarEnViajeExistente(
+                            solucion, indiceRuta, posicion, pedido);
+                    if (candidata != null) {
+                        resultado.add(candidata);
                     }
-
-                    double costoIncremental = metricas.costoTotal() - ruta.getCostoTotal();
-                    double holgura = calcularHolguraHoras(
-                            pedido,
-                            metricas.horasEntrega().get(pedido.getId())
-                    );
-
-                    resultado.add(new Insercion(
-                            pedido,
-                            ruta.getAlmacen(),
-                            ruta.getVehiculo(),
-                            ruta,
-                            posicion,
-                            costoIncremental,
-                            holgura,
-                            metricas
-                    ));
                 }
             }
 
-            // 2) Crear una ruta nueva con un vehículo todavía no utilizado.
-            for (Almacen almacen : almacenes) {
-                if (!contexto.tieneStock(almacen, pedido.getCantidad())) {
-                    continue;
-                }
-
-                for (Vehiculo vehiculo : vehiculos) {
-                    if (vehiculo.getEstado() != EstadoVehiculo.DISPONIBLE) {
-                        continue;
+            for (Vehiculo vehiculo : unidadesCercanas(estado, pedido,
+                    parametros.getUnidadesCandidatasPorPedido())) {
+                for (Almacen almacen : estado.getAlmacenes()) {
+                    Insercion candidata = contexto.evaluarEnViajeNuevo(
+                            solucion, vehiculo, almacen, pedido);
+                    if (candidata != null) {
+                        resultado.add(candidata);
                     }
-
-                    // Primera iteración: no se permite "teletransportar" una unidad.
-                    // Para iniciar una ruta desde un almacén, la unidad debe encontrarse allí.
-                    // La reubicación de vehículos podrá modelarse posteriormente como parte
-                    // de la operación/replanificación.
-                    if (!vehiculo.getUbicacion().equals(almacen.getUbicacion())) {
-                        continue;
-                    }
-
-                    if (contexto.vehiculoYaAsignado(vehiculo)) {
-                        continue;
-                    }
-                    if (pedido.getCantidad() > vehiculo.getCapacidad()) {
-                        continue;
-                    }
-
-                    List<Pedido> secuencia = List.of(pedido);
-                    MetricasRuta metricas = evaluador.calcularMetricas(
-                            almacen,
-                            vehiculo,
-                            secuencia,
-                            horaPlanificacion
-                    );
-
-                    if (!metricas.factible()) {
-                        continue;
-                    }
-
-                    double holgura = calcularHolguraHoras(
-                            pedido,
-                            metricas.horasEntrega().get(pedido.getId())
-                    );
-
-                    resultado.add(new Insercion(
-                            pedido,
-                            almacen,
-                            vehiculo,
-                            null,
-                            0,
-                            metricas.costoTotal(),
-                            holgura,
-                            metricas
-                    ));
                 }
             }
         }
@@ -258,117 +185,346 @@ public final class Grasp implements Planificador {
         return resultado;
     }
 
+    /** Pedidos que comparten el plazo más apretado de la cola, que viene ordenada por plazo. */
+    private List<Pedido> grupoMasUrgente(List<Pedido> pendientes) {
+        LocalDateTime plazo = pendientes.get(0).getFechaLimite();
+        List<Pedido> grupo = new ArrayList<>();
+        for (Pedido pedido : pendientes) {
+            if (!pedido.getFechaLimite().equals(plazo)) {
+                break;
+            }
+            grupo.add(pedido);
+        }
+        return grupo;
+    }
+
+    /**
+     * Índices de los viajes más cercanos al destino del pedido. La cercanía se mide en línea
+     * recta sobre la retícula contra el almacén del viaje y contra sus entregas: es una cota
+     * inferior del recorrido real, suficiente para descartar los viajes que operan lejos.
+     */
+    private List<Integer> viajesCercanos(Solucion solucion, Pedido pedido, int cuantos) {
+        int total = solucion.getCantidadRutas();
+        if (total <= cuantos) {
+            List<Integer> todos = new ArrayList<>(total);
+            for (int i = 0; i < total; i++) {
+                todos.add(i);
+            }
+            return todos;
+        }
+
+        List<Integer> indices = new ArrayList<>(total);
+        Map<Integer, Double> distancia = new HashMap<>();
+        for (int i = 0; i < total; i++) {
+            indices.add(i);
+            distancia.put(i, cercaniaDe(solucion.getRuta(i), pedido));
+        }
+        indices.sort(Comparator.comparingDouble(distancia::get));
+        return indices.subList(0, cuantos);
+    }
+
+    private double cercaniaDe(Ruta viaje, Pedido pedido) {
+        double menor = pedido.getDestino().distanciaManhattanKm(viaje.getAlmacen().getUbicacion());
+        for (Pedido entrega : viaje.getPedidos()) {
+            menor = Math.min(menor, pedido.getDestino().distanciaManhattanKm(entrega.getDestino()));
+        }
+        return menor;
+    }
+
+    /**
+     * Unidades con capacidad suficiente, ordenadas por cercanía a la entrega y, a igual
+     * distancia, por costo por kilómetro.
+     *
+     * El desempate por costo importa: al inicio de un escenario toda la flota está en el mismo
+     * almacén, así que sin él el recorte se quedaría con las primeras de la lista —los autos,
+     * que son las más caras— y descartaría motos y bicicletas que harían el mismo trabajo por
+     * menos.
+     */
+    private List<Vehiculo> unidadesCercanas(EstadoOperacion estado, Pedido pedido, int cuantas) {
+        List<Vehiculo> aptas = new ArrayList<>();
+        for (Vehiculo vehiculo : estado.getVehiculos()) {
+            if (vehiculo.getEstado().admiteAsignacion()
+                    && pedido.getCantidad() <= vehiculo.getCapacidad()) {
+                aptas.add(vehiculo);
+            }
+        }
+        if (aptas.size() <= cuantas) {
+            return aptas;
+        }
+        aptas.sort(Comparator
+                .comparingDouble((Vehiculo unidad) ->
+                        pedido.getDestino().distanciaManhattanKm(unidad.getUbicacion()))
+                .thenComparingDouble(Vehiculo::getCostoPorKm));
+        return aptas.subList(0, cuantas);
+    }
+
+    /**
+     * Lista restringida de candidatos.
+     *
+     * Compiten solo las inserciones del pedido con el plazo más apretado: esa es la
+     * priorización por holgura del caso, aplicada donde corresponde, al elegir a quién se
+     * atiende. Entre ellas entran a la lista las que no se alejan del mejor costo más de alfa
+     * veces el rango de costos, de modo que alfa=0 deja únicamente la mejor y alfa=1 las deja
+     * todas.
+     *
+     * El corte por valor reemplaza al corte por cantidad, que tomaba una fracción fija de
+     * todos los candidatos de todos los pedidos: con las unidades ya libres de trasladarse a
+     * cualquier almacén, el conjunto de candidatos creció tanto que esa fracción terminaba
+     * incluyendo inserciones que cruzaban la ciudad.
+     */
     private List<Insercion> construirListaRestringida(List<Insercion> ordenadas, double alfa) {
         if (ordenadas.isEmpty()) {
             return List.of();
         }
 
-        // Decisión de diseño para esta primera iteración:
-        // alfa=0 => comportamiento totalmente voraz (solo el mejor candidato).
-        // alfa=1 => todos los candidatos pueden ser elegidos.
-        int cantidad = 1 + (int) Math.floor(alfa * (ordenadas.size() - 1));
-        return new ArrayList<>(ordenadas.subList(0, cantidad));
+        LocalDateTime plazoMasApretado = ordenadas.get(0).pedido().getFechaLimite();
+        List<Insercion> urgentes = new ArrayList<>();
+        for (Insercion candidata : ordenadas) {
+            if (!candidata.pedido().getFechaLimite().equals(plazoMasApretado)) {
+                break;
+            }
+            urgentes.add(candidata);
+        }
+
+        double menorCosto = urgentes.get(0).costoIncremental();
+        double mayorCosto = menorCosto;
+        for (Insercion candidata : urgentes) {
+            mayorCosto = Math.max(mayorCosto, candidata.costoIncremental());
+        }
+        double umbral = menorCosto + alfa * (mayorCosto - menorCosto);
+
+        List<Insercion> lrc = new ArrayList<>();
+        for (Insercion candidata : urgentes) {
+            if (candidata.costoIncremental() <= umbral + 1e-9) {
+                lrc.add(candidata);
+            }
+        }
+        return lrc;
     }
 
-    private void aplicarInsercion(
-            Solucion solucion,
-            Insercion insercion,
-            ContextoConstruccion contexto
-    ) {
-        Ruta ruta;
-
-        if (insercion.rutaExistente() == null) {
-            ruta = new Ruta(
-                    "R-" + (solucion.getRutas().size() + 1),
+    private void aplicarInsercion(Solucion solucion, Insercion insercion, Contexto contexto) {
+        if (insercion.indiceRuta() == Insercion.VIAJE_NUEVO) {
+            Ruta nuevo = new Ruta(
+                    "R-" + (solucion.getCantidadRutas() + 1),
                     insercion.almacen(),
                     insercion.vehiculo()
             );
-            solucion.agregarRuta(ruta);
-            contexto.marcarVehiculoAsignado(insercion.vehiculo());
+            nuevo.insertarPedido(0, insercion.pedido());
+            solucion.agregarRuta(nuevo);
         } else {
-            ruta = insercion.rutaExistente();
+            solucion.getRuta(insercion.indiceRuta())
+                    .insertarPedido(insercion.posicion(), insercion.pedido());
         }
 
-        ruta.insertarPedido(insercion.posicion(), insercion.pedido());
-        ruta.actualizarMetricas(
-                insercion.metricas().distanciaTotalKm(),
-                insercion.metricas().costoTotal(),
-                insercion.metricas().duracionHoras()
-        );
-
-        contexto.consumirStock(insercion.almacen(), insercion.pedido().getCantidad());
-    }
-
-    private double calcularHolguraHoras(Pedido pedido, LocalDateTime horaEntrega) {
-        return Evaluador.horasEntre(horaEntrega, pedido.getFechaLimite());
+        contexto.refrescar(solucion, insercion.vehiculo());
     }
 
     private boolean esMejor(Solucion candidata, Solucion actual) {
-        // Política alineada con el caso: primero cumplir pedidos/plazos,
-        // después minimizar costo.
+        // Política alineada con el caso: primero cumplir pedidos/plazos, después minimizar costo.
         int noAsignadosCandidata = candidata.getPedidosNoAsignados().size();
         int noAsignadosActual = actual.getPedidosNoAsignados().size();
 
         if (noAsignadosCandidata != noAsignadosActual) {
             return noAsignadosCandidata < noAsignadosActual;
         }
-
         return candidata.getCostoTotal() < actual.getCostoTotal();
     }
 
     private record Insercion(
             Pedido pedido,
-            Almacen almacen,
             Vehiculo vehiculo,
-            Ruta rutaExistente,
+            Almacen almacen,
+            int indiceRuta,
             int posicion,
             double costoIncremental,
-            double holguraHoras,
-            MetricasRuta metricas
+            double holguraHoras
     ) {
+        private static final int VIAJE_NUEVO = -1;
     }
 
     /**
-     * Estado interno de UNA construcción GRASP.
-     * Evita alterar el stock original o los objetos de entrada cuando se realizan
-     * varias iteraciones con la misma información.
+     * Estado interno de UNA construcción GRASP: qué viajes tiene asignados cada unidad, cuánto
+     * cuesta su programa y cuánto producto ha retirado de cada almacén.
+     *
+     * Trabaja sobre su propia copia del inventario para no alterar el de la operación cuando se
+     * realizan varias iteraciones constructivas con la misma información.
      */
-    private static final class ContextoConstruccion {
-        private final Map<String, Integer> stockRestante = new HashMap<>();
-        private final Set<String> vehiculosAsignados = new HashSet<>();
+    private static final class Contexto {
+        private final EstadoOperacion estado;
+        private final Evaluador evaluador;
+        private final Inventario inventario;
 
-        private ContextoConstruccion(List<Almacen> almacenes) {
-            for (Almacen almacen : almacenes) {
-                if (almacen.getTipo() == TipoAlmacen.INTERMEDIO) {
-                    stockRestante.put(almacen.getId(), almacen.getStockActual());
+        private final Map<String, List<Integer>> viajesPorVehiculo = new LinkedHashMap<>();
+        private final Map<String, Double> costoPorVehiculo = new HashMap<>();
+        private final Map<String, List<CargaEnAlmacen>> cargasPorVehiculo = new HashMap<>();
+
+        private Contexto(EstadoOperacion estado, Evaluador evaluador) {
+            this.estado = estado;
+            this.evaluador = evaluador;
+            this.inventario = new Inventario(estado.getAlmacenes(), estado.getReloj());
+        }
+
+        /** Candidato: intercalar el pedido en un viaje ya planificado. */
+        private Insercion evaluarEnViajeExistente(
+                Solucion solucion,
+                int indiceRuta,
+                int posicion,
+                Pedido pedido
+        ) {
+            Ruta viaje = solucion.getRuta(indiceRuta);
+            Vehiculo vehiculo = viaje.getVehiculo();
+
+            List<Ruta> programa = viajesDe(solucion, vehiculo);
+            int posicionEnPrograma = viajesPorVehiculo
+                    .getOrDefault(vehiculo.getId(), List.of())
+                    .indexOf(indiceRuta);
+
+            Ruta modificado = viaje.copiar();
+            modificado.insertarPedido(posicion, pedido);
+            programa.set(posicionEnPrograma, modificado);
+
+            return medir(vehiculo, programa, posicionEnPrograma, pedido, indiceRuta, posicion,
+                    viaje.getAlmacen());
+        }
+
+        /** Candidato: estrenar un viaje al final del programa de la unidad. */
+        private Insercion evaluarEnViajeNuevo(
+                Solucion solucion,
+                Vehiculo vehiculo,
+                Almacen almacen,
+                Pedido pedido
+        ) {
+            List<Ruta> programa = viajesDe(solucion, vehiculo);
+
+            Ruta nuevo = new Ruta("candidato", almacen, vehiculo);
+            nuevo.insertarPedido(0, pedido);
+            programa.add(nuevo);
+
+            return medir(vehiculo, programa, programa.size() - 1, pedido,
+                    Insercion.VIAJE_NUEVO, 0, almacen);
+        }
+
+        /**
+         * Evalúa el programa completo de la unidad con el candidato incorporado y devuelve la
+         * inserción si respeta plazos, capacidad y stock. El costo informado es el incremento
+         * sobre lo que esa unidad ya costaba.
+         */
+        private Insercion medir(
+                Vehiculo vehiculo,
+                List<Ruta> programa,
+                int posicionEnPrograma,
+                Pedido pedido,
+                int indiceRuta,
+                int posicion,
+                Almacen almacen
+        ) {
+            List<MetricasRuta> metricas =
+                    evaluador.evaluarPrograma(vehiculo, programa, estado.getReloj());
+
+            double costo = 0.0;
+            List<CargaEnAlmacen> cargas = new ArrayList<>();
+            for (int i = 0; i < programa.size(); i++) {
+                MetricasRuta medida = metricas.get(i);
+                if (!medida.factible()) {
+                    return null;
+                }
+                costo += medida.costoTotal();
+                Ruta viaje = programa.get(i);
+                if (!viaje.estaVacia()) {
+                    cargas.add(new CargaEnAlmacen(
+                            viaje.getAlmacen(), medida.horaCarga(), viaje.getCargaTotal()));
                 }
             }
-        }
 
-        private boolean tieneStock(Almacen almacen, int cantidad) {
-            if (almacen.esInventarioInfinito()) {
-                return true;
+            if (!cabeEnInventario(vehiculo.getId(), cargas)) {
+                return null;
             }
-            return stockRestante.getOrDefault(almacen.getId(), 0) >= cantidad;
+
+            LocalDateTime llegada = metricas.get(posicionEnPrograma).horasLlegada().get(pedido.getId());
+            double holgura = Evaluador.horasEntre(llegada, pedido.getFechaLimite());
+            double incremento = costo - costoPorVehiculo.getOrDefault(vehiculo.getId(), 0.0);
+
+            return new Insercion(pedido, vehiculo, almacen, indiceRuta, posicion, incremento, holgura);
         }
 
-        private void consumirStock(Almacen almacen, int cantidad) {
-            if (almacen.esInventarioInfinito()) {
-                return;
+        /** Recalcula el programa de la unidad sobre la solución ya modificada. */
+        private void refrescar(Solucion solucion, Vehiculo vehiculo) {
+            String id = vehiculo.getId();
+            viajesPorVehiculo.clear();
+            viajesPorVehiculo.putAll(Evaluador.indicesPorVehiculo(solucion.getRutas()));
+
+            List<Ruta> programa = viajesDe(solucion, vehiculo);
+            List<MetricasRuta> metricas =
+                    evaluador.evaluarPrograma(vehiculo, programa, estado.getReloj());
+
+            double costo = 0.0;
+            List<CargaEnAlmacen> cargas = new ArrayList<>();
+            for (int i = 0; i < programa.size(); i++) {
+                costo += metricas.get(i).costoTotal();
+                Ruta viaje = programa.get(i);
+                if (!viaje.estaVacia()) {
+                    cargas.add(new CargaEnAlmacen(
+                            viaje.getAlmacen(), metricas.get(i).horaCarga(), viaje.getCargaTotal()));
+                }
+                viaje.actualizarMetricas(
+                        metricas.get(i).distanciaTotalKm(),
+                        metricas.get(i).costoTotal(),
+                        metricas.get(i).duracionHoras()
+                );
             }
-            int actual = stockRestante.getOrDefault(almacen.getId(), 0);
-            if (actual < cantidad) {
-                throw new IllegalStateException("Stock insuficiente al aplicar inserción.");
+
+            for (CargaEnAlmacen anterior : cargasPorVehiculo.getOrDefault(id, List.of())) {
+                inventario.liberar(anterior.almacen(), anterior.instante(), anterior.unidades());
             }
-            stockRestante.put(almacen.getId(), actual - cantidad);
+            for (CargaEnAlmacen nueva : cargas) {
+                inventario.consumir(nueva.almacen(), nueva.instante(), nueva.unidades());
+            }
+
+            cargasPorVehiculo.put(id, cargas);
+            costoPorVehiculo.put(id, costo);
         }
 
-        private boolean vehiculoYaAsignado(Vehiculo vehiculo) {
-            return vehiculosAsignados.contains(vehiculo.getId());
+        /** Copia modificable de los viajes que la unidad tiene asignados, en orden. */
+        private List<Ruta> viajesDe(Solucion solucion, Vehiculo vehiculo) {
+            List<Ruta> programa = new ArrayList<>();
+            for (int indice : viajesPorVehiculo.getOrDefault(vehiculo.getId(), List.of())) {
+                programa.add(solucion.getRuta(indice));
+            }
+            return programa;
         }
 
-        private void marcarVehiculoAsignado(Vehiculo vehiculo) {
-            vehiculosAsignados.add(vehiculo.getId());
+        /**
+         * ¿Alcanza el producto para este programa? Lo que la unidad ya tenía reservado se
+         * devuelve antes de comparar, porque el programa candidato lo reemplaza por completo.
+         */
+        private boolean cabeEnInventario(String vehiculoId, List<CargaEnAlmacen> cargas) {
+            Map<String, Integer> propio = new HashMap<>();
+            for (CargaEnAlmacen carga : cargasPorVehiculo.getOrDefault(vehiculoId, List.of())) {
+                propio.merge(clave(carga), carga.unidades(), Integer::sum);
+            }
+
+            Map<String, CargaEnAlmacen> requerido = new LinkedHashMap<>();
+            for (CargaEnAlmacen carga : cargas) {
+                if (carga.almacen().esInventarioInfinito()) {
+                    continue;
+                }
+                requerido.merge(clave(carga), carga, (unaCarga, otra) -> new CargaEnAlmacen(
+                        unaCarga.almacen(), unaCarga.instante(), unaCarga.unidades() + otra.unidades()));
+            }
+
+            for (Map.Entry<String, CargaEnAlmacen> entrada : requerido.entrySet()) {
+                CargaEnAlmacen carga = entrada.getValue();
+                int disponible = inventario.disponible(carga.almacen(), carga.instante())
+                        + propio.getOrDefault(entrada.getKey(), 0);
+                if (carga.unidades() > disponible) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private String clave(CargaEnAlmacen carga) {
+            return carga.almacen().getId() + "@" + Inventario.periodoDe(carga.instante());
         }
     }
 }

@@ -6,6 +6,10 @@ import java.util.List;
 import java.util.Objects;
 
 public final class Ruta {
+    // Una ruta representa UN viaje: la unidad llega al almacén, carga y hace la secuencia de
+    // entregas. Una misma unidad puede encadenar varios viajes en el horizonte; ese
+    // encadenamiento lo resuelve el Evaluador a partir del orden en que la solución los guarda.
+
     private final String id;
     private Almacen almacen;
     private Vehiculo vehiculo;

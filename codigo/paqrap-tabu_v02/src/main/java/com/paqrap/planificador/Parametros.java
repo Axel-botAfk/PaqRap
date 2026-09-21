@@ -15,6 +15,8 @@ public final class Parametros {
     private static final int REINICIOS_TABU_POR_DEFECTO = 3;
     private static final long LIMITE_MS_POR_DEFECTO = 5_000L;
     private static final double PENALIDAD_NO_ASIGNADO_POR_DEFECTO = 10_000.0;
+    private static final int VIAJES_CANDIDATOS_POR_DEFECTO = 15;
+    private static final int UNIDADES_CANDIDATAS_POR_DEFECTO = 10;
 
     private final int maxIteraciones;
     private final double alfa;
@@ -28,6 +30,8 @@ public final class Parametros {
     private final long limiteMilisegundos;
     private final double penalidadNoAsignado;
     private final double radioVecindarioKm;
+    private final int viajesCandidatosPorPedido;
+    private final int unidadesCandidatasPorPedido;
 
     public Parametros(int maxIteraciones, double alfa, long semilla) {
         this(new Constructor(maxIteraciones, alfa, semilla));
@@ -45,6 +49,8 @@ public final class Parametros {
         this.limiteMilisegundos = constructor.limiteMilisegundos;
         this.penalidadNoAsignado = constructor.penalidadNoAsignado;
         this.radioVecindarioKm = constructor.radioVecindarioKm;
+        this.viajesCandidatosPorPedido = constructor.viajesCandidatosPorPedido;
+        this.unidadesCandidatasPorPedido = constructor.unidadesCandidatasPorPedido;
     }
 
     public static Constructor constructor(int maxIteraciones, double alfa, long semilla) {
@@ -104,6 +110,20 @@ public final class Parametros {
         return radioVecindarioKm;
     }
 
+    /**
+     * Cuántos viajes ya planificados se consideran al buscar dónde intercalar un pedido. Se
+     * eligen los más cercanos al destino: probar contra todos los viajes del plan vuelve la
+     * construcción cuadrática cuando hay cientos de pedidos pendientes.
+     */
+    public int getViajesCandidatosPorPedido() {
+        return viajesCandidatosPorPedido;
+    }
+
+    /** Cuántas unidades se consideran al estrenar un viaje; se eligen las más cercanas. */
+    public int getUnidadesCandidatasPorPedido() {
+        return unidadesCandidatasPorPedido;
+    }
+
     public static final class Constructor {
         private final int maxIteraciones;
         private final double alfa;
@@ -117,6 +137,8 @@ public final class Parametros {
         private long limiteMilisegundos = LIMITE_MS_POR_DEFECTO;
         private double penalidadNoAsignado = PENALIDAD_NO_ASIGNADO_POR_DEFECTO;
         private double radioVecindarioKm = Double.POSITIVE_INFINITY;
+        private int viajesCandidatosPorPedido = VIAJES_CANDIDATOS_POR_DEFECTO;
+        private int unidadesCandidatasPorPedido = UNIDADES_CANDIDATAS_POR_DEFECTO;
 
         private Constructor(int maxIteraciones, double alfa, long semilla) {
             if (maxIteraciones <= 0) {
@@ -191,6 +213,22 @@ public final class Parametros {
                 throw new IllegalArgumentException("radioVecindarioKm debe ser mayor que cero.");
             }
             this.radioVecindarioKm = valor;
+            return this;
+        }
+
+        public Constructor viajesCandidatosPorPedido(int valor) {
+            if (valor <= 0) {
+                throw new IllegalArgumentException("viajesCandidatosPorPedido debe ser mayor que cero.");
+            }
+            this.viajesCandidatosPorPedido = valor;
+            return this;
+        }
+
+        public Constructor unidadesCandidatasPorPedido(int valor) {
+            if (valor <= 0) {
+                throw new IllegalArgumentException("unidadesCandidatasPorPedido debe ser mayor que cero.");
+            }
+            this.unidadesCandidatasPorPedido = valor;
             return this;
         }
 

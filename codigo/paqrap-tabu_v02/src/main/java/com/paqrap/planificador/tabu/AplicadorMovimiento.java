@@ -92,14 +92,9 @@ public final class AplicadorMovimiento {
 
     private static Deshacer cambiarAlmacen(Solucion solucion, Movimiento m) {
         Ruta ruta = solucion.getRuta(m.getRutaOrigen());
-        Almacen almacenAnterior = ruta.getAlmacen();
-        Vehiculo vehiculoAnterior = ruta.getVehiculo();
+        Almacen anterior = ruta.getAlmacen();
         ruta.reasignarAlmacen(m.getAlmacenDestino());
-        ruta.reasignarVehiculo(m.getVehiculoDestino());
-        return () -> {
-            ruta.reasignarAlmacen(almacenAnterior);
-            ruta.reasignarVehiculo(vehiculoAnterior);
-        };
+        return () -> ruta.reasignarAlmacen(anterior);
     }
 
     private static Deshacer asignarPendiente(Solucion solucion, Movimiento m) {

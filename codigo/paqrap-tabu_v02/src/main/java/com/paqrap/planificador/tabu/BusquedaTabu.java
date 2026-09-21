@@ -1,16 +1,15 @@
 package com.paqrap.planificador.tabu;
 
 import com.paqrap.modelo.Almacen;
-import com.paqrap.modelo.EstadoVehiculo;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.modelo.Ubicacion;
 import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.CalculadorDistancia;
+import com.paqrap.planificador.ConstructorVecinoMasCercano;
 import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.Evaluador;
-import com.paqrap.planificador.Grasp;
 import com.paqrap.planificador.Parametros;
 import com.paqrap.planificador.Planificador;
 
@@ -25,13 +24,22 @@ import java.util.Set;
 /**
  * Búsqueda tabú para el componente planificador de PaqRap.
  *
- * Parte de la solución construida por GRASP y la modifica mediante movimientos que cubren
- * los dos niveles de decisión del caso:
+ * Es uno de los dos algoritmos que el caso pide comparar, y es independiente del otro: su
+ * solución de partida la arma {@link ConstructorVecinoMasCercano}, no GRASP. Si arrancara del
+ * resultado de GRASP, la comparación no mediría dos algoritmos sino uno y su fase de mejora.
+ * El constructivo inicial se puede sustituir por cualquier otro {@link Planificador}, lo que
+ * permite además correr la variante GRASP + tabú como tercer punto de comparación.
  *
- * - rutas: trasladar un pedido de posición, intercambiar pedidos e invertir un tramo de la
+ * Sobre esa solución inicial aplica movimientos que cubren los dos niveles de decisión del
+ * caso:
+ *
+ * - viajes: trasladar un pedido de posición, intercambiar pedidos e invertir un tramo de la
  *   secuencia de entregas;
- * - asignaciones: cambiar la unidad de una ruta, reasignar la ruta a otro almacén con una
- *   unidad disponible allí, y sumar al plan pedidos que habían quedado sin asignar.
+ * - asignaciones: cambiar la unidad que hace el viaje, cambiar el almacén donde carga, y sumar
+ *   al plan pedidos que habían quedado sin asignar.
+ *
+ * Una unidad puede encadenar varios viajes, de modo que crear un viaje nuevo no exige una
+ * unidad ociosa: se agrega al final del programa de la que convenga.
  *
  * En cada iteración se toma una muestra del vecindario, se descartan los movimientos cuyo
  * atributo está en la lista tabú —salvo que superen a la mejor solución conocida, criterio
@@ -39,21 +47,31 @@ import java.util.Set;
  * permite salir de óptimos locales.
  */
 public final class BusquedaTabu implements Planificador {
-    public static final String NOMBRE = "GRASP + Búsqueda Tabú";
+    public static final String NOMBRE = "Búsqueda Tabú";
 
     private static final double EPSILON = 1e-9;
     private static final int RUTAS_DESTINO_POR_PENDIENTE = 3;
 
     private final Evaluador evaluador;
-    private final Grasp constructor;
+    private final Planificador constructor;
 
     public BusquedaTabu(CalculadorDistancia calculadorDistancia) {
         this(new Evaluador(calculadorDistancia));
     }
 
     public BusquedaTabu(Evaluador evaluador) {
+        this(evaluador, new ConstructorVecinoMasCercano(evaluador));
+    }
+
+    /** Variante con otro constructivo inicial, para experimentar con el punto de partida. */
+    public BusquedaTabu(Evaluador evaluador, Planificador constructor) {
         this.evaluador = Objects.requireNonNull(evaluador);
-        this.constructor = new Grasp(evaluador);
+        this.constructor = Objects.requireNonNull(constructor);
+    }
+
+    /** Solución de partida, útil para medir cuánto aporta la fase de mejora. */
+    public Solucion construirSolucionInicial(EstadoOperacion estado, Parametros parametros) {
+        return constructor.planificar(estado, parametros);
     }
 
     @Override
@@ -65,10 +83,7 @@ public final class BusquedaTabu implements Planificador {
         return mejorar(inicial, estado, parametros);
     }
 
-    /**
-     * Método de conveniencia equivalente al de GRASP, para trabajar directamente con las
-     * colecciones del caso.
-     */
+    /** Método de conveniencia para trabajar directamente con las colecciones del caso. */
     public Solucion construir(
             LocalDateTime horaPlanificacion,
             List<Pedido> pedidos,
@@ -84,7 +99,7 @@ public final class BusquedaTabu implements Planificador {
 
     /**
      * Núcleo iterativo. Recibe un plan factible y devuelve el mejor encontrado; la solución
-     * recibida no se modifica, de modo que el resultado de GRASP sigue disponible para comparar.
+     * recibida no se modifica, de modo que la de partida sigue disponible para comparar.
      */
     public Solucion mejorar(Solucion inicial, EstadoOperacion estado, Parametros parametros) {
         Random aleatorio = new Random(parametros.getSemilla());
@@ -156,7 +171,7 @@ public final class BusquedaTabu implements Planificador {
         }
 
         mejor.depurarRutasVacias();
-        evaluador.sincronizarMetricas(mejor, estado.getReloj());
+        evaluador.sincronizarMetricas(mejor, estado);
         mejor.setAlgoritmo(NOMBRE);
         return mejor;
     }
@@ -177,10 +192,10 @@ public final class BusquedaTabu implements Planificador {
             Random aleatorio
     ) {
         List<Movimiento> vecindario = new ArrayList<>();
-        List<Vehiculo> vehiculosLibres = vehiculosLibres(solucion, estado);
+        List<Vehiculo> unidades = unidadesDisponibles(estado);
         List<Almacen> almacenes = estado.getAlmacenes();
 
-        agregarAsignacionesPendientes(vecindario, solucion, almacenes, vehiculosLibres, aleatorio);
+        agregarAsignacionesPendientes(vecindario, solucion, almacenes, unidades, aleatorio);
 
         List<int[]> ubicaciones = new ArrayList<>();
         List<Ruta> rutas = solucion.getRutas();
@@ -203,13 +218,13 @@ public final class BusquedaTabu implements Planificador {
             int sorteo = aleatorio.nextInt(10);
 
             if (sorteo < 4) {
-                // Traslado: cambia la ruta o la posición de una entrega.
-                if (aleatorio.nextInt(5) == 0 && !vehiculosLibres.isEmpty()) {
-                    Vehiculo vehiculo = vehiculosLibres.get(aleatorio.nextInt(vehiculosLibres.size()));
-                    Almacen almacen = almacenDe(vehiculo, almacenes);
-                    if (almacen == null || rutaOrigen.getPedidos().size() < 2) {
+                // Traslado: cambia el viaje o la posición de una entrega.
+                if (aleatorio.nextInt(5) == 0 && !unidades.isEmpty()) {
+                    if (rutaOrigen.getPedidos().size() < 2) {
                         continue;
                     }
+                    Vehiculo vehiculo = unidades.get(aleatorio.nextInt(unidades.size()));
+                    Almacen almacen = almacenes.get(aleatorio.nextInt(almacenes.size()));
                     vecindario.add(Movimiento.trasladarARutaNueva(
                             origen[0], origen[1], pedidoOrigen, vehiculo, almacen));
                 } else {
@@ -246,28 +261,22 @@ public final class BusquedaTabu implements Planificador {
                 int hasta = desde + 1 + aleatorio.nextInt(cantidad - desde - 1);
                 vecindario.add(Movimiento.invertir(origen[0], desde, hasta));
             } else if (sorteo < 9) {
-                // Reasignación de unidad conservando el almacén de salida.
-                Vehiculo candidato = elegirVehiculoEn(
-                        vehiculosLibres, rutaOrigen.getAlmacen().getUbicacion(), aleatorio);
-                if (candidato == null || candidato.getId().equals(rutaOrigen.getVehiculo().getId())) {
+                // Otra unidad se hace cargo del viaje.
+                if (unidades.isEmpty()) {
+                    continue;
+                }
+                Vehiculo candidato = unidades.get(aleatorio.nextInt(unidades.size()));
+                if (candidato.getId().equals(rutaOrigen.getVehiculo().getId())) {
                     continue;
                 }
                 vecindario.add(Movimiento.cambiarVehiculo(origen[0], candidato));
             } else {
-                // Reasignación de almacén: la ruta pasa a salir de otro almacén con una unidad
-                // disponible allí.
-                if (vehiculosLibres.isEmpty()) {
+                // El viaje pasa a cargar en otro almacén; la unidad se traslada hasta allí.
+                Almacen candidato = almacenes.get(aleatorio.nextInt(almacenes.size()));
+                if (candidato.getId().equals(rutaOrigen.getAlmacen().getId())) {
                     continue;
                 }
-                Vehiculo candidato = vehiculosLibres.get(aleatorio.nextInt(vehiculosLibres.size()));
-                if (candidato.getUbicacion().equals(rutaOrigen.getAlmacen().getUbicacion())) {
-                    continue;
-                }
-                Almacen almacen = almacenDe(candidato, almacenes);
-                if (almacen == null) {
-                    continue;
-                }
-                vecindario.add(Movimiento.cambiarAlmacen(origen[0], almacen, candidato));
+                vecindario.add(Movimiento.cambiarAlmacen(origen[0], candidato));
             }
         }
 
@@ -279,7 +288,7 @@ public final class BusquedaTabu implements Planificador {
             List<Movimiento> vecindario,
             Solucion solucion,
             List<Almacen> almacenes,
-            List<Vehiculo> vehiculosLibres,
+            List<Vehiculo> unidades,
             Random aleatorio
     ) {
         List<Pedido> pendientes = solucion.getPedidosNoAsignados();
@@ -300,71 +309,42 @@ public final class BusquedaTabu implements Planificador {
                 vecindario.add(Movimiento.asignarPendiente(pedido, indiceRuta, posicion));
             }
 
-            for (Vehiculo vehiculo : vehiculosLibres) {
+            for (Vehiculo vehiculo : unidades) {
                 if (pedido.getCantidad() > vehiculo.getCapacidad()) {
                     continue;
                 }
-                Almacen almacen = almacenDe(vehiculo, almacenes);
-                if (almacen == null) {
-                    continue;
-                }
+                Almacen almacen = almacenes.get(aleatorio.nextInt(almacenes.size()));
                 vecindario.add(Movimiento.asignarPendienteEnRutaNueva(pedido, vehiculo, almacen));
             }
         }
     }
 
-    /** Unidades disponibles que ninguna ruta con entregas está usando. */
-    private List<Vehiculo> vehiculosLibres(Solucion solucion, EstadoOperacion estado) {
-        Set<String> ocupados = new HashSet<>();
-        for (Ruta ruta : solucion.getRutas()) {
-            if (!ruta.estaVacia()) {
-                ocupados.add(ruta.getVehiculo().getId());
-            }
-        }
-
-        List<Vehiculo> libres = new ArrayList<>();
+    /**
+     * Unidades que pueden recibir trabajo. Ya no se exige que estén ociosas: una unidad con
+     * viajes asignados puede encadenar otro al final de su programa.
+     */
+    private List<Vehiculo> unidadesDisponibles(EstadoOperacion estado) {
+        List<Vehiculo> disponibles = new ArrayList<>();
         for (Vehiculo vehiculo : estado.getVehiculos()) {
-            if (vehiculo.getEstado() == EstadoVehiculo.DISPONIBLE
-                    && !ocupados.contains(vehiculo.getId())) {
-                libres.add(vehiculo);
+            if (vehiculo.getEstado().admiteAsignacion()) {
+                disponibles.add(vehiculo);
             }
         }
-        return libres;
-    }
-
-    private Vehiculo elegirVehiculoEn(List<Vehiculo> candidatos, Ubicacion ubicacion, Random aleatorio) {
-        List<Vehiculo> enUbicacion = new ArrayList<>();
-        for (Vehiculo vehiculo : candidatos) {
-            if (vehiculo.getUbicacion().equals(ubicacion)) {
-                enUbicacion.add(vehiculo);
-            }
-        }
-        if (enUbicacion.isEmpty()) {
-            return null;
-        }
-        return enUbicacion.get(aleatorio.nextInt(enUbicacion.size()));
-    }
-
-    /** Almacén desde el cual la unidad puede iniciar una ruta (decisión 7 del proyecto). */
-    private Almacen almacenDe(Vehiculo vehiculo, List<Almacen> almacenes) {
-        for (Almacen almacen : almacenes) {
-            if (almacen.getUbicacion().equals(vehiculo.getUbicacion())) {
-                return almacen;
-            }
-        }
-        return null;
+        return disponibles;
     }
 
     /**
      * Vecindario granular: mover una entrega a una ruta que opera al otro extremo de la ciudad
-     * casi nunca mejora el costo. Con el radio por defecto (infinito) no se filtra nada, porque
-     * la matriz de distancias del modelo actual puede estar registrada de forma parcial.
+     * casi nunca mejora el costo. El radio se mide en línea recta sobre la retícula, sin mirar
+     * los bloqueos: es un filtro de cercanía para decidir qué vecinos vale la pena evaluar, y
+     * la distancia sin bloqueos es una cota inferior de la real, de modo que nunca descarta un
+     * vecino que sí estaba cerca. Con el radio por defecto (infinito) no se filtra nada.
      */
     private boolean sonProximos(Ubicacion a, Ubicacion b, double radio) {
         if (Double.isInfinite(radio)) {
             return true;
         }
-        return evaluador.distanciaSegura(a, b) <= radio;
+        return a.distanciaManhattanKm(b) <= radio;
     }
 
     private boolean rutaProxima(Ruta ruta, Ubicacion ubicacion, double radio) {

@@ -1,0 +1,10 @@
+# Archivo de ejemplo con el formato del caso: aaaamm.bloqueadas
+# Registro: ##d##h##m-##d##h##m:x1,y1,x2,y2,...,xn,yn
+# Los archivos reales los entrega el equipo docente en la zona de datos.
+#
+# Muro horizontal al norte del almacen central (obliga a rodear).
+08d06h00m-08d15h00m:20,17,32,17
+# Tramo vertical al este del almacen central.
+08d09h00m-08d12h00m:30,10,30,14
+# Poligonal de dos tramos cerca del almacen Nor-Oeste.
+15d00h00m-16d23h59m:12,36,12,40,16,40

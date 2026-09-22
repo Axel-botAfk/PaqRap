@@ -1,0 +1,178 @@
+$ javac -encoding UTF-8 -d build $(find src/main/java -name "*.java")
+$ java -cp build com.paqrap.demo.VerificacionGrasp
+OK - 6 verificaciones de GRASP superadas, incluida la busqueda local y la exclusion de vehiculos con averia/mantenimiento.
+
+$ java -cp build com.paqrap.demo.VerificacionMantenimiento
+OK - 2 verificaciones del lector de mantenimiento superadas.
+
+$ java -cp build com.paqrap.demo.DemoGrasp
+=== SOLUCION GRASP ===
+R-1 | almacen=ALM-I1 | vehiculo=MOTO-01 | pedidos=[P-001] | carga=4/8 | km=2.00 | costo=S/ 12.00
+R-2 | almacen=ALM-C | vehiculo=AUTO-01 | pedidos=[P-002, P-003] | carga=9/24 | km=17.00 | costo=S/ 136.00
+No asignados: []
+Costo total: S/ 148.00
+
+$ java -cp build com.paqrap.demo.DemoGraspDataset
+=== DATASET DE PRUEBA GRASP ===
+Pedidos de entrada: 13
+Almacenes: 3
+Vehiculos: 8
+
+R-1 | almacen=ALM-I2 | vehiculo=BICI-I2-01 | pedidos=[P-002, P-011] | carga=4/4 | km=24.57 | costo=S/ 73.71
+R-2 | almacen=ALM-C | vehiculo=MOTO-C-01 | pedidos=[P-006] | carga=7/8 | km=8.00 | costo=S/ 48.00
+R-3 | almacen=ALM-C | vehiculo=AUTO-C-01 | pedidos=[P-007, P-004, P-010, P-003, P-008] | carga=22/24 | km=58.91 | costo=S/ 471.28
+R-4 | almacen=ALM-I1 | vehiculo=MOTO-I1-01 | pedidos=[P-001, P-009] | carga=6/8 | km=9.77 | costo=S/ 58.62
+R-5 | almacen=ALM-I2 | vehiculo=MOTO-I2-01 | pedidos=[P-005, P-012] | carga=6/8 | km=12.32 | costo=S/ 73.92
+
+Pedidos asignados: 12
+Pedidos no asignados: [P-013]
+Costo total: S/ 725.53
+Distancia total: 113.57 km
+
+--------------------------------------------------------------------------
+Nota sobre este resultado (actualizado 22-sept-2026):
+
+Estos numeros cambiaron respecto a una version anterior de esta evidencia
+(que registraba S/ 627.01 para el mismo dataset) porque se corrigio un
+error real en calcularMetricas(): el caso (Preguntas y Respuestas,
+pregunta 11) establece que la hora de acondicionamiento del producto (1h
+por entrega) NO cuenta dentro del plazo de 36h / plazos priorizados, pero
+el codigo anterior si la sumaba antes de comparar contra el plazo. Esto
+hacia que GRASP rechazara por "incumplimiento de plazo" inserciones que en
+realidad si eran validas segun la regla oficial del caso. Al corregirlo,
+GRASP encuentra mas inserciones factibles y arma una solucion distinta
+(y de mayor costo en este dataset en particular, porque ahora entran mas
+pedidos en rutas mas largas en vez de quedar sin intentarse).
+
+Por la misma razon se actualizaron dos pruebas (pruebaPlazo en este
+archivo y debeRechazarRutaQueIncumplePlazo en GraspTest.java): su
+escenario original dependia de la regla incorrecta (viaje + 1h de
+atencion superando el plazo) y ya no aplica; ahora prueban una ruta que
+incumple el plazo por el viaje en si, sin necesitar la hora de atencion.
+--------------------------------------------------------------------------
+
+$ java -cp build com.paqrap.demo.VerificacionAveria
+OK - 5 verificaciones del calculo de averias superadas.
+
+$ java -cp build com.paqrap.demo.DemoDatasetJP
+=== DEMO: parametros pedidos por la jp (averias, mantenimiento, plazo) ===
+
+--- Escenario 1: averia vigente excluye al vehiculo ---
+Vehiculo TM01 (MOTO) con averia tipo 1 (dura 2h) de 2026-09-22T07:00 a 2026-09-22T09:00
+Pedido P-AVERIA, unico vehiculo disponible es TM01.
+Rutas generadas: 0
+Pedidos no asignados: [P-AVERIA]
+RESULTADO: OK, el vehiculo en averia no fue usado.
+
+--- Escenario 1b: averia tipo 3 excluye al vehiculo por varios dias ---
+Averia tipo 3 ocurrida el 2026-09-21T10:00 (al menos 2 dias, retorna a las 15:00).
+Vehiculo TA02 (AUTO) no disponible de 2026-09-21T10:00 a 2026-09-23T15:00
+Rutas generadas: 0
+Pedidos no asignados: [P-AVERIA3]
+RESULTADO: OK, el vehiculo en averia tipo 3 no fue usado (sigue bloqueado 2+ dias despues).
+
+--- Escenario 2: mantenimiento preventivo (archivo oficial) excluye al vehiculo ---
+Archivo simulado: 20260922:TA01
+Ventana de mantenimiento leida: 2026-09-22T00:00 a 2026-09-24T00:00
+Rutas generadas: 0
+Pedidos no asignados: [P-MANT]
+RESULTADO: OK, el vehiculo en mantenimiento no fue usado.
+
+--- Escenario 3: la hora de atencion (1h) ya no cuenta contra el plazo ---
+Distancia: 87.5 km, velocidad MOTO: 25 km/h -> 3.5 h de viaje.
+Plazo del pedido: 4 h (PRIORITARIA_4H).
+Rutas generadas: 1
+Pedidos no asignados: []
+RESULTADO: OK, el pedido se asigno porque la hora de atencion no cuenta contra el plazo.
+
+--- Escenario 4: dataset combinado (varios pedidos y vehiculos) ---
+Vehiculos bloqueados:
+  TA01 (mantenimiento) de 2026-09-22T00:00 a 2026-09-24T00:00
+  TM01 (averia tipo 2) de 2026-09-22T07:30 a 2026-09-22T23:00
+Vehiculos disponibles: TB01, AUTO-I1-01, MOTO-I1-01.
+
+R-1 | almacen=ALM-I1 | vehiculo=MOTO-I1-01 | pedidos=[P-02, P-01] | carga=7/8 | km=5.00 | costo=S/ 30.00
+R-2 | almacen=ALM-I1 | vehiculo=AUTO-I1-01 | pedidos=[P-03, P-04, P-05] | carga=10/24 | km=9.00 | costo=S/ 72.00
+
+Pedidos no asignados: []
+Costo total: S/ 102.00
+RESULTADO: OK, ninguna ruta uso los vehiculos bloqueados.
+
+=== TODO OK: los 5 escenarios se comportaron como se esperaba ===
+
+--------------------------------------------------------------------------
+Nota sobre averias (actualizado 22-sept-2026, con el Enunciado de la
+Situacion Autentica):
+
+Antes, las ventanas de indisponibilidad por averia se escribian a mano en
+las pruebas y en DemoDatasetJP, con duraciones inventadas solo para
+probar el mecanismo de exclusion (por ejemplo, 4 horas para una averia
+tipo 1, cuando el caso dice 2 horas exactas). Se agrego Turno.java
+(turnos oficiales: 07:00, 15:00, 23:00, segun la Situacion Autentica) y
+CalculadorAveria.java, que calculan la ventana real de cada tipo:
+tipo 1 = inicio+2h; tipo 2 = fin del turno siguiente al que ocurrio;
+tipo 3 = al menos 2 dias, retorna exactamente a las 15:00. DemoDatasetJP
+y VerificacionAveria ahora usan ese calculo real en vez de valores
+inventados.
+--------------------------------------------------------------------------
+
+$ java -cp build com.paqrap.demo.DemoDatosReales 5 datos/reales 20 0.30 60
+=== GRASP CONTRA DATOS REALES DEL CASO ===
+Ventas:        datos/reales/ventas.202609.txt  (5000 pedidos en todo el mes)
+Mantenimiento: datos/reales/mant.preventivo.09.10.txt  (37 unidades con jornadas programadas)
+Bloqueos de calles: fuera de alcance (ver README del proyecto).
+Horizonte: 5 dias desde 2026-09-01T00:00 | latido de replanificacion cada 60 min | GRASP: 20 iteraciones, alfa=0.3
+Flota: 37 unidades (10 autos + 15 motos + 12 bicicletas), almacenes: 3 (1 central + 2 intermedios).
+
+Calculando...
+
+=== RESUMEN ===
+Periodo simulado: 2026-09-01T00:00 a 2026-09-06T00:00
+Tiempo de computo: 1739 ms (120 latidos con planificacion real).
+Pedidos recibidos:  795
+Pedidos entregados: 795 (100.0%)
+Pedidos vencidos (nunca se les encontro una insercion a tiempo): 0 (0.0%)
+Pedidos pendientes al cierre del horizonte: 0
+Distancia total recorrida: 23509.00 km
+Costo total: S/ 135931.00
+Costo promedio por pedido entregado: S/ 170.98
+Km promedio por pedido entregado: 29.57 km
+
+=== EVOLUCION DIARIA (recibidos | entregados | cola al cierre del dia) ===
+  2026-09-01 | recibidos=187 | entregados=180 | cola al cierre=0
+  2026-09-02 | recibidos=130 | entregados=126 | cola al cierre=0
+  2026-09-03 | recibidos=167 | entregados=169 | cola al cierre=0
+  2026-09-04 | recibidos=159 | entregados=161 | cola al cierre=0
+  2026-09-05 | recibidos=152 | entregados=152 | cola al cierre=0
+
+--------------------------------------------------------------------------
+Nota sobre la simulacion multi-dia con datos reales (agregado 22-sept-2026):
+
+Hasta esta version, GRASP solo se probaba con una unica planificacion
+estatica (una lista fija de pedidos, una sola llamada a Grasp.construir).
+No habia forma de correr varios dias seguidos ni de reutilizar la flota
+entre planificaciones -- exactamente lo que hacia falta para probar los
+5000 pedidos reales de ventas.202609.txt. Se agrego Simulador.java
+(paquete simulacion, nuevo), que reune los pedidos pendientes y las
+unidades libres en cada "latido" (cada hora por defecto), llama una vez
+a Grasp.construir y aplica el plan al estado del siguiente latido.
+
+Al probar el simulador por primera vez contra los datos reales aparecio
+un problema real: la flota colapsaba al segundo dia (0 entregas el
+2026-09-02 en una prueba de 3 dias). La causa: Grasp.construir exige que
+un vehiculo este fisicamente en la ubicacion de un almacen para poder
+iniciar una ruta nueva (Grasp.java, generarInsercionesFactibles), pero el
+simulador dejaba a cada unidad en el destino de su ultima entrega -- una
+vez que una unidad entregaba su primer pedido, quedaba "varada" ahi para
+siempre y nunca volvia a estar disponible. Se corrigio haciendo que,
+entre latidos, la posicion registrada de la unidad vuelva a ser el
+almacen desde el que partio (el costo/duracion de la ruta ya calculado
+por Grasp sigue sin incluir ese regreso, solo se reinicia la posicion
+para el siguiente latido). Con el ajuste, la corrida de arriba entrega el
+100% de los 795 pedidos reales recibidos en 5 dias, sin vencidos y sin
+cola pendiente al cierre de ningun dia.
+
+Bloqueos de calles (bloqueo.*.txt) deliberadamente no se leen en esta
+simulacion, igual que el resto de GRASP: ver "Fuera del alcance de esta
+implementacion de GRASP" en el README.
+--------------------------------------------------------------------------

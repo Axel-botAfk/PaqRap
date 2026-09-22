@@ -1,0 +1,208 @@
+java -cp target/classes com.paqrap.demo.DemoTabuDataset
+=== DATASET MEDIANO: GRASP vs BUSQUEDA TABU ===
+Pedidos de entrada: 13
+Almacenes: 3
+Unidades: 37
+
+=== GRASP ===
+R-1   | almacen=ALM-CENTRAL    | unidad=TB02  | carga= 2/ 4 | km=  4.00 | costo=S/    12.00 | [P-001]
+R-2   | almacen=ALM-CENTRAL    | unidad=TB04  | carga= 3/ 4 | km=  6.00 | costo=S/    18.00 | [P-002]
+R-3   | almacen=ALM-CENTRAL    | unidad=TM05  | carga= 6/ 8 | km= 44.00 | costo=S/   264.00 | [P-004, P-011]
+R-4   | almacen=ALM-CENTRAL    | unidad=TM02  | carga= 7/ 8 | km= 14.00 | costo=S/    84.00 | [P-006]
+R-5   | almacen=ALM-CENTRAL    | unidad=TM01  | carga= 7/ 8 | km= 25.00 | costo=S/   150.00 | [P-003, P-012]
+R-6   | almacen=ALM-CENTRAL    | unidad=TM03  | carga= 7/ 8 | km= 35.00 | costo=S/   210.00 | [P-007, P-008]
+R-7   | almacen=ALM-CENTRAL    | unidad=TB04  | carga= 3/ 4 | km= 17.00 | costo=S/    51.00 | [P-005]
+R-8   | almacen=ALM-NOR-OESTE  | unidad=TB04  | carga= 4/ 4 | km= 40.00 | costo=S/   120.00 | [P-009]
+R-9   | almacen=ALM-ESTE       | unidad=TM05  | carga= 6/ 8 | km= 10.00 | costo=S/    60.00 | [P-010]
+Unidades con varios viajes:
+  TB04  3 viajes | ALM-CENTRAL [P-002] -> ALM-CENTRAL [P-005] -> ALM-NOR-OESTE [P-009]
+  TM05  2 viajes | ALM-CENTRAL [P-004, P-011] -> ALM-ESTE [P-010]
+No asignados: [P-013]
+Costo total: S/ 969.00 | Distancia total: 195.00 km | Viajes: 9
+
+=== Vecino más cercano ===
+R-1-TM01 | almacen=ALM-CENTRAL    | unidad=TM01  | carga= 5/ 8 | km= 12.00 | costo=S/    72.00 | [P-004]
+R-1-TM02 | almacen=ALM-CENTRAL    | unidad=TM02  | carga= 7/ 8 | km= 14.00 | costo=S/    84.00 | [P-006]
+R-1-TM03 | almacen=ALM-CENTRAL    | unidad=TM03  | carga= 5/ 8 | km= 17.00 | costo=S/   102.00 | [P-007]
+R-1-TM04 | almacen=ALM-CENTRAL    | unidad=TM04  | carga= 6/ 8 | km= 44.00 | costo=S/   264.00 | [P-010]
+R-1-TB01 | almacen=ALM-CENTRAL    | unidad=TB01  | carga= 4/ 4 | km= 39.00 | costo=S/   117.00 | [P-001, P-008]
+R-2-TB01 | almacen=ALM-NOR-OESTE  | unidad=TB01  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-009]
+R-1-TB02 | almacen=ALM-CENTRAL    | unidad=TB02  | carga= 3/ 4 | km=  6.00 | costo=S/    18.00 | [P-002]
+R-1-TB03 | almacen=ALM-CENTRAL    | unidad=TB03  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-003]
+R-1-TB04 | almacen=ALM-CENTRAL    | unidad=TB04  | carga= 4/ 4 | km= 44.00 | costo=S/   132.00 | [P-012, P-011]
+R-1-TB05 | almacen=ALM-CENTRAL    | unidad=TB05  | carga= 3/ 4 | km= 11.00 | costo=S/    33.00 | [P-005]
+Unidades con varios viajes:
+  TB01  2 viajes | ALM-CENTRAL [P-001, P-008] -> ALM-NOR-OESTE [P-009]
+No asignados: [P-013]
+Costo total: S/ 870.00 | Distancia total: 203.00 km | Viajes: 10
+
+=== Búsqueda Tabú ===
+R-1-TM02 | almacen=ALM-CENTRAL    | unidad=TM09  | carga= 5/ 8 | km= 17.00 | costo=S/   102.00 | [P-007]
+R-1-TM03 | almacen=ALM-CENTRAL    | unidad=TM14  | carga= 7/ 8 | km= 14.00 | costo=S/    84.00 | [P-006]
+R-1-TM04 | almacen=ALM-CENTRAL    | unidad=TM12  | carga= 8/ 8 | km= 44.00 | costo=S/   264.00 | [P-001, P-004, P-011]
+R-1-TB01 | almacen=ALM-CENTRAL    | unidad=TB01  | carga= 2/ 4 | km= 35.00 | costo=S/   105.00 | [P-008]
+R-2-TB01 | almacen=ALM-NOR-OESTE  | unidad=TB01  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-009]
+R-1-TB02 | almacen=ALM-CENTRAL    | unidad=TB12  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-003]
+R-1-TB03 | almacen=ALM-CENTRAL    | unidad=TB08  | carga= 3/ 4 | km= 11.00 | costo=S/    33.00 | [P-005]
+R-1-TB04 | almacen=ALM-CENTRAL    | unidad=TB03  | carga= 3/ 4 | km=  6.00 | costo=S/    18.00 | [P-002]
+R-1-TB05 | almacen=ALM-CENTRAL    | unidad=TB05  | carga= 3/ 4 | km= 17.00 | costo=S/    51.00 | [P-012]
+R-T30 | almacen=ALM-ESTE       | unidad=TM12  | carga= 6/ 8 | km= 10.00 | costo=S/    60.00 | [P-010]
+Unidades con varios viajes:
+  TM12  2 viajes | ALM-CENTRAL [P-001, P-004, P-011] -> ALM-ESTE [P-010]
+  TB01  2 viajes | ALM-CENTRAL [P-008] -> ALM-NOR-OESTE [P-009]
+No asignados: [P-013]
+Costo total: S/ 765.00 | Distancia total: 170.00 km | Viajes: 10
+
+=== COMPARACION ===
+  GRASP                                      S/    969.00 |  195.00 km |  9 viajes | 1 sin asignar
+  Vecino mas cercano (partida de la tabu)    S/    870.00 |  203.00 km | 10 viajes | 1 sin asignar
+  Busqueda Tabu                              S/    765.00 |  170.00 km | 10 viajes | 1 sin asignar
+
+La tabu mejora su propia partida en S/ 105.00 (12.1%)
+Busqueda Tabu frente a GRASP: S/ 204.00 (21.1%)
+
+Nota: P-013 pide 30 unidades y ninguna unidad de la flota las lleva en un solo viaje; quedara sin asignar hasta que existan entregas parciales.
+
+java -cp target/classes com.paqrap.demo.DemoBloqueos
+=== EFECTO DE LOS BLOQUEOS ===
+Archivo: datos\202609.bloqueadas
+Registros leidos: 3
+  2026-09-08T06:00 a 2026-09-08T15:00 | 13 nodos
+  2026-09-08T09:00 a 2026-09-08T12:00 | 5 nodos
+  2026-09-15T00:00 a 2026-09-16T23:59 | 9 nodos
+Nodos cerrados a las 2026-09-08T08:00: 13
+
+=== CIUDAD DESPEJADA ===
+R-1-TM01 | almacen=ALM-CENTRAL    | unidad=TM09  | carga= 7/ 8 | km= 12.00 | costo=S/    72.00 | [P-001, P-004]
+R-1-TM02 | almacen=ALM-CENTRAL    | unidad=TM02  | carga= 7/ 8 | km= 14.00 | costo=S/    84.00 | [P-006]
+R-1-TM03 | almacen=ALM-CENTRAL    | unidad=TM03  | carga= 5/ 8 | km= 17.00 | costo=S/   102.00 | [P-007]
+R-1-TM04 | almacen=ALM-CENTRAL    | unidad=TM04  | carga= 4/ 8 | km= 44.00 | costo=S/   264.00 | [P-012, P-011]
+R-1-TB01 | almacen=ALM-CENTRAL    | unidad=TB01  | carga= 2/ 4 | km= 35.00 | costo=S/   105.00 | [P-008]
+R-2-TB01 | almacen=ALM-NOR-OESTE  | unidad=TB01  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-009]
+R-1-TB02 | almacen=ALM-CENTRAL    | unidad=TB02  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-003]
+R-1-TB03 | almacen=ALM-CENTRAL    | unidad=TB03  | carga= 3/ 4 | km= 11.00 | costo=S/    33.00 | [P-005]
+R-1-TB04 | almacen=ALM-CENTRAL    | unidad=TB04  | carga= 3/ 4 | km=  6.00 | costo=S/    18.00 | [P-002]
+R-T6  | almacen=ALM-ESTE       | unidad=TM04  | carga= 6/ 8 | km= 10.00 | costo=S/    60.00 | [P-010]
+Unidades con varios viajes:
+  TM04  2 viajes | ALM-CENTRAL [P-012, P-011] -> ALM-ESTE [P-010]
+  TB01  2 viajes | ALM-CENTRAL [P-008] -> ALM-NOR-OESTE [P-009]
+No asignados: [P-013]
+Costo total: S/ 786.00 | Distancia total: 165.00 km | Viajes: 10
+
+=== CON BLOQUEOS VIGENTES ===
+R-1-TM01 | almacen=ALM-CENTRAL    | unidad=TM09  | carga= 7/ 8 | km= 12.00 | costo=S/    72.00 | [P-001, P-004]
+R-1-TM02 | almacen=ALM-CENTRAL    | unidad=TM02  | carga= 7/ 8 | km= 14.00 | costo=S/    84.00 | [P-006]
+R-1-TM03 | almacen=ALM-CENTRAL    | unidad=TM03  | carga= 5/ 8 | km= 17.00 | costo=S/   102.00 | [P-007]
+R-1-TM04 | almacen=ALM-CENTRAL    | unidad=TM04  | carga= 4/ 8 | km= 44.00 | costo=S/   264.00 | [P-012, P-011]
+R-1-TB01 | almacen=ALM-CENTRAL    | unidad=TB01  | carga= 2/ 4 | km= 35.00 | costo=S/   105.00 | [P-008]
+R-2-TB01 | almacen=ALM-NOR-OESTE  | unidad=TB01  | carga= 4/ 4 | km=  8.00 | costo=S/    24.00 | [P-009]
+R-1-TB02 | almacen=ALM-CENTRAL    | unidad=TB02  | carga= 4/ 4 | km= 18.00 | costo=S/    54.00 | [P-003]
+R-1-TB03 | almacen=ALM-CENTRAL    | unidad=TB03  | carga= 3/ 4 | km= 11.00 | costo=S/    33.00 | [P-005]
+R-1-TB04 | almacen=ALM-CENTRAL    | unidad=TB04  | carga= 3/ 4 | km=  6.00 | costo=S/    18.00 | [P-002]
+R-T6  | almacen=ALM-ESTE       | unidad=TM04  | carga= 6/ 8 | km= 10.00 | costo=S/    60.00 | [P-010]
+Unidades con varios viajes:
+  TM04  2 viajes | ALM-CENTRAL [P-012, P-011] -> ALM-ESTE [P-010]
+  TB01  2 viajes | ALM-CENTRAL [P-008] -> ALM-NOR-OESTE [P-009]
+No asignados: [P-013]
+Costo total: S/ 816.00 | Distancia total: 175.00 km | Viajes: 10
+
+Ciudad despejada: S/ 786.00 en 165.00 km
+Con bloqueos:      S/ 816.00 en 175.00 km
+
+Desvio de ejemplo (27,14) -> (27,20) en moto
+  sin bloqueos: 6 km
+  con bloqueos: 18 km
+  recorrido:    [(27,14), (28,14), (29,14), (30,14), (31,14), (32,14), (33,14), (33,15), (33,16), (33,17), (33,18), (32,18), (31,18), (30,18), (29,18), (28,18), (27,18), (27,19), (27,20)]
+
+java -cp target/classes com.paqrap.demo.DemoSimulacion5Dias
+Archivo de ventas: datos\ventas202609
+=== SIMULACION DE 5 DIAS ===
+Inicio: 2026-09-01T00:00
+Pedidos del periodo: 600
+Flota: 37 unidades
+Replanificacion cada 30 minutos. Calculando...
+
+=== RESULTADO ===
+Periodo simulado: 2026-09-01T00:00 a 2026-09-06T00:00
+Pedidos: 596 recibidos | 572 entregados (96.0%) | 24 pendientes | 0 vencidos
+Entregas en plazo: 572 de 572
+Operacion: 21121.00 km | S/ 136086.00
+Planificacion: 239 iteraciones | 34 ms por iteracion | 8.2 s de computo
+Tiempo de reloj de la corrida: 8.2 s
+
+Sin colapso: todos los pedidos vencidos: 0
+
+java -cp target/classes com.paqrap.demo.DemoDatosReales
+=== DATOS REALES DEL CASO ===
+Ventas:        datos\reales\ventas.202609.txt  (5000 pedidos)
+Bloqueos:      datos\reales\bloqueo.2609.txt  (558 tramos)
+Mantenimiento: datos\reales\mant.preventivo.09.10.txt  (37 jornadas programadas)
+Unidades fuera de servicio en el periodo simulado:
+  2026-09-01  [TA01]
+  2026-09-02  [TB01]
+  2026-09-03  [TM07]
+  2026-09-04  []
+  2026-09-05  []
+  2026-09-06  [TB11]
+  2026-09-07  [TA03]
+  2026-09-08  [TB03]
+  2026-09-09  [TM09]
+  2026-09-10  []
+Nodos cerrados al arrancar: 16
+Horizonte: 10 dias | tabu: 120 iteraciones, tope 400 ms. Calculando...
+
+=== RESULTADO ===
+Periodo simulado: 2026-09-01T00:00 a 2026-09-11T00:00
+Pedidos: 1621 recibidos | 1566 entregados (96.6%) | 54 pendientes | 1 vencidos
+Entregas en plazo: 1566 de 1566
+Operacion: 58296.00 km | S/ 348333.00
+Planificacion: 479 iteraciones | 619 ms por iteracion | 296.5 s de computo
+Tiempo de reloj de la corrida: 298.9 s
+
+COLAPSO LOGISTICO
+  Primer pedido vencido: P-00689 para el cliente c2081
+  Destino: (15,23) | 8 unidades | plazo de 8 h
+  Llego: 2026-09-05T07:33 | vencio: 2026-09-05T15:33
+
+Evolucion diaria:
+  dia          llegan  entregan  cola
+  2026-09-01     187       132    44
+  2026-09-02     130       154    17
+  2026-09-03     167       135    54
+  2026-09-04     159       174    38
+  2026-09-05     152       142    47
+  2026-09-06     184       161    70
+  2026-09-07     157       155    73
+  2026-09-08     143       168    48
+  2026-09-09     174       154    62
+  2026-09-10     168       183    57
+  Entregas diarias promedio: 142
+  Vencidos por dia: {2026-09-05=1}
+
+java -cp target/classes com.paqrap.demo.DemoCapacidad
+Presupuesto de la tabu por iteracion: 400 ms
+=== CAPACIDAD SOSTENIBLE DE LA FLOTA ===
+Flota: 37 unidades | 6 dias por nivel de demanda
+
+ ped/dia  recibidos entregados cola final  vencidos    computo
+     100        597        582         15         0       5.9s
+     150        896        868         28         0      12.8s
+     200       1197       1128         69         0      24.9s
+     250       1496       1377        119         0      47.1s
+     300       1793       1574        219         0      70.8s
+
+La cola final crece cuando la demanda supera el techo: ese es el
+nivel a partir del cual la operacion colapsa si se sostiene.
+
+java -cp target/classes com.paqrap.demo.VerificacionGrasp
+OK - 8 verificaciones de GRASP superadas.
+
+java -cp target/classes com.paqrap.demo.VerificacionTabu
+OK - 9 verificaciones de búsqueda tabú superadas.
+
+java -cp target/classes com.paqrap.demo.VerificacionBloqueos
+OK - 9 verificaciones de bloqueos superadas.
+
+java -cp target/classes com.paqrap.demo.VerificacionSimulacion
+OK - 5 verificaciones de simulación superadas.
+

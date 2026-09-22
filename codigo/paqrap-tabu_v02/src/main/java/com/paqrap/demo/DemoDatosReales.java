@@ -7,11 +7,16 @@ import com.paqrap.datos.LectorVentas;
 import com.paqrap.modelo.Bloqueo;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.PlanMantenimiento;
+import com.paqrap.planificador.ConstructorVecinoMasCercano;
 import com.paqrap.planificador.EnrutadorBloqueos;
+import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.Grasp;
 import com.paqrap.planificador.MapaBloqueos;
 import com.paqrap.planificador.Parametros;
+import com.paqrap.planificador.Planificador;
 import com.paqrap.planificador.tabu.BusquedaTabu;
 import com.paqrap.simulacion.ResumenSimulacion;
+import com.paqrap.simulacion.Ritmo;
 import com.paqrap.simulacion.Simulador;
 
 import java.io.IOException;
@@ -30,7 +35,17 @@ import java.util.List;
  * Ejecutar con:
  *   java -cp target/classes com.paqrap.demo.DemoDatosReales [dias] [carpeta] [iteracionesTabu] [limiteMs] [minutosEntrePlanes]
  *
- * Por defecto simula 5 dias de setiembre de 2026 leyendo de datos/reales.
+ * Por defecto simula 5 dias de setiembre de 2026 leyendo de datos/reales con la busqueda tabu,
+ * a fondo y sin esperar: es el modo de medicion.
+ *
+ * Propiedades:
+ *   -Dpaqrap.algoritmo=tabu|grasp|constructivo   cual planificador corre la operacion
+ *   -Dpaqrap.seguir=P-00689                      traza un pedido en cada replanificacion
+ *   -Dpaqrap.sa=5000                             salto del algoritmo (Sa) en milisegundos
+ *   -Dpaqrap.k=14                                proporcionalidad del tiempo (K)
+ *
+ * Indicando Sa y K la corrida pasa a ir al paso de un reloj real, que es el modo para mostrar
+ * el mapa: cada salto dura Sa y consume Sc = Sa x K de operacion. Sin ellos manda el latido.
  */
 public final class DemoDatosReales {
     private static final Path CARPETA_POR_DEFECTO = Path.of("datos", "reales");
@@ -87,8 +102,18 @@ public final class DemoDatosReales {
                 .construir();
 
         EnrutadorBloqueos enrutador = new EnrutadorBloqueos(mapa);
+        Planificador planificador = planificadorElegido(new Evaluador(enrutador));
+        System.out.println("Planificador: " + planificador.getClass().getSimpleName());
+
+        Ritmo ritmo = ritmoElegido();
+        if (ritmo != null) {
+            System.out.println("Ritmo: " + ritmo + "  (la corrida va al paso de un reloj real)");
+            System.out.printf("  Duracion estimada en pantalla: %.1f min para %d dias%n",
+                    dias * 24.0 * 60 / ritmo.proporcionalidad(), dias);
+        }
+
         Simulador simulador = new Simulador(
-                new BusquedaTabu(enrutador),
+                planificador,
                 enrutador,
                 DatosCaso.almacenes(),
                 parametros,
@@ -97,6 +122,10 @@ public final class DemoDatosReales {
         ).conMantenimiento(mantenimiento)
                 .conEventosDeBloqueo(mapa)
                 .conIntervaloMinimo(Duration.ofMinutes(minutosMinimos));
+
+        if (ritmo != null) {
+            simulador.conRitmo(ritmo);
+        }
 
         String seguido = System.getProperty("paqrap.seguir");
         if (seguido != null) {
@@ -110,6 +139,42 @@ public final class DemoDatosReales {
 
         Reporte.imprimirResumen(resumen, transcurrido);
         Reporte.imprimirEvolucionDiaria(resumen);
+    }
+
+    /**
+     * Cual de los tres planificadores corre la simulacion. La comparacion por plan mide una
+     * planificacion aislada; esta corre la operacion entera, que es donde se ve si una ventaja
+     * por plan se sostiene cuando cada decision condiciona a la siguiente.
+     */
+    private static Planificador planificadorElegido(Evaluador evaluador) {
+        String elegido = System.getProperty("paqrap.algoritmo", "tabu").toLowerCase();
+        return switch (elegido) {
+            case "grasp" -> new Grasp(evaluador);
+            case "constructivo" -> new ConstructorVecinoMasCercano(evaluador);
+            case "tabu" -> new BusquedaTabu(evaluador);
+            default -> throw new IllegalArgumentException(
+                    "paqrap.algoritmo debe ser tabu, grasp o constructivo, y fue: " + elegido);
+        };
+    }
+
+    /**
+     * Ritmo de reloj, si se pidieron Sa y K.
+     *
+     * Son dos propiedades y no argumentos posicionales porque la mayoria de las corridas son de
+     * medicion y no quieren ritmo: agregarlas al final de la lista obligaria a repetir los seis
+     * argumentos anteriores cada vez.
+     */
+    private static Ritmo ritmoElegido() {
+        String sa = System.getProperty("paqrap.sa");
+        String k = System.getProperty("paqrap.k");
+        if (sa == null && k == null) {
+            return null;
+        }
+        if (sa == null || k == null) {
+            throw new IllegalArgumentException(
+                    "Para fijar el ritmo hacen falta las dos: -Dpaqrap.sa y -Dpaqrap.k.");
+        }
+        return new Ritmo(Duration.ofMillis(Long.parseLong(sa)), Double.parseDouble(k));
     }
 
     private static void imprimirMantenimientoDelPeriodo(

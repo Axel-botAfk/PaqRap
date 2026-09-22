@@ -17,6 +17,8 @@ public final class Parametros {
     private static final double PENALIDAD_NO_ASIGNADO_POR_DEFECTO = 10_000.0;
     private static final int VIAJES_CANDIDATOS_POR_DEFECTO = 15;
     private static final int UNIDADES_CANDIDATAS_POR_DEFECTO = 10;
+    private static final int PASADAS_BUSQUEDA_LOCAL_POR_DEFECTO = 2;
+    private static final int VIAJES_BUSQUEDA_LOCAL_POR_DEFECTO = 4;
 
     private final int maxIteraciones;
     private final double alfa;
@@ -32,6 +34,8 @@ public final class Parametros {
     private final double radioVecindarioKm;
     private final int viajesCandidatosPorPedido;
     private final int unidadesCandidatasPorPedido;
+    private final int pasadasBusquedaLocal;
+    private final int viajesCandidatosBusquedaLocal;
 
     public Parametros(int maxIteraciones, double alfa, long semilla) {
         this(new Constructor(maxIteraciones, alfa, semilla));
@@ -51,6 +55,8 @@ public final class Parametros {
         this.radioVecindarioKm = constructor.radioVecindarioKm;
         this.viajesCandidatosPorPedido = constructor.viajesCandidatosPorPedido;
         this.unidadesCandidatasPorPedido = constructor.unidadesCandidatasPorPedido;
+        this.pasadasBusquedaLocal = constructor.pasadasBusquedaLocal;
+        this.viajesCandidatosBusquedaLocal = constructor.viajesCandidatosBusquedaLocal;
     }
 
     public static Constructor constructor(int maxIteraciones, double alfa, long semilla) {
@@ -124,6 +130,19 @@ public final class Parametros {
         return unidadesCandidatasPorPedido;
     }
 
+    /**
+     * Cuántas pasadas completas da la búsqueda local de GRASP sobre cada solución construida.
+     * Se detiene antes si una pasada no encuentra ninguna mejora.
+     */
+    public int getPasadasBusquedaLocal() {
+        return pasadasBusquedaLocal;
+    }
+
+    /** Cuántos viajes cercanos explora la búsqueda local por cada pedido. */
+    public int getViajesCandidatosBusquedaLocal() {
+        return viajesCandidatosBusquedaLocal;
+    }
+
     public static final class Constructor {
         private final int maxIteraciones;
         private final double alfa;
@@ -139,6 +158,8 @@ public final class Parametros {
         private double radioVecindarioKm = Double.POSITIVE_INFINITY;
         private int viajesCandidatosPorPedido = VIAJES_CANDIDATOS_POR_DEFECTO;
         private int unidadesCandidatasPorPedido = UNIDADES_CANDIDATAS_POR_DEFECTO;
+        private int pasadasBusquedaLocal = PASADAS_BUSQUEDA_LOCAL_POR_DEFECTO;
+        private int viajesCandidatosBusquedaLocal = VIAJES_BUSQUEDA_LOCAL_POR_DEFECTO;
 
         private Constructor(int maxIteraciones, double alfa, long semilla) {
             if (maxIteraciones <= 0) {
@@ -229,6 +250,23 @@ public final class Parametros {
                 throw new IllegalArgumentException("unidadesCandidatasPorPedido debe ser mayor que cero.");
             }
             this.unidadesCandidatasPorPedido = valor;
+            return this;
+        }
+
+        public Constructor pasadasBusquedaLocal(int valor) {
+            if (valor < 0) {
+                throw new IllegalArgumentException("pasadasBusquedaLocal no puede ser negativa.");
+            }
+            this.pasadasBusquedaLocal = valor;
+            return this;
+        }
+
+        public Constructor viajesCandidatosBusquedaLocal(int valor) {
+            if (valor <= 0) {
+                throw new IllegalArgumentException(
+                        "viajesCandidatosBusquedaLocal debe ser mayor que cero.");
+            }
+            this.viajesCandidatosBusquedaLocal = valor;
             return this;
         }
 

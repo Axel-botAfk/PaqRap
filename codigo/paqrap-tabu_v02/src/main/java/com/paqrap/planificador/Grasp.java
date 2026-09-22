@@ -18,7 +18,17 @@ import java.util.Objects;
 import java.util.Random;
 
 /**
- * Fase constructiva de GRASP para PaqRap.
+ * GRASP para PaqRap: construcción golosa aleatorizada más búsqueda local, repetidas.
+ *
+ * Cada iteración arma una solución completa desde cero con una lista restringida de candidatos
+ * gobernada por alfa, y después la lleva a un óptimo local con {@link BusquedaLocal}. Al final se
+ * devuelve la mejor de todas las iteraciones. Las dos fases por iteración son lo que distingue a
+ * GRASP de un constructivo goloso corrido varias veces: sin la búsqueda local, más presupuesto
+ * solo significa volver a muestrear la misma distribución.
+ *
+ * Es independiente de la búsqueda tabú: no comparte con ella ni el punto de partida ni la
+ * maquinaria de movimientos. Lo único común es el {@link Evaluador}, para que las dos midan con
+ * la misma regla y la comparación tenga sentido.
  *
  * Alcance:
  * - inserciones factibles pedido/almacén/unidad/posición;
@@ -29,16 +39,16 @@ import java.util.Random;
  * - holgura;
  * - LRC controlada por alfa;
  * - selección aleatoria reproducible por semilla;
+ * - búsqueda local por reubicación, intercambio e incorporación de pedidos sin asignar;
  * - pedidos no asignados.
  *
- * La fase de mejora vive en {@link com.paqrap.planificador.tabu.BusquedaTabu}, que parte
- * de la solución construida aquí. Aún NO se implementan entregas parciales, turnos, averías
- * ni replanificación.
+ * Aún no se implementan entregas parciales, turnos ni averías.
  */
 public final class Grasp implements Planificador {
     public static final String NOMBRE = "GRASP";
 
     private final Evaluador evaluador;
+    private final BusquedaLocal busquedaLocal;
 
     public Grasp(CalculadorDistancia calculadorDistancia) {
         this(new Evaluador(calculadorDistancia));
@@ -46,6 +56,7 @@ public final class Grasp implements Planificador {
 
     public Grasp(Evaluador evaluador) {
         this.evaluador = Objects.requireNonNull(evaluador);
+        this.busquedaLocal = new BusquedaLocal(this.evaluador);
     }
 
     public Evaluador getEvaluador() {
@@ -60,11 +71,14 @@ public final class Grasp implements Planificador {
         Random random = new Random(parametros.getSemilla());
         Map<String, LocalDateTime> limites = limitesEfectivos(estado);
         Solucion mejor = null;
+        double valorMejor = Double.POSITIVE_INFINITY;
 
         for (int iteracion = 0; iteracion < parametros.getMaxIteraciones(); iteracion++) {
             Solucion candidata = construirUnaSolucion(estado, parametros, random, limites);
-            if (mejor == null || esMejor(candidata, mejor)) {
+            double valor = evaluador.objetivo(candidata, estado, parametros);
+            if (mejor == null || valor < valorMejor) {
                 mejor = candidata;
+                valorMejor = valor;
             }
         }
 
@@ -157,6 +171,13 @@ public final class Grasp implements Planificador {
             pendientes.remove(elegida.pedido());
         }
 
+        // Segunda fase de la iteración GRASP: llevar la solución recién construida a un óptimo
+        // local. Reubicar la última entrega de un viaje lo deja vacío, así que se depuran antes
+        // de medir; y las métricas hay que volcarlas de nuevo porque la búsqueda movió entregas
+        // y las que dejó el contexto quedaron viejas.
+        busquedaLocal.mejorar(solucion, estado, parametros);
+        solucion.depurarRutasVacias();
+        evaluador.sincronizarMetricas(solucion, estado);
         return solucion;
     }
 
@@ -381,17 +402,6 @@ public final class Grasp implements Planificador {
         }
 
         contexto.refrescar(solucion, insercion.vehiculo());
-    }
-
-    private boolean esMejor(Solucion candidata, Solucion actual) {
-        // Política alineada con el caso: primero cumplir pedidos/plazos, después minimizar costo.
-        int noAsignadosCandidata = candidata.getPedidosNoAsignados().size();
-        int noAsignadosActual = actual.getPedidosNoAsignados().size();
-
-        if (noAsignadosCandidata != noAsignadosActual) {
-            return noAsignadosCandidata < noAsignadosActual;
-        }
-        return candidata.getCostoTotal() < actual.getCostoTotal();
     }
 
     private record Insercion(

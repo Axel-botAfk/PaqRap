@@ -36,6 +36,20 @@ import java.util.Objects;
  * horizonte y distinta demanda, así que aquí vive una sola: el reloj avanza a saltos fijos y,
  * en cada salto, se vuelve a planificar con lo que se sabe en ese momento.
  *
+ * <h2>El ritmo: Ta, Sa y K</h2>
+ *
+ * Por defecto la corrida va a fondo: se planifica, se ejecuta y se salta al evento siguiente sin
+ * esperar nada. Sirve para medir, no para mirar.
+ *
+ * Con {@link #conRitmo(Ritmo)} la corrida pasa a ir al paso de un reloj de verdad, que es lo que
+ * hace falta para dibujar el mapa: cada salto dura {@code Sa} de tiempo real y consume
+ * {@code Sc = Sa × K} de tiempo de la operación. El tiempo de ejecución del planificador,
+ * {@code Ta}, se mide siempre —con ritmo o sin él— y queda en el resumen junto al tamaño de cola
+ * de cada corrida, porque Ta no es un número sino un rango que crece con la cola.
+ *
+ * Fijar el ritmo no cambia ni una decisión del planificador: solo decide cuánto tiempo de
+ * operación se resuelve por vez y cuánto se espera entre una corrida y la siguiente.
+ *
  * <h2>Cuándo se replanifica</h2>
  *
  * No en una grilla fija sino cuando pasa algo que puede cambiar la decisión:
@@ -87,11 +101,13 @@ public final class Simulador {
     private final CalculadorDistancia distancias;
     private final Parametros parametros;
     private final List<Almacen> almacenes;
-    private final Duration intervalo;
+    private Duration intervalo;
     private final boolean detenerAlColapsar;
     private final int pedidosPorIteracion;
     private PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
     private String pedidoEnSeguimiento;
+    private Ritmo ritmo;
+    private Observador observador = (reloj, estado, plan, medicion) -> { };
     private MapaBloqueos bloqueos = MapaBloqueos.vacio();
     private Duration intervaloMinimo = INTERVALO_MINIMO_POR_DEFECTO;
 
@@ -148,6 +164,25 @@ public final class Simulador {
      */
     public Simulador conMantenimiento(PlanMantenimiento plan) {
         this.mantenimiento = Objects.requireNonNull(plan);
+        return this;
+    }
+
+    /**
+     * Ritmo de reloj de la corrida.
+     *
+     * El salto del consumo del ritmo reemplaza al latido: es el tiempo de operación que avanza
+     * en cada salto. Y entre corrida y corrida se espera lo que falte para completar el salto
+     * del algoritmo, de modo que la operación se vea avanzar a velocidad constante.
+     */
+    public Simulador conRitmo(Ritmo ritmo) {
+        this.ritmo = Objects.requireNonNull(ritmo);
+        this.intervalo = ritmo.saltoDelConsumo();
+        return this;
+    }
+
+    /** Qué hacer con cada plan recién calculado; es el enganche para dibujar el mapa. */
+    public Simulador observadoPor(Observador observador) {
+        this.observador = Objects.requireNonNull(observador);
         return this;
     }
 
@@ -210,6 +245,7 @@ public final class Simulador {
         Map<LocalDate, Integer> entregasPorDia = new LinkedHashMap<>();
         Map<LocalDate, Integer> colaAlCierreDelDia = new LinkedHashMap<>();
 
+        List<MedicionDePlanificacion> mediciones = new ArrayList<>();
         Acumulado acumulado = new Acumulado();
         int recibidos = 0;
         int iteraciones = 0;
@@ -217,6 +253,8 @@ public final class Simulador {
         LocalDateTime reloj = inicio;
 
         while (reloj.isBefore(fin)) {
+            long arranqueDelSalto = System.currentTimeMillis();
+
             // Primero entran los pedidos que ya llegaron: recién entonces la cabeza de la cola
             // es la próxima llegada de verdad, que es el evento que dispara el corte siguiente.
             while (!porLlegar.isEmpty() && !porLlegar.get(0).getFechaRegistro().isAfter(reloj)) {
@@ -238,8 +276,14 @@ public final class Simulador {
 
                 long antes = System.currentTimeMillis();
                 Solucion plan = planificador.planificar(estado, parametros);
-                computo += System.currentTimeMillis() - antes;
+                long ta = System.currentTimeMillis() - antes;
+                computo += ta;
                 iteraciones++;
+
+                MedicionDePlanificacion medicion =
+                        new MedicionDePlanificacion(reloj, estado.getPedidos().size(), ta);
+                mediciones.add(medicion);
+                observador.alPlanificar(reloj, estado, plan, medicion);
 
                 if (pedidoEnSeguimiento != null) {
                     informarSeguimiento(reloj, estado, plan, pendientes);
@@ -264,6 +308,7 @@ public final class Simulador {
 
             colaAlCierreDelDia.put(corte.toLocalDate(), pendientes.size());
             reloj = corte;
+            esperarElSalto(arranqueDelSalto);
 
             if (detenerAlColapsar && !vencidos.isEmpty()) {
                 break;
@@ -289,6 +334,8 @@ public final class Simulador {
                 acumulado.costo,
                 iteraciones,
                 computo,
+                List.copyOf(mediciones),
+                ritmo,
                 primerVencido,
                 primerVencido == null ? null : primerVencido.getFechaLimite(),
                 List.copyOf(vencidos),
@@ -388,6 +435,28 @@ public final class Simulador {
             }
 
             unidades.put(unidad.getId(), unidad.tras(posicion, libre));
+        }
+    }
+
+    /**
+     * Espera lo que falte para completar el salto del algoritmo.
+     *
+     * Sin ritmo fijado no se espera nada y la corrida va a fondo. Con ritmo, si la planificación
+     * ya consumió todo el salto no se espera —no se puede recuperar el tiempo perdido— y el
+     * resumen lo contabiliza como un salto rebasado.
+     */
+    private void esperarElSalto(long arranqueDelSalto) {
+        if (ritmo == null) {
+            return;
+        }
+        long restante = ritmo.milisegundosDelSalto() - (System.currentTimeMillis() - arranqueDelSalto);
+        if (restante <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(restante);
+        } catch (InterruptedException interrupcion) {
+            Thread.currentThread().interrupt();
         }
     }
 

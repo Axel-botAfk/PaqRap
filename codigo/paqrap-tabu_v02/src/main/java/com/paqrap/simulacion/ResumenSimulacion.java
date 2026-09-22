@@ -4,6 +4,7 @@ import com.paqrap.modelo.Pedido;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +27,8 @@ public record ResumenSimulacion(
         double costoTotal,
         int iteracionesDePlanificacion,
         long milisegundosDeComputo,
+        List<MedicionDePlanificacion> medicionesDePlanificacion,
+        Ritmo ritmo,
         Pedido pedidoQueColapso,
         LocalDateTime instanteDelColapso,
         List<Pedido> vencidos,
@@ -36,6 +39,78 @@ public record ResumenSimulacion(
 ) {
     public boolean huboColapso() {
         return pedidoQueColapso != null;
+    }
+
+    /** Ta más corto observado, en milisegundos. */
+    public long taMinimoMs() {
+        return medicionesDePlanificacion.stream()
+                .mapToLong(MedicionDePlanificacion::milisegundos).min().orElse(0L);
+    }
+
+    /** Ta más largo observado: es el que tiene que caber en el salto del algoritmo. */
+    public long taMaximoMs() {
+        return medicionesDePlanificacion.stream()
+                .mapToLong(MedicionDePlanificacion::milisegundos).max().orElse(0L);
+    }
+
+    public long taPromedioMs() {
+        return Math.round(medicionesDePlanificacion.stream()
+                .mapToLong(MedicionDePlanificacion::milisegundos).average().orElse(0.0));
+    }
+
+    /**
+     * Cola más larga que llegó a planificarse. Junto con {@link #taMaximoMs()} es lo que define
+     * el peor caso que el salto del algoritmo tiene que aguantar.
+     */
+    public int colaMaximaPlanificada() {
+        return medicionesDePlanificacion.stream()
+                .mapToInt(MedicionDePlanificacion::pedidosEnCola).max().orElse(0);
+    }
+
+    /**
+     * Planificaciones que tardaron más que el salto del algoritmo.
+     *
+     * Cada una es un momento en que la corrida siguiente habría arrancado sobre una que no
+     * terminó. Con cero, el ritmo elegido aguanta; con más de cero, hay que agrandar Sa o
+     * acotar el tiempo del planificador.
+     */
+    public int planificacionesQueRebasaronElSalto() {
+        if (ritmo == null) {
+            return 0;
+        }
+        int rebasadas = 0;
+        for (MedicionDePlanificacion medicion : medicionesDePlanificacion) {
+            if (medicion.milisegundos() > ritmo.milisegundosDelSalto()) {
+                rebasadas++;
+            }
+        }
+        return rebasadas;
+    }
+
+    /** Ta contra tamaño de cola, agrupado en tramos, que es como se dimensiona el salto. */
+    public Map<String, long[]> taPorTamanoDeCola() {
+        int[] cortes = {10, 25, 50, 100, 200, Integer.MAX_VALUE};
+        String[] nombres = {"1-10", "11-25", "26-50", "51-100", "101-200", "201+"};
+
+        Map<String, long[]> porTramo = new LinkedHashMap<>();
+        for (int i = 0; i < nombres.length; i++) {
+            for (MedicionDePlanificacion medicion : medicionesDePlanificacion) {
+                if (medicion.pedidosEnCola() > cortes[i]) {
+                    continue;
+                }
+                if (i > 0 && medicion.pedidosEnCola() <= cortes[i - 1]) {
+                    continue;
+                }
+                // {cantidad, minimo, maximo, suma}
+                long[] acumulado = porTramo.computeIfAbsent(
+                        nombres[i], clave -> new long[]{0, Long.MAX_VALUE, 0, 0});
+                acumulado[0]++;
+                acumulado[1] = Math.min(acumulado[1], medicion.milisegundos());
+                acumulado[2] = Math.max(acumulado[2], medicion.milisegundos());
+                acumulado[3] += medicion.milisegundos();
+            }
+        }
+        return porTramo;
     }
 
     /**

@@ -4,10 +4,12 @@ import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.simulacion.ResumenSimulacion;
+import com.paqrap.simulacion.Ritmo;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -110,6 +112,8 @@ public final class Reporte {
         );
         System.out.printf("Tiempo de reloj de la corrida: %.1f s%n", milisegundosDeReloj / 1000.0);
 
+        imprimirRitmo(resumen, milisegundosDeReloj);
+
         if (resumen.huboColapso() && resumen.vencidosPorLaOperacion() == 0) {
             System.out.println();
             System.out.println("SIN COLAPSO LOGISTICO");
@@ -141,6 +145,64 @@ public final class Reporte {
     }
 
     /** Llegadas, entregas y cola al cierre de cada dia: donde se quiebra la operacion. */
+    /**
+     * Los tres tiempos de la planificación programada.
+     *
+     * Ta se informa como rango y por tamaño de cola, no como promedio: el salto del algoritmo
+     * tiene que aguantar el peor caso —la cola más larga, la que aparece cerca del colapso— y un
+     * promedio lo esconde. Si hay ritmo fijado se informa además cuántas veces una planificación
+     * se pasó del salto, que es la condición que tumba la solución.
+     */
+    private static void imprimirRitmo(ResumenSimulacion resumen, long milisegundosDeReloj) {
+        if (resumen.iteracionesDePlanificacion() == 0) {
+            return;
+        }
+
+        System.out.println();
+        System.out.println("--- Ritmo de la planificacion ---");
+        System.out.printf(
+                "Ta (tiempo de ejecucion): %d ms minimo | %d ms promedio | %d ms maximo%n",
+                resumen.taMinimoMs(), resumen.taPromedioMs(), resumen.taMaximoMs());
+        System.out.printf("  El maximo se dio con una cola de hasta %d pedidos.%n",
+                resumen.colaMaximaPlanificada());
+
+        System.out.println("  Ta por tamano de cola:");
+        System.out.printf("    %-10s %8s %8s %8s %8s%n", "cola", "corridas", "min ms", "prom ms", "max ms");
+        for (Map.Entry<String, long[]> tramo : resumen.taPorTamanoDeCola().entrySet()) {
+            long[] datos = tramo.getValue();
+            System.out.printf("    %-10s %8d %8d %8d %8d%n",
+                    tramo.getKey(), datos[0], datos[1], datos[3] / datos[0], datos[2]);
+        }
+
+        Ritmo ritmo = resumen.ritmo();
+        if (ritmo == null) {
+            double kEfectivo = milisegundosDeReloj == 0
+                    ? 0.0
+                    : (double) Duration.between(resumen.inicio(), resumen.fin()).toMillis()
+                            / milisegundosDeReloj;
+            System.out.println("Sa y K: sin ritmo fijado, la corrida fue a fondo (modo medicion).");
+            System.out.printf("  K efectivo: %.0f (%.1f min simulados por segundo real)%n",
+                    kEfectivo, kEfectivo * 60 / 1000.0);
+            return;
+        }
+
+        System.out.println("Ritmo fijado: " + ritmo);
+        System.out.printf("  Ocupacion del salto: %.1f%% en promedio | %.1f%% en el peor caso%n",
+                100 * ritmo.ocupacion(resumen.taPromedioMs()),
+                100 * ritmo.ocupacion(resumen.taMaximoMs()));
+
+        int rebasadas = resumen.planificacionesQueRebasaronElSalto();
+        if (rebasadas == 0) {
+            System.out.println("  Ninguna planificacion se paso del salto: el ritmo aguanta.");
+        } else {
+            System.out.printf(
+                    "  ATENCION: %d de %d planificaciones se pasaron del salto (Ta > Sa).%n",
+                    rebasadas, resumen.iteracionesDePlanificacion());
+            System.out.println("  Con ese ritmo la corrida siguiente arranca sobre una que no termino.");
+            System.out.printf("  Para este Ta maximo haria falta Sa > %d ms.%n", resumen.taMaximoMs());
+        }
+    }
+
     public static void imprimirEvolucionDiaria(ResumenSimulacion resumen) {
         System.out.println();
         System.out.println("Evolucion diaria:");

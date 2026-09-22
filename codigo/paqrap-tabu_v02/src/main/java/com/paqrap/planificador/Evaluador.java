@@ -263,10 +263,24 @@ public final class Evaluador {
     }
 
     /**
-     * Valor a minimizar: costo de operación más una penalidad por cada pedido sin atender.
-     * La penalidad es alta a propósito para reproducir la política de GRASP —primero cubrir
-     * pedidos, después abaratar—, pero permite que la búsqueda compare planes que difieren
-     * en cobertura y costo a la vez. Devuelve infinito si el plan viola alguna restricción.
+     * Valor a minimizar: entregar lo máximo posible al menor costo posible.
+     *
+     * <pre>
+     *   objetivo = costo de operación + penalidadNoAsignado x pedidos que nadie atiende
+     * </pre>
+     *
+     * El orden entre los dos criterios no es negociable: primero cubrir, después abaratar. Entre
+     * dos planes que atienden a los mismos clientes gana siempre el más barato, y ningún ahorro
+     * compra dejar un pedido afuera.
+     *
+     * La penalidad funciona como orden lexicográfico y no como un canje real porque domina por
+     * un orden de magnitud lo que se juega en el margen: sumar una entrega más a un plan cuesta
+     * unos cientos de soles —el desvío hasta el cliente y lo que retrasa al resto del viaje—,
+     * contra los 10 000 de dejarla sin atender. Lo que importa es esa comparación marginal, no
+     * el costo total del plan.
+     *
+     * Devuelve infinito si el plan viola alguna restricción, de modo que la búsqueda nunca puede
+     * elegir un plan inviable por barato que parezca.
      */
     public double objetivo(Solucion solucion, EstadoOperacion estado, Parametros parametros) {
         ResultadoPlan resultado = evaluarPlan(solucion, estado);

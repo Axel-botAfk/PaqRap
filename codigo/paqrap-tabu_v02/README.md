@@ -68,12 +68,22 @@ new BusquedaTabu(evaluador, new Grasp(evaluador));
 
 ### Vecino más cercano — construcción de la tabú
 
-Recorre las unidades de la más barata por kilómetro a la más cara y con cada una arma viajes
-hasta que no pueda más: carga en el almacén con producto más cercano, y desde donde esté mira
-los `k` pedidos pendientes más cercanos que quepan, eligiendo de esos el de plazo más apretado.
-El filtro por cercanía es lo que la hace barata; el desempate por urgencia evita que un vecino
-más cercano puro deje vencer los pedidos priorizados. Con `k=1` queda el vecino más cercano
-clásico. Es determinista: no usa la semilla.
+Recorre los pedidos por urgencia y para cada uno elige la unidad que mejor puede atenderlo,
+entre las `k` más cercanas con capacidad suficiente y tomando al menos una cuota de cada tipo.
+Por cada candidata evalúa dos alternativas sobre su programa completo —sumar la entrega al
+final de su último viaje, o estrenar uno cargando en el almacén con producto más cercano— y se
+queda con la más barata. Es determinista: no usa la semilla.
+
+**Es un reparto en paralelo, no unidad por unidad.** La primera versión llenaba cada unidad
+hasta agotarla antes de pasar a la siguiente, empezando por las más baratas. Con una cola de
+unas decenas de pedidos —lo normal en la operación— eso significaba que bicicletas y motos se
+llevaban casi todo y los diez autos quedaban parados: sobre los datos reales del caso la flota
+operaba al 43% mientras se vencían plazos. Recorriendo los pedidos y no las unidades, el
+trabajo se reparte solo, porque una unidad ya ocupada encarece la siguiente inserción.
+
+La cuota por tipo entre las candidatas es igual de importante, y también aplica a GRASP: al
+arrancar un escenario toda la flota está en el mismo almacén, así que todas empatan en
+distancia y un recorte por cercanía a secas se queda siempre con las mismas.
 
 ### Búsqueda tabú — mejora
 
@@ -152,8 +162,25 @@ para mucho más. Dos intentos de subirlo **no funcionaron** y quedaron medidos:
 
 Por eso la rampa del escenario de colapso está calibrada contra ese techo y no al revés. Con
 +8 pedidos por día la operación **aguanta 29 días** antes de quebrarse, con la cola subiendo de
-forma visible durante la última semana. Pedirle que dure más exige cambiar la operación —más
-flota, o pedidos más chicos—, no afinar el planificador.
+forma visible durante la última semana.
+
+> Estas mediciones son anteriores al reparto en paralelo. Con el constructivo corregido la
+> sonda ya no registra vencimientos hasta 300 pedidos por día, de modo que el techo quedó más
+> arriba y conviene volver a correr `DemoCapacidad` antes de recalibrar la rampa.
+
+## Datos reales del caso
+
+`datos/reales/` tiene los archivos entregados por el equipo docente: ventas y bloqueos de
+setiembre y octubre de 2026, más el plan de mantenimiento preventivo. `DemoDatosReales` corre
+los tres a la vez.
+
+Los formatos de registro coinciden con los del enunciado. La única diferencia está en los
+nombres: los archivos de bloqueos vienen como `bloqueo.2609.txt`, con el año en dos dígitos, de
+modo que el lector acepta tanto `aaaamm` como `aamm`.
+
+La demanda real es más exigente que la sintética: 172 pedidos por día en promedio con picos de
+217, y **59% de pedidos priorizados** contra el 30% que generábamos. Sobre diez días de
+setiembre el planificador entrega el 95,9% con un único pedido vencido.
 
 ### Costo de la construcción
 

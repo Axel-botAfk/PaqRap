@@ -4,6 +4,7 @@ import com.paqrap.modelo.Almacen;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
+import com.paqrap.modelo.TipoVehiculo;
 import com.paqrap.modelo.Vehiculo;
 
 import java.time.LocalDateTime;
@@ -57,10 +58,11 @@ public final class Grasp implements Planificador {
         Objects.requireNonNull(parametros);
 
         Random random = new Random(parametros.getSemilla());
+        Map<String, LocalDateTime> limites = limitesEfectivos(estado);
         Solucion mejor = null;
 
         for (int iteracion = 0; iteracion < parametros.getMaxIteraciones(); iteracion++) {
-            Solucion candidata = construirUnaSolucion(estado, parametros, random);
+            Solucion candidata = construirUnaSolucion(estado, parametros, random, limites);
             if (mejor == null || esMejor(candidata, mejor)) {
                 mejor = candidata;
             }
@@ -86,7 +88,25 @@ public final class Grasp implements Planificador {
         );
     }
 
-    private Solucion construirUnaSolucion(EstadoOperacion estado, Parametros parametros, Random random) {
+    /**
+     * Hasta cuándo se le puede entregar de verdad a cada pedido: lo primero entre su plazo y el
+     * cierre de la esquina de su destino. Se calcula una vez por planificación, porque solo
+     * depende del destino y del reloj, y todas las iteraciones de GRASP comparten el resultado.
+     */
+    private Map<String, LocalDateTime> limitesEfectivos(EstadoOperacion estado) {
+        Map<String, LocalDateTime> limites = new HashMap<>();
+        for (Pedido pedido : estado.getPedidos()) {
+            limites.put(pedido.getId(), evaluador.limiteEfectivo(pedido, estado.getReloj()));
+        }
+        return limites;
+    }
+
+    private Solucion construirUnaSolucion(
+            EstadoOperacion estado,
+            Parametros parametros,
+            Random random,
+            Map<String, LocalDateTime> limites
+    ) {
         double alfa = parametros.getAlfa();
         Solucion solucion = new Solucion();
         solucion.setAlgoritmo(NOMBRE);
@@ -97,7 +117,7 @@ public final class Grasp implements Planificador {
                 pendientes.add(pedido);
             }
         }
-        pendientes.sort(Comparator.comparing(Pedido::getFechaLimite));
+        pendientes.sort(Comparator.comparing(pedido -> limites.get(pedido.getId())));
 
         Contexto contexto = new Contexto(estado, evaluador);
 
@@ -105,7 +125,7 @@ public final class Grasp implements Planificador {
             // Solo compiten los pedidos con el plazo más apretado, que son los únicos que la
             // lista restringida puede elegir. Generar candidatos para todos los pendientes en
             // cada inserción volvía la construcción cuadrática con cientos de pedidos en cola.
-            List<Pedido> masUrgentes = grupoMasUrgente(pendientes);
+            List<Pedido> masUrgentes = grupoMasUrgente(pendientes, limites);
             List<Insercion> inserciones =
                     generarInsercionesFactibles(solucion, masUrgentes, estado, contexto, parametros);
 
@@ -124,12 +144,13 @@ public final class Grasp implements Planificador {
             // la ciudad llegan más tarde, dejan menos holgura y quedarían primeras. La holgura
             // sigue usándose para desempatar, pero prefiriendo la entrega con más margen.
             inserciones.sort(
-                    Comparator.comparing((Insercion insercion) -> insercion.pedido().getFechaLimite())
+                    Comparator.comparing(
+                                    (Insercion insercion) -> limites.get(insercion.pedido().getId()))
                             .thenComparingDouble(Insercion::costoIncremental)
                             .thenComparing(Comparator.comparingDouble(Insercion::holguraHoras).reversed())
             );
 
-            List<Insercion> lrc = construirListaRestringida(inserciones, alfa);
+            List<Insercion> lrc = construirListaRestringida(inserciones, alfa, limites);
             Insercion elegida = lrc.get(random.nextInt(lrc.size()));
 
             aplicarInsercion(solucion, elegida, contexto);
@@ -185,12 +206,19 @@ public final class Grasp implements Planificador {
         return resultado;
     }
 
-    /** Pedidos que comparten el plazo más apretado de la cola, que viene ordenada por plazo. */
-    private List<Pedido> grupoMasUrgente(List<Pedido> pendientes) {
-        LocalDateTime plazo = pendientes.get(0).getFechaLimite();
+    /**
+     * Pedidos que comparten el límite efectivo más apretado de la cola, que viene ordenada por
+     * ese límite. No es la fecha límite del cliente: si la esquina del destino se cierra antes,
+     * manda el cierre, porque es entonces cuando el pedido deja de poder entregarse.
+     */
+    private List<Pedido> grupoMasUrgente(
+            List<Pedido> pendientes,
+            Map<String, LocalDateTime> limites
+    ) {
+        LocalDateTime limite = limites.get(pendientes.get(0).getId());
         List<Pedido> grupo = new ArrayList<>();
         for (Pedido pedido : pendientes) {
-            if (!pedido.getFechaLimite().equals(plazo)) {
+            if (!limites.get(pedido.getId()).equals(limite)) {
                 break;
             }
             grupo.add(pedido);
@@ -232,36 +260,61 @@ public final class Grasp implements Planificador {
     }
 
     /**
-     * Unidades con capacidad suficiente, ordenadas por cercanía a la entrega y, a igual
-     * distancia, por costo por kilómetro.
+     * Unidades con capacidad suficiente más cercanas a la entrega, tomando al menos una cuota
+     * de cada tipo.
      *
-     * El desempate por costo importa: al inicio de un escenario toda la flota está en el mismo
-     * almacén, así que sin él el recorte se quedaría con las primeras de la lista —los autos,
-     * que son las más caras— y descartaría motos y bicicletas que harían el mismo trabajo por
-     * menos.
+     * La cuota por tipo es lo que importa: al arrancar un escenario toda la flota está en el
+     * mismo almacén, así que todas quedan empatadas en distancia y un recorte por cercanía a
+     * secas se queda siempre con las mismas. Ordenando además por costo se quedaba con las doce
+     * bicicletas y los diez autos nunca llegaban a ser candidatos, de modo que la flota operaba
+     * a menos de la mitad de su capacidad mientras se vencían plazos.
      */
     private List<Vehiculo> unidadesCercanas(EstadoOperacion estado, Pedido pedido, int cuantas) {
-        List<Vehiculo> aptas = new ArrayList<>();
+        Map<TipoVehiculo, List<Vehiculo>> porTipo = new LinkedHashMap<>();
         for (Vehiculo vehiculo : estado.getVehiculos()) {
             if (vehiculo.getEstado().admiteAsignacion()
                     && pedido.getCantidad() <= vehiculo.getCapacidad()) {
-                aptas.add(vehiculo);
+                porTipo.computeIfAbsent(vehiculo.getTipo(), tipo -> new ArrayList<>()).add(vehiculo);
             }
         }
-        if (aptas.size() <= cuantas) {
-            return aptas;
+        if (porTipo.isEmpty()) {
+            return List.of();
         }
-        aptas.sort(Comparator
+
+        Comparator<Vehiculo> porCercania = Comparator
                 .comparingDouble((Vehiculo unidad) ->
                         pedido.getDestino().distanciaManhattanKm(unidad.getUbicacion()))
-                .thenComparingDouble(Vehiculo::getCostoPorKm));
-        return aptas.subList(0, cuantas);
+                .thenComparingDouble(Vehiculo::getCostoPorKm);
+
+        int cuota = Math.max(1, cuantas / porTipo.size());
+        List<Vehiculo> elegidas = new ArrayList<>();
+        List<Vehiculo> resto = new ArrayList<>();
+
+        for (List<Vehiculo> delTipo : porTipo.values()) {
+            delTipo.sort(porCercania);
+            for (int i = 0; i < delTipo.size(); i++) {
+                if (i < cuota) {
+                    elegidas.add(delTipo.get(i));
+                } else {
+                    resto.add(delTipo.get(i));
+                }
+            }
+        }
+
+        resto.sort(porCercania);
+        for (Vehiculo unidad : resto) {
+            if (elegidas.size() >= cuantas) {
+                break;
+            }
+            elegidas.add(unidad);
+        }
+        return elegidas;
     }
 
     /**
      * Lista restringida de candidatos.
      *
-     * Compiten solo las inserciones del pedido con el plazo más apretado: esa es la
+     * Compiten solo las inserciones del pedido con el límite efectivo más apretado: esa es la
      * priorización por holgura del caso, aplicada donde corresponde, al elegir a quién se
      * atiende. Entre ellas entran a la lista las que no se alejan del mejor costo más de alfa
      * veces el rango de costos, de modo que alfa=0 deja únicamente la mejor y alfa=1 las deja
@@ -272,15 +325,19 @@ public final class Grasp implements Planificador {
      * cualquier almacén, el conjunto de candidatos creció tanto que esa fracción terminaba
      * incluyendo inserciones que cruzaban la ciudad.
      */
-    private List<Insercion> construirListaRestringida(List<Insercion> ordenadas, double alfa) {
+    private List<Insercion> construirListaRestringida(
+            List<Insercion> ordenadas,
+            double alfa,
+            Map<String, LocalDateTime> limites
+    ) {
         if (ordenadas.isEmpty()) {
             return List.of();
         }
 
-        LocalDateTime plazoMasApretado = ordenadas.get(0).pedido().getFechaLimite();
+        LocalDateTime masApretado = limites.get(ordenadas.get(0).pedido().getId());
         List<Insercion> urgentes = new ArrayList<>();
         for (Insercion candidata : ordenadas) {
-            if (!candidata.pedido().getFechaLimite().equals(plazoMasApretado)) {
+            if (!limites.get(candidata.pedido().getId()).equals(masApretado)) {
                 break;
             }
             urgentes.add(candidata);
@@ -293,11 +350,18 @@ public final class Grasp implements Planificador {
         }
         double umbral = menorCosto + alfa * (mayorCosto - menorCosto);
 
+        // El umbral por valor se estira cuando entre los candidatos hay alguno muy caro: basta
+        // una inserción que cruce la ciudad para que el rango crezca y el corte deje pasar
+        // opciones que no deberían competir. Por eso además se limita cuántas entran, contando
+        // desde la mejor, que es el corte clásico de GRASP.
+        int cupo = Math.max(1, (int) Math.ceil(alfa * urgentes.size()));
+
         List<Insercion> lrc = new ArrayList<>();
         for (Insercion candidata : urgentes) {
-            if (candidata.costoIncremental() <= umbral + 1e-9) {
-                lrc.add(candidata);
+            if (lrc.size() >= cupo || candidata.costoIncremental() > umbral + 1e-9) {
+                break;
             }
+            lrc.add(candidata);
         }
         return lrc;
     }

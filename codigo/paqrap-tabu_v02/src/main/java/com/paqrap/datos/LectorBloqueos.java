@@ -31,7 +31,8 @@ public final class LectorBloqueos {
 
     private static final Pattern REGISTRO = Pattern.compile(
             "^(\\d{1,2})d(\\d{1,2})h(\\d{1,2})m-(\\d{1,2})d(\\d{1,2})h(\\d{1,2})m:(.+)$");
-    private static final Pattern PERIODO_EN_NOMBRE = Pattern.compile("^(\\d{4})(\\d{2})");
+    private static final Pattern PERIODO_LARGO = Pattern.compile("(\\d{4})(\\d{2})");
+    private static final Pattern PERIODO_CORTO = Pattern.compile("(\\d{2})(\\d{2})");
 
     private LectorBloqueos() {
     }
@@ -94,16 +95,32 @@ public final class LectorBloqueos {
         return Bloqueo.dePoligonal(inicio, fin, vertices(registro.group(7)));
     }
 
+    /**
+     * Año y mes del archivo.
+     *
+     * Se aceptan las dos formas que aparecen en la práctica: {@code aaaamm}, como describe el
+     * enunciado ({@code 202609.bloqueadas}), y {@code aamm}, como vienen nombrados los archivos
+     * entregados ({@code bloqueo.2609.txt}).
+     */
     public static YearMonth periodoDelNombre(String nombreArchivo) {
-        Matcher encontrado = PERIODO_EN_NOMBRE.matcher(nombreArchivo);
-        if (!encontrado.find()) {
-            throw new IllegalArgumentException(
-                    "El nombre del archivo de bloqueos debe empezar con aaaamm: " + nombreArchivo);
+        Matcher largo = PERIODO_LARGO.matcher(nombreArchivo);
+        if (largo.find()) {
+            return YearMonth.of(
+                    Integer.parseInt(largo.group(1)),
+                    Integer.parseInt(largo.group(2))
+            );
         }
-        return YearMonth.of(
-                Integer.parseInt(encontrado.group(1)),
-                Integer.parseInt(encontrado.group(2))
-        );
+
+        Matcher corto = PERIODO_CORTO.matcher(nombreArchivo);
+        if (corto.find()) {
+            return YearMonth.of(
+                    2000 + Integer.parseInt(corto.group(1)),
+                    Integer.parseInt(corto.group(2))
+            );
+        }
+
+        throw new IllegalArgumentException(
+                "El nombre del archivo de bloqueos debe contener aaaamm o aamm: " + nombreArchivo);
     }
 
     private static List<Ubicacion> vertices(String coordenadas) {

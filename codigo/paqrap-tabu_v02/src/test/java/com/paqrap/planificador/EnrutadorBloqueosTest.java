@@ -138,6 +138,39 @@ class EnrutadorBloqueosTest {
         assertEquals(PERIODO, LectorBloqueos.periodoDelNombre("202609.bloqueadas"));
     }
 
+    /**
+     * Un cliente ubicado sobre el tramo cerrado debe poder recibir su pedido: por el nodo
+     * bloqueado no se pasa, pero se entra a entregar y se sale dando media vuelta. El tramo
+     * sigue sin servir de paso, así que cruzarlo obliga a rodearlo.
+     */
+    @Test
+    void unClienteSobreElTramoCerradoDebeRecibirSuPedido() {
+        MapaBloqueos mapa = new MapaBloqueos(List.of(Bloqueo.dePoligonal(
+                PERIODO.atDay(8).atTime(6, 0),
+                PERIODO.atDay(8).atTime(15, 0),
+                List.of(new Ubicacion(8, 23), new Ubicacion(20, 23))
+        )));
+        EnrutadorBloqueos enrutador = new EnrutadorBloqueos(mapa);
+        Ubicacion cliente = new Ubicacion(15, 23);
+
+        assertTrue(mapa.estaBloqueado(cliente, AHORA));
+        assertFalse(mapa.estaAislado(cliente, AHORA));
+        assertEquals(
+                CENTRAL.distanciaManhattanKm(cliente),
+                enrutador.calcularKm(CENTRAL, cliente, AHORA, AUTO)
+        );
+
+        List<Ubicacion> camino = enrutador.camino(CENTRAL, cliente, AHORA, AUTO);
+        assertEquals(cliente, camino.get(camino.size() - 1));
+        for (int i = 0; i < camino.size() - 1; i++) {
+            assertFalse(mapa.estaBloqueado(camino.get(i), AHORA),
+                    "El camino atraviesa " + camino.get(i));
+        }
+
+        assertEquals(14.0, enrutador.calcularKm(
+                new Ubicacion(15, 22), new Ubicacion(15, 24), AHORA, AUTO));
+    }
+
     @Test
     void debeRechazarUnTramoDiagonal() {
         assertThrows(IllegalArgumentException.class, () -> Bloqueo.dePoligonal(

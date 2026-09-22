@@ -47,6 +47,24 @@ public final class Evaluador {
     }
 
     /**
+     * Hasta cuándo se le puede entregar de verdad a un pedido.
+     *
+     * Es el primero de dos topes: el plazo comprometido con el cliente y el instante en que la
+     * municipalidad cierra la esquina del destino. Medir la urgencia solo contra el plazo deja
+     * pasar un caso que sí ocurre en los datos del caso: un pedido de ocho horas cuyo destino
+     * queda cerrado a los cuarenta minutos de llegar. Contra el plazo parece cómodo y se
+     * posterga; contra su ventana de acceso es el más apremiante de la cola.
+     *
+     * El tope por acceso no reemplaza a la verificación de factibilidad, que sigue haciéndola
+     * el enrutador al medir cada tramo; solo ordena a quién se atiende primero.
+     */
+    public LocalDateTime limiteEfectivo(Pedido pedido, LocalDateTime desde) {
+        LocalDateTime plazo = pedido.getFechaLimite();
+        LocalDateTime cierre = calculadorDistancia.finDelAccesoA(pedido.getDestino(), desde, plazo);
+        return cierre == null || cierre.isAfter(plazo) ? plazo : cierre;
+    }
+
+    /**
      * Evalúa un viaje: traslado hasta el almacén de carga y luego la secuencia de entregas.
      *
      * El plazo se verifica contra la hora de <b>llegada</b> al cliente; la hora de

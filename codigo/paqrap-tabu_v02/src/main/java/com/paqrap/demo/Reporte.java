@@ -110,9 +110,23 @@ public final class Reporte {
         );
         System.out.printf("Tiempo de reloj de la corrida: %.1f s%n", milisegundosDeReloj / 1000.0);
 
-        if (resumen.huboColapso()) {
+        if (resumen.huboColapso() && resumen.vencidosPorLaOperacion() == 0) {
+            System.out.println();
+            System.out.println("SIN COLAPSO LOGISTICO");
+            System.out.printf(
+                    "  Los %d pedidos vencidos tenian su destino cerrado por la municipalidad%n",
+                    resumen.vencidos().size());
+            System.out.println("  durante toda su ventana de entrega: ninguna unidad habria llegado.");
+            for (Pedido inalcanzable : resumen.vencidosPorDestinoInalcanzable()) {
+                System.out.println("  - " + inalcanzable.getId() + " en " + inalcanzable.getDestino()
+                        + ", plazo de " + inalcanzable.getHorasPlazo() + " h"
+                        + ", vencio " + inalcanzable.getFechaLimite());
+            }
+        } else if (resumen.huboColapso()) {
             System.out.println();
             System.out.println("COLAPSO LOGISTICO");
+            System.out.printf("  Vencidos atribuibles a la operacion: %d de %d%n",
+                    resumen.vencidosPorLaOperacion(), resumen.vencidos().size());
             System.out.println("  Primer pedido vencido: " + resumen.pedidoQueColapso().getId()
                     + " para el cliente " + resumen.pedidoQueColapso().getClienteId());
             System.out.println("  Destino: " + resumen.pedidoQueColapso().getDestino()
@@ -141,6 +155,14 @@ public final class Reporte {
                     resumen.colaAlCierreDelDia().getOrDefault(dia, 0));
         }
         System.out.printf("  Entregas diarias promedio: %.0f%n", resumen.entregasDiariasPromedio());
+
+        if (!resumen.vencidos().isEmpty()) {
+            Map<LocalDate, Integer> vencidosPorDia = new LinkedHashMap<>();
+            for (Pedido vencido : resumen.vencidos()) {
+                vencidosPorDia.merge(vencido.getFechaLimite().toLocalDate(), 1, Integer::sum);
+            }
+            System.out.println("  Vencidos por dia: " + vencidosPorDia);
+        }
     }
 
     /** Cuantos pedidos llegan cada dia, para ver donde se quiebra la operacion. */

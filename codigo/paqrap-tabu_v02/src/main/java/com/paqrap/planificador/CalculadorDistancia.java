@@ -27,4 +27,23 @@ public interface CalculadorDistancia {
             LocalDateTime instanteSalida,
             double velocidadKmH
     );
+
+    /**
+     * Hasta cuándo se puede llegar al nodo sin encontrarlo cerrado.
+     *
+     * Es lo que permite priorizar por el tope que de verdad manda. El plazo del cliente no es
+     * el único: si la esquina del destino se cierra antes, el pedido se queda sin forma de ser
+     * entregado aunque le sobren horas de plazo.
+     *
+     * @param hasta tope de la búsqueda; más allá no interesa.
+     * @return el instante del cierre, o {@code null} si el acceso sigue abierto hasta el tope.
+     *         Con la ciudad despejada nunca se cierra.
+     */
+    default LocalDateTime finDelAccesoA(
+            Ubicacion destino,
+            LocalDateTime desde,
+            LocalDateTime hasta
+    ) {
+        return null;
+    }
 }

@@ -35,13 +35,14 @@ public final class VerificacionTabu {
     public static void main(String[] args) {
         pruebaNoEmpeoraSuSolucionInicial();
         pruebaEsIndependienteDeGrasp();
+        pruebaRepartoEntreUnidades();
         pruebaPlanResultanteFactible();
         pruebaEncadenaViajes();
         pruebaCoberturaDePedidos();
         pruebaReproducibilidadPorSemilla();
         pruebaAsignacionDePedidoPendiente();
         pruebaMovimientosReversibles();
-        System.out.println("OK - 8 verificaciones de búsqueda tabú superadas.");
+        System.out.println("OK - 9 verificaciones de búsqueda tabú superadas.");
     }
 
     /**
@@ -142,6 +143,54 @@ public final class VerificacionTabu {
         afirmar(
                 evaluador.evaluarPlan(tabu, escenario.estado()).factible(),
                 "El plan con viajes encadenados resultó infactible."
+        );
+    }
+
+    /**
+     * El constructivo tiene que repartir el trabajo entre toda la flota, no agotar unas pocas
+     * unidades.
+     *
+     * La primera versión llenaba las unidades una por una, de la más barata a la más cara: con
+     * una cola de unas decenas de pedidos, bicicletas y motos se llevaban todo y los autos
+     * quedaban parados. Medido sobre los datos reales del caso, la flota operaba al 43% mientras
+     * se vencían plazos. Esta prueba fija la corrección: con más pedidos que unidades, tienen
+     * que trabajar los tres tipos y buena parte de la flota.
+     */
+    private static void pruebaRepartoEntreUnidades() {
+        List<Pedido> muchos = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            // Repartidos por toda la ciudad y con cantidades que van de 2 a 13 unidades.
+            muchos.add(EscenarioDemo.pedido(
+                    String.format("P-%03d", i + 1),
+                    3 + (i * 7) % 65,
+                    2 + (i * 11) % 46,
+                    2 + i % 12,
+                    AHORA,
+                    36));
+        }
+
+        EscenarioDemo escenario = EscenarioDemo.pequeno(AHORA)
+                .conVehiculos(DatosCaso.flota())
+                .conPedidos(muchos);
+
+        Solucion inicial = new BusquedaTabu(escenario.distancias())
+                .construirSolucionInicial(escenario.estado(), parametros(3L));
+
+        Set<String> unidadesUsadas = new HashSet<>();
+        Set<TipoVehiculo> tiposUsados = new HashSet<>();
+        for (Ruta viaje : inicial.getRutas()) {
+            unidadesUsadas.add(viaje.getVehiculo().getId());
+            tiposUsados.add(viaje.getVehiculo().getTipo());
+        }
+
+        afirmar(
+                tiposUsados.size() == TipoVehiculo.values().length,
+                "El plan no usa los tres tipos de unidad, solo " + tiposUsados + "."
+        );
+        afirmar(
+                unidadesUsadas.size() >= 20,
+                "Con 60 pedidos y 37 unidades el trabajo quedó concentrado en solo "
+                        + unidadesUsadas.size() + " unidades."
         );
     }
 

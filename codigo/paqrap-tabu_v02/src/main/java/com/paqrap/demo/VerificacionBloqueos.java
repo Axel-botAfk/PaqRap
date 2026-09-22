@@ -43,7 +43,8 @@ public final class VerificacionBloqueos {
         pruebaTramoQueTerminaAntesDelBloqueo();
         pruebaFormatoDelArchivo();
         pruebaPlanificadorDescartaPedidoInalcanzable();
-        System.out.println("OK - 9 verificaciones de bloqueos superadas.");
+        pruebaClienteSobreElTramoCerradoRecibeSuPedido();
+        System.out.println("OK - 10 verificaciones de bloqueos superadas.");
     }
 
     /** Sin tramos cerrados, el recorrido más corto es exactamente la distancia Manhattan. */
@@ -283,6 +284,71 @@ public final class VerificacionBloqueos {
         afirmar(
                 solucion.getCantidadPedidosNoAsignados() == 1,
                 "Se asignó un pedido cuyo destino está aislado por un bloqueo."
+        );
+    }
+
+    /**
+     * Un cliente ubicado sobre el tramo cerrado tiene que poder recibir su pedido.
+     *
+     * El caso dice que por un nodo bloqueado no se pasa ni se gira, pero que la unidad que llega
+     * hasta él vuelve por donde vino; y garantiza que en una poligonal abierta se llega a todos
+     * sus puntos. Es decir: el nodo cerrado no se atraviesa, pero se le entrega entrando y
+     * saliendo en media vuelta.
+     *
+     * Antes el enrutador prohibía entrar, no solo pasar, y ese cliente quedaba fuera del mapa
+     * durante todo el bloqueo. Sobre los datos reales del caso así se perdía P-00689: el tramo
+     * (8,23)-(20,23) —que esta prueba replica— dejaba inentregable al cliente de (15,23) durante
+     * siete de sus ocho horas de plazo.
+     */
+    private static void pruebaClienteSobreElTramoCerradoRecibeSuPedido() {
+        Bloqueo tramo = Bloqueo.dePoligonal(
+                PERIODO.atDay(8).atTime(6, 0),
+                PERIODO.atDay(8).atTime(15, 0),
+                List.of(new Ubicacion(8, 23), new Ubicacion(20, 23))
+        );
+        MapaBloqueos mapa = new MapaBloqueos(List.of(tramo));
+        EnrutadorBloqueos enrutador = new EnrutadorBloqueos(mapa);
+
+        Ubicacion origen = DatosCaso.UBICACION_CENTRAL;
+        Ubicacion cliente = new Ubicacion(15, 23);
+
+        afirmar(
+                mapa.estaBloqueado(cliente, AHORA),
+                "La prueba pierde sentido si el cliente no está sobre el tramo cerrado."
+        );
+        afirmar(
+                !mapa.estaAislado(cliente, AHORA),
+                "Un nodo con vecinos abiertos no debería considerarse incomunicado."
+        );
+
+        double recorrido = enrutador.calcularKm(origen, cliente, AHORA, VELOCIDAD_AUTO);
+        afirmar(
+                recorrido == origen.distanciaManhattanKm(cliente),
+                "Se debería llegar al cliente por la transversal sin alargar el recorrido: "
+                        + "se esperaba " + origen.distanciaManhattanKm(cliente)
+                        + " km y se obtuvo " + recorrido + "."
+        );
+
+        // Se entra por un vecino abierto; el tramo cerrado no se recorre en ningún momento.
+        List<Ubicacion> camino = enrutador.camino(origen, cliente, AHORA, VELOCIDAD_AUTO);
+        afirmar(
+                camino.get(camino.size() - 1).equals(cliente),
+                "El camino no termina en el cliente."
+        );
+        for (int i = 0; i < camino.size() - 1; i++) {
+            afirmar(
+                    !mapa.estaBloqueado(camino.get(i), AHORA),
+                    "El camino atraviesa el nodo cerrado " + camino.get(i) + "."
+            );
+        }
+
+        // Y sigue sin poder usarse de paso: cruzar de un lado al otro obliga a rodear el tramo.
+        double deLadoALado = enrutador.calcularKm(
+                new Ubicacion(15, 22), new Ubicacion(15, 24), AHORA, VELOCIDAD_AUTO);
+        afirmar(
+                deLadoALado == 14.0,
+                "Atravesar el tramo cerrado debería costar el rodeo de 14 km y costó "
+                        + deLadoALado + "."
         );
     }
 

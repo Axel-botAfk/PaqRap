@@ -29,12 +29,25 @@ public record ResumenSimulacion(
         Pedido pedidoQueColapso,
         LocalDateTime instanteDelColapso,
         List<Pedido> vencidos,
+        List<Pedido> vencidosPorDestinoInalcanzable,
         Map<LocalDate, Integer> recibidosPorDia,
         Map<LocalDate, Integer> entregasPorDia,
         Map<LocalDate, Integer> colaAlCierreDelDia
 ) {
     public boolean huboColapso() {
         return pedidoQueColapso != null;
+    }
+
+    /**
+     * Vencimientos atribuibles a la operación, sin contar los pedidos cuyo destino estuvo
+     * cerrado por la municipalidad durante toda su ventana de entrega.
+     *
+     * La distinción importa para leer el resultado: que una calle esté cerrada sobre la puerta
+     * del cliente no es un colapso logístico de la empresa, porque ninguna unidad habría podido
+     * llegar. Los dos números se informan por separado y ninguno se oculta.
+     */
+    public int vencidosPorLaOperacion() {
+        return vencidos.size() - vencidosPorDestinoInalcanzable.size();
     }
 
     public double porcentajeAtendido() {

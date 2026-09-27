@@ -29,6 +29,8 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,6 +72,22 @@ import java.util.Objects;
  *
  * Entre dos replanificaciones se respeta un {@code intervaloMinimo}: sin él, una ráfaga de
  * pedidos dispararía decenas de planificaciones seguidas sin que la operación avance un metro.
+ *
+ * <h2>Qué pedidos ve cada planificación</h2>
+ *
+ * Por defecto, los que ya llegaron y siguen sin entregarse. Un pedido que se registra dentro de
+ * un salto espera al corte siguiente, de modo que la latencia de planificación es igual al salto.
+ *
+ * Con {@link #leyendoPorBloques()} entran además los que se registrarán durante el tramo que está
+ * por ejecutarse. La latencia baja a cero y el planificador puede agrupar una entrega con otra
+ * cercana en el mismo viaje, en vez de mandar una unidad ahora y otra un salto después. Verlos no
+ * es poder entregarlos antes de tiempo: el borde inferior de la ventana lo impide y la unidad que
+ * llega temprano espera.
+ *
+ * Las dos formas dependen del tamaño del salto y en direcciones opuestas —sin bloques un salto
+ * grande hace esperar, con bloques regala futuro— así que convergen cuando el salto es chico. Con
+ * los saltos del caso, de diez a veinte minutos, la diferencia es de uno a tres pedidos por
+ * planificación.
  *
  * <h2>Qué se ejecuta en cada salto</h2>
  *
@@ -128,7 +146,6 @@ public final class Simulador {
      * no falsea el colapso, porque los pedidos que están por vencer son justamente los primeros
      * de la cola y nunca quedan fuera.
      */
-    public static final int PEDIDOS_POR_ITERACION = 200;
 
     private final Planificador planificador;
     private final Evaluador evaluador;
@@ -137,7 +154,6 @@ public final class Simulador {
     private final List<Almacen> almacenes;
     private Duration intervalo;
     private final boolean detenerAlColapsar;
-    private final int pedidosPorIteracion;
     private PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
     private PlanAverias averias = PlanAverias.vacio();
     private boolean permiteEntregasParciales = true;
@@ -146,9 +162,10 @@ public final class Simulador {
     private LocalDateTime ultimoCorteAplicado;
     private String pedidoEnSeguimiento;
     private Ritmo ritmo;
-    private Observador observador = (reloj, estado, plan, medicion) -> { };
+    private Observador observador = (reloj, estado, plan, medicion, avance) -> { };
     private MapaBloqueos bloqueos = MapaBloqueos.vacio();
     private Duration intervaloMinimo = INTERVALO_MINIMO_POR_DEFECTO;
+    private boolean leePorBloques;
 
     public Simulador(
             Planificador planificador,
@@ -167,23 +184,6 @@ public final class Simulador {
             Duration intervalo,
             boolean detenerAlColapsar
     ) {
-        this(planificador, distancias, almacenes, parametros, intervalo, detenerAlColapsar,
-                PEDIDOS_POR_ITERACION);
-    }
-
-    public Simulador(
-            Planificador planificador,
-            CalculadorDistancia distancias,
-            List<Almacen> almacenes,
-            Parametros parametros,
-            Duration intervalo,
-            boolean detenerAlColapsar,
-            int pedidosPorIteracion
-    ) {
-        if (pedidosPorIteracion <= 0) {
-            throw new IllegalArgumentException("pedidosPorIteracion debe ser mayor que cero.");
-        }
-        this.pedidosPorIteracion = pedidosPorIteracion;
         this.planificador = Objects.requireNonNull(planificador);
         this.distancias = Objects.requireNonNull(distancias);
         this.evaluador = new Evaluador(distancias);
@@ -191,6 +191,42 @@ public final class Simulador {
         this.parametros = Objects.requireNonNull(parametros);
         this.intervalo = Objects.requireNonNull(intervalo);
         this.detenerAlColapsar = detenerAlColapsar;
+    }
+
+    /**
+     * Lee los pedidos por bloques: cada planificación ve también los que se registrarán durante
+     * el tramo de operación que está por ejecutarse.
+     *
+     * <h2>Qué problema resuelve</h2>
+     *
+     * Con la lectura clásica, un pedido que llega justo después de un corte espera un bloque
+     * entero antes de que alguien lo mire. Esa latencia es igual al bloque, de modo que la
+     * calidad del plan queda atada al tamaño del bloque, que es un parámetro de presentación.
+     * Leer por bloques la lleva a cero: todo pedido se planifica en el bloque durante el cual
+     * llega.
+     *
+     * No es adivinación gratuita. El planificador ve el pedido pero no puede entregarlo antes de
+     * que exista: el borde inferior de la ventana de tiempo lo impide y la unidad, si llega
+     * temprano, espera. Lo que gana es poder <b>agrupar</b> esa entrega con otra cercana en el
+     * mismo viaje, en lugar de mandar una unidad ahora y otra un bloque después.
+     *
+     * <h2>Lo que cuesta</h2>
+     *
+     * El bloque pasa a tener tamaño fijo. No puede definirse por la llegada siguiente —como hace
+     * la corrida por eventos— porque entonces nunca habría nada dentro del bloque que anticipar.
+     * Los incidentes sí lo acortan: enterarse tarde de una avería es peor que un bloque corto.
+     *
+     * El tamaño es el intervalo del simulador, o el salto del consumo si hay ritmo.
+     *
+     * <h2>Por qué es un interruptor y no el comportamiento único</h2>
+     *
+     * Porque las dos variantes son comparables y la diferencia entre ellas es un resultado: con
+     * el mismo Sc, cuánto se corre la fecha de colapso al anticipar dice cuánto del punto de
+     * quiebre era flota y cuánto era información.
+     */
+    public Simulador leyendoPorBloques() {
+        this.leePorBloques = true;
+        return this;
     }
 
     /**
@@ -312,6 +348,10 @@ public final class Simulador {
         List<Averia> averiasOcurridas = new ArrayList<>();
         Acumulado acumulado = new Acumulado();
         int recibidos = 0;
+        int productosRecibidos = 0;
+        // Cuánto pidió cada cliente, anotado al entrar y antes de cualquier partición: es contra
+        // esto que se decide si un pedido quedó servido por completo.
+        Map<String, Integer> cantidadPorPedidoOriginal = new LinkedHashMap<>();
         int iteraciones = 0;
         long computo = 0L;
         LocalDateTime reloj = inicio;
@@ -326,6 +366,9 @@ public final class Simulador {
                 Pedido llegado = porLlegar.remove(0);
                 pendientes.add(llegado);
                 recibidos++;
+                productosRecibidos += llegado.getCantidad();
+                cantidadPorPedidoOriginal.merge(
+                        llegado.getIdOriginal(), llegado.getCantidad(), Integer::sum);
                 recibidosPorDia.merge(llegado.getFechaRegistro().toLocalDate(), 1, Integer::sum);
             }
 
@@ -334,10 +377,27 @@ public final class Simulador {
 
             LocalDateTime corte = proximoCorte(reloj, fin, porLlegar);
 
+            // Con lectura por bloques entran además los pedidos que se registrarán durante el
+            // tramo que está por ejecutarse. No se admite nada más allá del fin de la corrida:
+            // un pedido que se registra después no pertenece a este escenario.
+            if (leePorBloques) {
+                while (!porLlegar.isEmpty()
+                        && !porLlegar.get(0).getFechaRegistro().isAfter(corte)
+                        && !porLlegar.get(0).getFechaRegistro().isAfter(fin)) {
+                    Pedido delBloque = porLlegar.remove(0);
+                    pendientes.add(delBloque);
+                    recibidos++;
+                    productosRecibidos += delBloque.getCantidad();
+                    cantidadPorPedidoOriginal.merge(
+                            delBloque.getIdOriginal(), delBloque.getCantidad(), Integer::sum);
+                    recibidosPorDia.merge(delBloque.getFechaRegistro().toLocalDate(), 1, Integer::sum);
+                }
+            }
+
             if (!pendientes.isEmpty()) {
                 EstadoOperacion estado = new EstadoOperacion(
                         reloj,
-                        losMasUrgentes(pendientes, reloj),
+                        List.copyOf(pendientes),
                         almacenesEn(reloj, inventario),
                         disponiblesEn(reloj, unidades)
                 );
@@ -349,13 +409,30 @@ public final class Simulador {
                 iteraciones++;
 
                 MedicionDePlanificacion medicion =
-                        new MedicionDePlanificacion(reloj, estado.getPedidos().size(), ta);
+                        new MedicionDePlanificacion(
+                                reloj,
+                                pendientes.size(),
+                                productosEn(pendientes),
+                                ta);
                 mediciones.add(medicion);
-                observador.alPlanificar(reloj, estado, plan, medicion);
+                int productosABordo = 0;
+                for (Vehiculo unidad : unidades.values()) {
+                    productosABordo += unidad.getCargaABordo();
+                }
+                observador.alPlanificar(reloj, estado, plan, medicion,
+                        new AvanceDeLaOperacion(
+                                entregas.size(), productosEn(entregados(entregas)),
+                                vencidos.size(), productosEn(vencidos),
+                                productosABordo));
 
                 if (pedidoEnSeguimiento != null) {
                     informarSeguimiento(reloj, estado, plan, pendientes);
                 }
+
+                // El planificador pudo partir pedidos que la cola tiene enteros. Se reconcilia
+                // antes de ejecutar: si no, la entrega de una parte no encontraria su pedido en
+                // la cola, no lo sacaria de pendientes y quedaria contado dos veces.
+                reconciliarParticiones(plan, pendientes);
 
                 int antesDeEjecutar = entregas.size();
                 ejecutar(plan, reloj, corte, unidades, inventario, cargaDeLaUnidad,
@@ -400,6 +477,7 @@ public final class Simulador {
                 recibidos,
                 entregas.size(),
                 pendientes.size(),
+                productosRecibidos,
                 enPlazo,
                 acumulado.kilometros,
                 acumulado.costo,
@@ -415,7 +493,8 @@ public final class Simulador {
                 List.copyOf(inalcanzables),
                 Map.copyOf(recibidosPorDia),
                 Map.copyOf(entregasPorDia),
-                Map.copyOf(colaAlCierreDelDia)
+                Map.copyOf(colaAlCierreDelDia),
+                Map.copyOf(cantidadPorPedidoOriginal)
         );
     }
 
@@ -531,8 +610,10 @@ public final class Simulador {
 
                     // El acondicionamiento sí se pasa del corte: la unidad está dentro de las
                     // instalaciones del cliente y no se la puede mandar a otra parte.
-                    libre = Turnos.avanzar(
-                            llegada, Evaluador.HORAS_ACONDICIONAMIENTO_POR_ENTREGA);
+                    libre = pedido.pagaAcondicionamiento()
+                            ? Turnos.avanzar(
+                                    llegada, Evaluador.HORAS_ACONDICIONAMIENTO_POR_ENTREGA)
+                            : llegada;
                 }
 
                 if (interrumpido) {
@@ -791,7 +872,10 @@ public final class Simulador {
         LocalDateTime piso = reloj.plus(intervaloMinimo);
         LocalDateTime corte = reloj.plus(intervalo);
 
-        if (!porLlegar.isEmpty()) {
+        // La llegada de un pedido adelanta el corte solo en la lectura clásica. Con bloques no
+        // puede: si el corte se parara en cada llegada, el bloque vendría siempre vacío y no
+        // habría nada que anticipar.
+        if (!leePorBloques && !porLlegar.isEmpty()) {
             LocalDateTime llegada = porLlegar.get(0).getFechaRegistro();
             if (llegada.isAfter(reloj) && llegada.isBefore(corte)) {
                 corte = llegada;
@@ -963,25 +1047,100 @@ public final class Simulador {
         return vigentes;
     }
 
+
     /**
-     * Los pedidos más apremiantes, que son los que entran a esta planificación.
+     * Adopta en la cola las particiones que decidio el planificador.
      *
-     * El recorte va por límite efectivo y no por plazo: un pedido cuya esquina se cierra dentro
-     * de una hora es más urgente que uno de plazo más corto al que se puede llegar todo el día,
-     * y dejarlo fuera del recorte es perderlo.
+     * Los tres algoritmos pueden repartir un pedido entre varios huecos cuando no cabe entero en
+     * ninguno. El plan devuelve entonces las partes, con identificadores derivados del original
+     * -una letra al final- mientras la cola del simulador sigue teniendo el pedido completo.
+     *
+     * Se empareja por prefijo y no por {@code idOriginal}: cuando un pedido ya venia partido de
+     * una iteracion anterior, la cola tiene varias partes del mismo original y solo el prefijo
+     * dice de cual de ellas salio cada trozo nuevo.
+     *
+     * La sustitucion solo se hace si las partes suman exactamente lo que pedia el pedido que
+     * reemplazan. Si no cuadrara habria producto inventado o perdido, y es preferible detenerse a
+     * seguir con una contabilidad rota.
      */
-    private List<Pedido> losMasUrgentes(List<Pedido> pendientes, LocalDateTime reloj) {
-        if (pendientes.size() <= pedidosPorIteracion) {
-            return List.copyOf(pendientes);
+    private void reconciliarParticiones(Solucion plan, List<Pedido> pendientes) {
+        Set<String> enLaCola = new HashSet<>();
+        for (Pedido pendiente : pendientes) {
+            enLaCola.add(pendiente.getId());
         }
-        Map<String, LocalDateTime> limites = new HashMap<>();
-        for (Pedido pedido : pendientes) {
-            limites.put(pedido.getId(), evaluador.limiteEfectivo(pedido, reloj));
+
+        List<Pedido> delPlan = new ArrayList<>();
+        for (Ruta viaje : plan.getRutas()) {
+            delPlan.addAll(viaje.getPedidos());
         }
-        List<Pedido> ordenados = new ArrayList<>(pendientes);
-        ordenados.sort((uno, otro) ->
-                limites.get(uno.getId()).compareTo(limites.get(otro.getId())));
-        return List.copyOf(ordenados.subList(0, pedidosPorIteracion));
+        delPlan.addAll(plan.getPedidosNoAsignados());
+
+        Map<String, List<Pedido>> partesPorPadre = new LinkedHashMap<>();
+        for (Pedido pedido : delPlan) {
+            if (enLaCola.contains(pedido.getId())) {
+                continue;
+            }
+            String padre = padreEnLaCola(pedido.getId(), enLaCola);
+            if (padre != null) {
+                partesPorPadre.computeIfAbsent(padre, id -> new ArrayList<>()).add(pedido);
+            }
+        }
+
+        for (Map.Entry<String, List<Pedido>> entrada : partesPorPadre.entrySet()) {
+            Pedido padre = null;
+            for (Pedido pendiente : pendientes) {
+                if (pendiente.getId().equals(entrada.getKey())) {
+                    padre = pendiente;
+                    break;
+                }
+            }
+            if (padre == null) {
+                continue;
+            }
+
+            int suman = 0;
+            for (Pedido parte : entrada.getValue()) {
+                suman += parte.getCantidad();
+            }
+            if (suman != padre.getCantidad()) {
+                throw new IllegalStateException(
+                        "Las partes de " + padre.getId() + " suman " + suman
+                                + " y el pedido pedia " + padre.getCantidad() + ".");
+            }
+
+            pendientes.remove(padre);
+            pendientes.addAll(entrada.getValue());
+        }
+    }
+
+    /** El pedido de la cola del que salio este trozo: el prefijo mas largo que esta en ella. */
+    private static String padreEnLaCola(String idDelTrozo, Set<String> enLaCola) {
+        String mejor = null;
+        for (String candidato : enLaCola) {
+            if (idDelTrozo.length() > candidato.length() && idDelTrozo.startsWith(candidato)
+                    && (mejor == null || candidato.length() > mejor.length())) {
+                mejor = candidato;
+            }
+        }
+        return mejor;
+    }
+
+    /** Los pedidos de una lista de entregas, para poder contar su producto. */
+    private static List<Pedido> entregados(List<Entrega> entregas) {
+        List<Pedido> pedidos = new ArrayList<>(entregas.size());
+        for (Entrega entrega : entregas) {
+            pedidos.add(entrega.pedido());
+        }
+        return pedidos;
+    }
+
+    /** Cuánto producto suman estos pedidos. */
+    private static int productosEn(List<Pedido> pedidos) {
+        int unidades = 0;
+        for (Pedido pedido : pedidos) {
+            unidades += pedido.getCantidad();
+        }
+        return unidades;
     }
 
     /** Stock realmente disponible en cada almacén al momento de planificar. */

@@ -10,6 +10,8 @@ import com.paqrap.planificador.InsercionPorHolgura;
 import com.paqrap.planificador.ruteo.EnrutadorBloqueos;
 import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.alns.BusquedaAlns;
+import com.paqrap.planificador.alns.ParametrosAlns;
 import com.paqrap.planificador.grasp.Grasp;
 import com.paqrap.planificador.ruteo.MapaBloqueos;
 import com.paqrap.planificador.Parametros;
@@ -22,6 +24,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import java.util.function.LongFunction;
 import java.util.function.Supplier;
@@ -81,6 +84,17 @@ public final class ComparacionAlgoritmos {
      */
     private static final int[] ITERACIONES_TABU = {10, 25, 50, 100, 200, 400};
     private static final int[] ITERACIONES_RAPIDO = {120};
+
+    /**
+     * Presupuestos de ALNS, en iteraciones de destruir y reparar.
+     *
+     * El rango es mucho mas bajo que el de la tabu a proposito. Una iteracion de ALNS reinserta
+     * una docena larga de pedidos explorando decenas de colocaciones para cada uno, mientras que
+     * una de la tabu evalua cuarenta vecinos que son perturbaciones pequenas. Barrer los dos por
+     * el mismo rango no compararia nada: solo diria que a ALNS se le pidio mas trabajo.
+     */
+    private static final int[] ITERACIONES_ALNS = {5, 10, 20, 40, 80, 160};
+    private static final int[] ITERACIONES_ALNS_RAPIDO = {20};
 
     private static final boolean RAPIDO = Boolean.getBoolean("paqrap.rapido");
 
@@ -182,38 +196,102 @@ public final class ComparacionAlgoritmos {
             imprimir(medicion, constructivo);
         }
 
-        veredicto(grasp, tabu, constructivo);
+        List<Medicion> alns = new ArrayList<>();
+        for (int iteraciones : RAPIDO ? ITERACIONES_ALNS_RAPIDO : ITERACIONES_ALNS) {
+            Medicion medicion = medir(
+                    "ALNS x" + iteraciones,
+                    () -> new BusquedaAlns(
+                            evaluador, ParametrosAlns.porDefecto().conIteraciones(iteraciones)),
+                    estado, evaluador,
+                    semilla -> base(1, semilla).construir());
+            alns.add(medicion);
+            imprimir(medicion, constructivo);
+        }
+
+        veredicto(constructivo, Map.of("GRASP", grasp, "tabu", tabu, "ALNS", alns));
     }
 
     /**
-     * Quién gana a igualdad de tiempo: por cada presupuesto de GRASP se busca la medición de la
-     * tabú que gastó un tiempo parecido o menor, y se comparan los objetivos.
+     * Quien gana a igualdad de tiempo empleado.
+     *
+     * Comparar los presupuestos por defecto no dice nada, porque cada algoritmo mide su esfuerzo
+     * en una unidad distinta y enfrentarlos asi solo revela cual de los tres ajustes es mas
+     * generoso. Lo que decide es otra cosa: fijado un tiempo, quien llega mas lejos.
+     *
+     * Se toman tramos de tiempo y, dentro de cada uno, se mira el mejor objetivo que cada
+     * algoritmo alcanzo sin pasarse. El que no tenga ninguna medicion dentro del tramo se informa
+     * como ausente en vez de compararse con una que costo el doble.
      */
-    private static void veredicto(List<Medicion> grasp, List<Medicion> tabu, Medicion constructivo) {
-        System.out.println("  A igual tiempo empleado:");
-        for (Medicion unGrasp : grasp) {
-            Medicion rival = null;
-            for (Medicion unaTabu : tabu) {
-                if (unaTabu.milisegundos() <= unGrasp.milisegundos()
-                        && (rival == null || unaTabu.milisegundos() > rival.milisegundos())) {
-                    rival = unaTabu;
+    private static void veredicto(Medicion constructivo, Map<String, List<Medicion>> porAlgoritmo) {
+        System.out.println();
+        System.out.println("  A IGUAL TIEMPO EMPLEADO");
+        System.out.printf("  %10s", "hasta ms");
+        List<String> nombres = new ArrayList<>(porAlgoritmo.keySet());
+        java.util.Collections.sort(nombres);
+        for (String nombre : nombres) {
+            System.out.printf(" %14s", nombre);
+        }
+        System.out.println("   mejor");
+
+        for (double tope : topesDeTiempo(porAlgoritmo)) {
+            System.out.printf("  %10.0f", tope);
+            String mejorNombre = null;
+            double mejorObjetivo = Double.POSITIVE_INFINITY;
+
+            for (String nombre : nombres) {
+                Medicion dentro = mejorHasta(porAlgoritmo.get(nombre), tope);
+                if (dentro == null) {
+                    System.out.printf(" %14s", "-");
+                    continue;
+                }
+                System.out.printf(" %14.0f", dentro.objetivo());
+                if (dentro.objetivo() < mejorObjetivo) {
+                    mejorObjetivo = dentro.objetivo();
+                    mejorNombre = nombre;
                 }
             }
-            if (rival == null) {
-                continue;
-            }
-            String gana = rival.objetivo() < unGrasp.objetivo() ? "tabu"
-                    : rival.objetivo() > unGrasp.objetivo() ? "GRASP" : "empate";
-            System.out.printf("    %-16s (%.0f ms, obj %.0f)  vs  %-14s (%.0f ms, obj %.0f)  -> %s%n",
-                    unGrasp.nombre(), unGrasp.milisegundos(), unGrasp.objetivo(),
-                    rival.nombre(), rival.milisegundos(), rival.objetivo(), gana);
+            System.out.println("   " + (mejorNombre == null ? "-" : mejorNombre));
         }
 
-        Medicion mejorTabu = tabu.get(tabu.size() - 1);
-        double aporte = constructivo.objetivo() - mejorTabu.objetivo();
-        System.out.printf("  La fase de mejora de la tabu le saca %.0f al constructivo del que parte "
-                        + "(%.1f%%).%n",
-                aporte, constructivo.objetivo() == 0 ? 0 : 100.0 * aporte / constructivo.objetivo());
+        System.out.println();
+        System.out.printf(
+                "  Referencia sin fase de mejora: objetivo %.0f (costo %.0f, %.1f sin atender)"
+                        + " en %.0f ms.%n",
+                constructivo.objetivo(), constructivo.costo(), constructivo.sinAsignar(),
+                constructivo.milisegundos());
+        System.out.println("  Un algoritmo solo justifica su costo si baja de esa linea.");
+        System.out.println();
+        System.out.println("  Ojo al leer el objetivo: lleva la penalidad por lo no atendido, que");
+        System.out.println("  domina. Si la columna 'sin asig.' es igual en todas las filas, las");
+        System.out.println("  diferencias de objetivo son solo recorrido; mirar la columna de costo.");
+    }
+
+    /**
+     * Los tramos de tiempo sobre los que se compara.
+     *
+     * Son los tiempos que de verdad costo alguna medicion, no una escala inventada: asi cada
+     * columna corresponde a un presupuesto que alguien puede reproducir.
+     */
+    private static List<Double> topesDeTiempo(Map<String, List<Medicion>> porAlgoritmo) {
+        java.util.TreeSet<Double> topes = new java.util.TreeSet<>();
+        for (List<Medicion> mediciones : porAlgoritmo.values()) {
+            for (Medicion medicion : mediciones) {
+                topes.add(medicion.milisegundos());
+            }
+        }
+        return new ArrayList<>(topes);
+    }
+
+    /** El mejor objetivo que este algoritmo alcanzo sin pasar del tiempo indicado. */
+    private static Medicion mejorHasta(List<Medicion> mediciones, double tope) {
+        Medicion mejor = null;
+        for (Medicion medicion : mediciones) {
+            if (medicion.milisegundos() <= tope
+                    && (mejor == null || medicion.objetivo() < mejor.objetivo())) {
+                mejor = medicion;
+            }
+        }
+        return mejor;
     }
 
     /** Promedio sobre las semillas. El constructivo es determinista y sale igual en todas. */
@@ -246,15 +324,50 @@ public final class ComparacionAlgoritmos {
         return new Medicion(nombre, sumaMs / n, sumaSinAsignar / n, sumaCosto / n, sumaObjetivo / n);
     }
 
+    /**
+     * Una fila del barrido, con la mejora medida donde de verdad se ve.
+     *
+     * <h2>Por que el porcentaje va sobre el costo y no sobre el objetivo</h2>
+     *
+     * El objetivo lleva la penalidad por lo que nadie atiende, y esa penalidad domina por varios
+     * ordenes de magnitud. Cuando todos los presupuestos dejan los mismos pedidos sin atender
+     * -que es lo habitual, porque los que quedan fuera lo estan por plazo o por calle cerrada y
+     * ningun algoritmo puede con eso- la penalidad es una constante identica en todas las filas y
+     * se come el porcentaje: una mejora real del 25% en recorrido aparecia como -0,0%.
+     *
+     * Asi que se informan las dos cosas por separado. El costo dice cuanto se ahorra ruteando; los
+     * no asignados dicen si alguien ademas atiende a mas clientes, que es lo que de verdad manda
+     * y lo que hay que mirar primero cuando cambia.
+     */
     private static void imprimir(Medicion medicion, Medicion referencia) {
         String contra = "";
-        if (referencia != null && referencia.objetivo() != 0) {
-            double delta = 100.0 * (medicion.objetivo() - referencia.objetivo()) / referencia.objetivo();
-            contra = String.format("  %+.1f%% vs constructivo", delta);
+        if (referencia != null) {
+            contra = comparacionCon(medicion, referencia);
         }
         System.out.printf("%-34s %8.0f %10.1f %12.0f %9.0f%s%n",
                 medicion.nombre(), medicion.milisegundos(), medicion.sinAsignar(),
                 medicion.costo(), medicion.objetivo(), contra);
+    }
+
+    /**
+     * Cuanto mejora esta medicion a la de referencia.
+     *
+     * Atender a mas clientes se informa primero y aparte, porque no se canjea por dinero: un plan
+     * que deja un pedido menos afuera es mejor aunque recorra mas.
+     */
+    private static String comparacionCon(Medicion medicion, Medicion referencia) {
+        StringBuilder contra = new StringBuilder("  ");
+
+        double masAtendidos = referencia.sinAsignar() - medicion.sinAsignar();
+        if (Math.abs(masAtendidos) > 1e-9) {
+            contra.append(String.format("%+.1f sin atender | ", -masAtendidos));
+        }
+
+        if (referencia.costo() == 0) {
+            return contra.append("costo de referencia nulo").toString();
+        }
+        double delta = 100.0 * (medicion.costo() - referencia.costo()) / referencia.costo();
+        return contra.append(String.format("%+.1f%% de costo vs constructivo", delta)).toString();
     }
 
     private static void calentar(EstadoOperacion estado, Evaluador evaluador) {

@@ -7,7 +7,9 @@ import com.paqrap.modelo.PlanMantenimiento;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -49,17 +51,68 @@ public record DatosReales(
 
         exigirQueExista(archivoVentas, "de ventas");
         exigirQueExista(archivoBloqueos, "de bloqueos");
-        exigirQueExista(archivoMantenimiento, "de mantenimiento");
+
+        // El mantenimiento es opcional. El equipo docente entrega un solo archivo bimensual, con
+        // fechas absolutas, mientras que las ventas y los bloqueos llegan de todos los meses. Un
+        // mes sin archivo es un mes sin mantenimiento programado, y eso se informa; inventar un
+        // plan proyectando el bimestre que si existe seria dar por dato algo que nadie dio.
+        PlanMantenimiento mantenimiento = Files.exists(archivoMantenimiento)
+                ? LectorMantenimiento.leer(archivoMantenimiento)
+                : PlanMantenimiento.vacio();
 
         return new DatosReales(
                 periodo,
                 LectorVentas.leer(archivoVentas, periodo),
                 LectorBloqueos.leer(archivoBloqueos),
-                LectorMantenimiento.leer(archivoMantenimiento),
+                mantenimiento,
                 archivoVentas,
                 archivoBloqueos,
                 archivoMantenimiento
         );
+    }
+
+    /**
+     * Los meses que hacen falta para simular desde un instante durante tantos dias.
+     *
+     * Existe porque las corridas ya no se definen por mes sino por fecha de inicio y duracion,
+     * como pide el caso: se coloca fecha y hora, y de ahi se avanza. Cargar de mas seria leer
+     * decenas de miles de pedidos que nunca entran en el horizonte.
+     */
+    public static List<YearMonth> mesesQueCubren(LocalDateTime inicio, int dias) {
+        YearMonth primero = YearMonth.from(inicio);
+        YearMonth ultimo = YearMonth.from(inicio.plusDays(dias));
+        List<YearMonth> meses = new ArrayList<>();
+        for (YearMonth mes = primero; !mes.isAfter(ultimo); mes = mes.plusMonths(1)) {
+            meses.add(mes);
+        }
+        return meses;
+    }
+
+    /**
+     * Los meses que de verdad estan en la carpeta, en orden.
+     *
+     * Sirve para recorrer todo lo disponible sin tener que enumerarlo a mano ni saber de antemano
+     * hasta donde llega lo que entrego el equipo docente.
+     */
+    public static List<YearMonth> mesesDisponibles(Path carpeta) throws IOException {
+        List<YearMonth> meses = new ArrayList<>();
+        try (java.util.stream.Stream<Path> archivos = Files.list(carpeta)) {
+            for (Path archivo : archivos.toList()) {
+                String nombre = archivo.getFileName().toString();
+                if (!nombre.startsWith("ventas.") || !nombre.endsWith(".txt")) {
+                    continue;
+                }
+                String aaaamm = nombre.substring("ventas.".length(), nombre.length() - 4);
+                if (aaaamm.length() != 6 || !aaaamm.chars().allMatch(Character::isDigit)) {
+                    continue;
+                }
+                meses.add(YearMonth.of(
+                        Integer.parseInt(aaaamm.substring(0, 4)),
+                        Integer.parseInt(aaaamm.substring(4))));
+            }
+        }
+        java.util.Collections.sort(meses);
+        return meses;
     }
 
     /** {@code ventas.aaaamm.txt} */

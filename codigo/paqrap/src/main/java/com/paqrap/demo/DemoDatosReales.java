@@ -8,6 +8,7 @@ import com.paqrap.modelo.PlanMantenimiento;
 import com.paqrap.planificador.InsercionPorHolgura;
 import com.paqrap.planificador.ruteo.EnrutadorBloqueos;
 import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.alns.BusquedaAlns;
 import com.paqrap.planificador.grasp.Grasp;
 import com.paqrap.planificador.ruteo.MapaBloqueos;
 import com.paqrap.planificador.Parametros;
@@ -44,13 +45,20 @@ import java.util.List;
  *
  * Propiedades del escenario:
  *   -Dpaqrap.periodo=202610                      mes a simular; por defecto setiembre de 2026
- *   -Dpaqrap.algoritmo=tabu|grasp|constructivo   cual planificador corre la operacion
+ *   -Dpaqrap.algoritmo=tabu|grasp|alns|constructivo   cual planificador corre la operacion
+ *   -Dpaqrap.bloques=true                        lectura por bloques: cada planificacion ve
+ *                                                tambien los pedidos que llegaran durante el
+ *                                                tramo que esta por ejecutarse
+ *   -Dpaqrap.traza=20                            imprime una linea por planificacion (una de
+ *                                                cada 20) con la cola, la carga y el Ta
  *   -Dpaqrap.seguir=P-00689                      traza un pedido en cada replanificacion
  *   -Dpaqrap.sa=5000                             salto del algoritmo (Sa) en milisegundos
  *   -Dpaqrap.k=14                                proporcionalidad del tiempo (K)
  *
  * Propiedades de cada algoritmo, que solo usa el suyo:
  *   -Dpaqrap.tabu.iteraciones=120                iteraciones de mejora de la busqueda tabu
+ *   -Dpaqrap.espera=80                          costo por producto y hora de espera
+ *   -Dpaqrap.alns.iteraciones=200               esfuerzo de ALNS
  *   -Dpaqrap.grasp.construcciones=8              soluciones completas que arma GRASP
  *   -Dpaqrap.grasp.alfa=0.30                     apertura de la lista restringida de GRASP
  *
@@ -99,9 +107,11 @@ public final class DemoDatosReales {
 
         Parametros parametros = Parametros
                 .constructor(entero("paqrap.grasp.construcciones", 8), alfa(), SEMILLA)
+                .penalidadEspera(Double.parseDouble(
+                        System.getProperty("paqrap.espera", "80.0")))
                 .iteracionesTabu(entero("paqrap.tabu.iteraciones", 120))
                 .tenenciaTabu(8)
-                .tamanoMuestraVecindario(40)
+                .tamanoMuestraVecindario(entero("paqrap.tabu.muestra", 40))
                 .iteracionesSinMejora(25)
                 .construir();
 
@@ -128,6 +138,16 @@ public final class DemoDatosReales {
                 .conEventosDeBloqueo(mapa)
                 .conIntervaloMinimo(Duration.ofMinutes(minutosMinimos));
 
+        if (Boolean.getBoolean("paqrap.bloques")) {
+            simulador.leyendoPorBloques();
+            System.out.println("Lectura por bloques: cada plan ve el tramo que va a ejecutar.");
+        }
+
+        TrazaDePlanificacion traza = TrazaDePlanificacion.configurada(ritmo);
+        if (traza != null) {
+            simulador.observadoPor(traza);
+        }
+
         if (ritmo != null) {
             simulador.conRitmo(ritmo);
         }
@@ -152,6 +172,14 @@ public final class DemoDatosReales {
      * por plan se sostiene cuando cada decision condiciona a la siguiente.
      */
     /** Mes a simular, en formato aaaamm. */
+    /** Esfuerzo de ALNS, en iteraciones de destruir y reparar. */
+    private static com.paqrap.planificador.alns.ParametrosAlns alnsConEsfuerzo() {
+        String valor = System.getProperty("paqrap.alns.iteraciones");
+        com.paqrap.planificador.alns.ParametrosAlns base =
+                com.paqrap.planificador.alns.ParametrosAlns.porDefecto();
+        return valor == null ? base : base.conIteraciones(Integer.parseInt(valor));
+    }
+
     private static YearMonth periodo() {
         String valor = System.getProperty("paqrap.periodo");
         if (valor == null) {
@@ -170,9 +198,10 @@ public final class DemoDatosReales {
         return switch (elegido) {
             case "grasp" -> new Grasp(evaluador);
             case "constructivo" -> new InsercionPorHolgura(evaluador);
+            case "alns" -> new BusquedaAlns(evaluador, alnsConEsfuerzo());
             case "tabu" -> new BusquedaTabu(evaluador);
             default -> throw new IllegalArgumentException(
-                    "paqrap.algoritmo debe ser tabu, grasp o constructivo, y fue: " + elegido);
+                    "paqrap.algoritmo debe ser tabu, grasp, alns o constructivo, y fue: " + elegido);
         };
     }
 

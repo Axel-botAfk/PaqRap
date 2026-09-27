@@ -87,12 +87,12 @@ public final class InsercionPorHolgura implements Planificador {
         Objects.requireNonNull(estado);
         Objects.requireNonNull(parametros);
 
-        List<Pedido> pendientes = new ArrayList<>();
-        for (Pedido pedido : estado.getPedidos()) {
-            if (!pedido.getFechaRegistro().isAfter(estado.getReloj())) {
-                pendientes.add(pedido);
-            }
-        }
+        // Entran todos los pedidos que el simulador considere de esta planificación, incluidos
+        // los que todavía no se registran cuando la lectura es por bloques. Descartarlos aquí los
+        // haría desaparecer: no se planificarían y tampoco figurarían como no asignados. Que no se
+        // puedan entregar antes de existir lo garantiza el borde inferior de la ventana de tiempo,
+        // en Evaluador.calcularMetricas, y no un filtro en la entrada.
+        List<Pedido> pendientes = new ArrayList<>(estado.getPedidos());
         Reparto reparto = new Reparto(estado, evaluador, unidadesCandidatas);
         List<Pedido> sinAsignar = reparto.repartir(pendientes);
 
@@ -100,6 +100,12 @@ public final class InsercionPorHolgura implements Planificador {
         solucion.setAlgoritmo(NOMBRE);
         reparto.volcarEn(solucion);
         solucion.agregarPedidosNoAsignados(sinAsignar);
+
+        // Pasada final: lo que no cupo entero puede caber repartido entre varios huecos. Es
+        // decision del planificador y no un remiendo posterior, porque solo aqui se conoce el
+        // plan real y la capacidad que quedo suelta en cada viaje.
+        new RepartoParcial(evaluador).repartir(solucion, estado);
+        solucion.depurarRutasVacias();
         evaluador.sincronizarMetricas(solucion, estado);
         return solucion;
     }

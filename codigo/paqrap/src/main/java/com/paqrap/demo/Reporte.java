@@ -99,7 +99,21 @@ public final class Reporte {
                 resumen.vencidos().size()
         );
         System.out.printf(
-                "Entregas en plazo: %d de %d%n",
+                "Productos: %d recibidos | %d entregados (%.1f%%) | %d pendientes | %d vencidos%n",
+                resumen.productosRecibidos(),
+                resumen.productosEntregados(),
+                resumen.porcentajeAtendidoEnProductos(),
+                resumen.productosPendientes(),
+                resumen.productosVencidos()
+        );
+        System.out.printf(
+                "Clientes servidos: %d completos (%d en plazo) | %d a medio servir%n",
+                resumen.pedidosOriginalesCompletos(),
+                resumen.pedidosOriginalesEnPlazo(),
+                resumen.pedidosOriginalesIncompletos()
+        );
+        System.out.printf(
+                "Visitas en plazo: %d de %d%n",
                 resumen.entregasEnPlazo(), resumen.pedidosEntregados());
         System.out.printf(
                 "Operacion: %.2f km | S/ %.2f%n",
@@ -264,11 +278,12 @@ public final class Reporte {
 
     private static void linea(String nombre, Solucion solucion) {
         System.out.printf(
-                "  %-42s S/ %9.2f | %7.2f km | %2d viajes | %d sin asignar%n",
+                "  %-42s S/ %9.2f | %7.2f km | %2d viajes | %d productos sin asignar (%d pedidos)%n",
                 nombre,
                 solucion.getCostoTotal(),
                 solucion.getDistanciaTotalKm(),
                 solucion.getCantidadRutas(),
+                solucion.getCantidadProductosNoAsignados(),
                 solucion.getCantidadPedidosNoAsignados()
         );
     }

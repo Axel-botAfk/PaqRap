@@ -3,6 +3,8 @@ package com.paqrap.verificacion;
 import com.paqrap.datos.DatosCaso;
 import com.paqrap.modelo.Almacen;
 import com.paqrap.modelo.Ruta;
+import com.paqrap.modelo.Ubicacion;
+import com.paqrap.modelo.Vehiculo;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.modelo.TipoVehiculo;
 import com.paqrap.modelo.Turnos;
@@ -42,7 +44,12 @@ public final class VerificacionGrasp {
         pruebaViajesEncadenados();
         pruebaRecargaEnElAlmacenMasCercano();
         pruebaRefrigerioPorTurno();
-        System.out.println("OK - 9 verificaciones de GRASP superadas.");
+        pruebaUnidadQueYaLlevaCarga();
+        pruebaElObjetivoCuentaProductos();
+        pruebaNoSeEntregaAntesDelRegistro();
+        pruebaElObjetivoPrefiereSalvarAlUrgente();
+        pruebaPartirCuandoLaCapacidadQuedoFragmentada();
+        System.out.println("OK - 14 verificaciones de GRASP superadas.");
     }
 
     /** El plan construido respeta plazos, capacidad por viaje y stock por periodo. */
@@ -320,6 +327,267 @@ public final class VerificacionGrasp {
         exigir(
                 Turnos.HORAS_UTILES_POR_TURNO == 7.0,
                 "Un turno de ocho horas debería rendir siete de operación."
+        );
+    }
+
+    /**
+     * Una unidad interrumpida a mitad de viaje llega a la planificación siguiente con producto
+     * encima, y tiene que poder repartirlo desde donde está, sin volver a ningún almacén.
+     *
+     * Este caso solo aparece en corridas largas, cuando el reloj corta a una unidad después de
+     * cargar. Se dejó pasar a producción y reventó con un índice fuera de rango sobre los datos
+     * reales: la solución nacía con el viaje ya sembrado pero el contexto de GRASP no lo sabía.
+     */
+    private static void pruebaUnidadQueYaLlevaCarga() {
+        Vehiculo conCarga = Escenario
+                .unidad(TipoVehiculo.AUTO, 1, new Ubicacion(40, 30))
+                .conCarga(6);
+
+        Escenario escenario = Escenario.pequeno(AHORA)
+                .conVehiculos(List.of(conCarga))
+                .conPedidos(List.of(
+                        Escenario.pedido("P-CERCA", 41, 30, 4, AHORA, 12),
+                        Escenario.pedido("P-LEJOS", 42, 31, 2, AHORA, 12)
+                ));
+
+        Solucion solucion = new Grasp(escenario.distancias())
+                .planificar(escenario.estado(), Parametros.constructor(4, 0.30, 3L).construir());
+
+        exigir(
+                solucion.getPedidosNoAsignados().isEmpty(),
+                "Con seis productos a bordo deberia repartir los seis y quedaron "
+                        + solucion.getPedidosNoAsignados().size() + " sin asignar."
+        );
+
+        for (Ruta viaje : solucion.getRutas()) {
+            exigir(
+                    viaje.saleYaCargado(),
+                    "Deberia repartir lo que ya lleva, sin estrenar un viaje desde un almacen."
+            );
+            exigir(
+                    viaje.getCargaTotal() <= conCarga.getCargaABordo(),
+                    "No puede repartir mas producto del que lleva encima: "
+                            + viaje.getCargaTotal() + " de " + conCarga.getCargaABordo() + "."
+            );
+        }
+    }
+
+    /**
+     * La penalidad se cobra por producto, no por pedido.
+     *
+     * Es lo que impide que al planificador le convenga sacrificar siempre el pedido grande: si
+     * dejar afuera diez unidades costara lo mismo que dejar afuera una, sacrificaría la de diez
+     * porque le libera diez veces más capacidad al mismo precio.
+     */
+    private static void pruebaElObjetivoCuentaProductos() {
+        Escenario escenario = Escenario.pequeno(AHORA);
+        Evaluador evaluador = new Evaluador(escenario.distancias());
+        Parametros parametros = Parametros.constructor(1, 0.30, 3L).construir();
+        double penalidad = parametros.getPenalidadNoAsignado();
+
+        // Plazos holgados a proposito: con mas de un dia de margen la urgencia vale 1 y queda a
+        // la vista la proporcionalidad con la cantidad, que es lo que esta prueba mide.
+        Solucion dejaUno = new Solucion();
+        dejaUno.agregarPedidoNoAsignado(Escenario.pedido("P-CHICO", 43, 26, 1, AHORA, 36));
+
+        Solucion dejaDiez = new Solucion();
+        dejaDiez.agregarPedidoNoAsignado(Escenario.pedido("P-GRANDE", 43, 26, 10, AHORA, 36));
+
+        double conUno = evaluador.objetivo(dejaUno, escenario.estado(), parametros);
+        double conDiez = evaluador.objetivo(dejaDiez, escenario.estado(), parametros);
+
+        exigir(
+                Math.abs(conUno - penalidad) < 1e-6,
+                "Dejar un producto sin atender deberia costar " + penalidad + " y costo " + conUno + "."
+        );
+        exigir(
+                Math.abs(conDiez - 10 * penalidad) < 1e-6,
+                "Dejar diez productos sin atender deberia costar " + (10 * penalidad)
+                        + " y costo " + conDiez + "."
+        );
+        exigir(
+                conDiez > conUno,
+                "Dejar afuera el pedido grande tiene que salir mas caro que dejar afuera el chico."
+        );
+    }
+
+    /**
+     * No se entrega un pedido antes de que el cliente lo haya hecho.
+     *
+     * Es el borde inferior de la ventana de tiempo. Con la lectura clásica nunca se activa,
+     * porque la planificación arranca después del registro de todo lo que ve; con la lectura por
+     * bloques es lo único que impide que anticipar se convierta en entregar en el pasado.
+     */
+    private static void pruebaNoSeEntregaAntesDelRegistro() {
+        Escenario escenario = Escenario.pequeno(AHORA);
+        Almacen central = escenario.almacenes().get(0);
+        Vehiculo unidad = Escenario.unidad(TipoVehiculo.AUTO, 1, central.getUbicacion());
+
+        // Un destino a un par de esquinas del almacen: la unidad llegaria en minutos.
+        Ubicacion aLaVuelta = new Ubicacion(
+                central.getUbicacion().x() + 2, central.getUbicacion().y());
+        LocalDateTime dentroDeTresHoras = AHORA.plusHours(3);
+
+        MetricasRuta medida = new Evaluador(escenario.distancias()).calcularMetricas(
+                unidad.getUbicacion(),
+                AHORA,
+                central,
+                unidad,
+                List.of(Escenario.pedido(
+                        "P-FUTURO", aLaVuelta.x(), aLaVuelta.y(), 1, dentroDeTresHoras, 12))
+        );
+
+        exigir(medida.factible(), "El viaje al pedido futuro deberia ser factible esperando.");
+        LocalDateTime llegada = medida.horasLlegada().get("P-FUTURO");
+        exigir(
+                llegada.equals(dentroDeTresHoras),
+                "La entrega deberia registrarse al momento del pedido (" + dentroDeTresHoras
+                        + ") y quedo en " + llegada + "."
+        );
+        exigir(
+                medida.duracionHoras() > 3.0,
+                "La unidad queda ocupada la espera completa y la duracion fue de solo "
+                        + medida.duracionHoras() + " h."
+        );
+    }
+
+    /**
+     * Entre salvar a un urgente chico y a un holgado grande, el objetivo elige al urgente.
+     *
+     * Es lo que hace que la operación dure. Dentro de una planificación todo lo asignado llega a
+     * tiempo, porque el plazo es restricción dura; lo único que se decide es qué se deja afuera, y
+     * hay que dejar afuera lo que todavía se puede servir después.
+     *
+     * Sin la ponderación por urgencia el objetivo elegía por tamaño, y un movimiento que sacaba
+     * al urgente para meter al grande aparecía como una mejora.
+     */
+    private static void pruebaElObjetivoPrefiereSalvarAlUrgente() {
+        Escenario escenario = Escenario.pequeno(AHORA);
+        Evaluador evaluador = new Evaluador(escenario.distancias());
+        Parametros parametros = Parametros.constructor(1, 0.30, 3L).construir();
+
+        // Dos horas de plazo contra treinta y seis: uno no admite espera y el otro sí.
+        Solucion dejaAlUrgente = new Solucion();
+        dejaAlUrgente.agregarPedidoNoAsignado(
+                Escenario.pedido("P-URGENTE", 43, 26, 1, AHORA, 2));
+
+        Solucion dejaAlHolgado = new Solucion();
+        dejaAlHolgado.agregarPedidoNoAsignado(
+                Escenario.pedido("P-HOLGADO", 43, 26, 10, AHORA, 36));
+
+        double costoDejarAlUrgente = evaluador.objetivo(
+                dejaAlUrgente, escenario.estado(), parametros);
+        double costoDejarAlHolgado = evaluador.objetivo(
+                dejaAlHolgado, escenario.estado(), parametros);
+
+        exigir(
+                costoDejarAlUrgente > costoDejarAlHolgado,
+                "Dejar afuera un producto urgente deberia salir mas caro que dejar diez holgados: "
+                        + costoDejarAlUrgente + " contra " + costoDejarAlHolgado + "."
+        );
+
+        // Y la ponderacion tiene que ser continua: sin holgura pesa el maximo, con holgura de
+        // sobra pesa uno, y en medio algo intermedio.
+        // Registrado cinco horas atras con plazo de cuatro: su limite ya paso.
+        double sinMargen = evaluador.urgencia(
+                Escenario.pedido("P-A", 43, 26, 1, AHORA.minusHours(5), 4), AHORA);
+        double aMedias = evaluador.urgencia(
+                Escenario.pedido("P-B", 43, 26, 1, AHORA, 12), AHORA);
+        double deSobra = evaluador.urgencia(
+                Escenario.pedido("P-C", 43, 26, 1, AHORA, 36), AHORA);
+
+        exigir(
+                Math.abs(sinMargen - Evaluador.URGENCIA_MAXIMA) < 1e-9,
+                "Sin margen la urgencia deberia ser la maxima y fue " + sinMargen + "."
+        );
+        exigir(
+                Math.abs(deSobra - 1.0) < 1e-9,
+                "Con holgura de sobra la urgencia deberia ser 1 y fue " + deSobra + "."
+        );
+        exigir(
+                aMedias > 1.0 && aMedias < Evaluador.URGENCIA_MAXIMA,
+                "Con holgura intermedia la urgencia deberia quedar en medio y fue " + aMedias + "."
+        );
+    }
+
+    /**
+     * Un pedido que no cabe entero en ninguna unidad pero si repartido entre dos.
+     *
+     * Es el caso que antes se rechazaba. El remiendo del simulador solo partia lo que superaba la
+     * capacidad del vehiculo mas grande, de modo que un pedido de seis, que cabe de sobra en un
+     * auto vacio, se quedaba sin atender si en ese momento no habia ningun auto con seis libres.
+     *
+     * Se monta con dos unidades interrumpidas a mitad de viaje, una con cuatro productos encima y
+     * otra con dos: entre las dos suman los seis, pero ninguna los tiene. El plazo es corto a
+     * proposito para que ir a un almacen a por un viaje nuevo no sea alternativa.
+     *
+     * Se comprueba con los tres planificadores porque el reparto es compartido.
+     */
+    private static void pruebaPartirCuandoLaCapacidadQuedoFragmentada() {
+        for (String algoritmo : List.of("holgura", "grasp", "alns")) {
+            exigirQueReparta(algoritmo);
+        }
+    }
+
+    private static void exigirQueReparta(String algoritmo) {
+        // Motos en la esquina mas lejana de los tres almacenes: el mas cercano esta a 34 km, o
+        // sea casi tres horas de ida y vuelta a 25 km/h. Con plazo de una hora, ir a cargar un
+        // viaje nuevo no es alternativa y la unica salida es repartir lo que ya llevan encima.
+        Vehiculo conCuatro = Escenario
+                .unidad(TipoVehiculo.MOTO, 1, new Ubicacion(69, 49)).conCarga(4);
+        Vehiculo conDos = Escenario
+                .unidad(TipoVehiculo.MOTO, 2, new Ubicacion(68, 48)).conCarga(2);
+
+        // Seis cabe de sobra en una moto vacia -llevan ocho-, asi que el viejo remiendo del
+        // simulador no lo habria partido: solo partia lo que superaba la capacidad mas grande.
+        Escenario escenario = Escenario.pequeno(AHORA)
+                .conVehiculos(List.of(conCuatro, conDos))
+                .conPedidos(List.of(Escenario.pedido("P-SEIS", 68, 49, 6, AHORA, 1)));
+
+        Evaluador evaluador = new Evaluador(escenario.distancias());
+        Parametros parametros = Parametros.constructor(4, 0.30, 5L)
+                .iteracionesTabu(40)
+                .construir();
+
+        com.paqrap.planificador.Planificador planificador = switch (algoritmo) {
+            case "grasp" -> new Grasp(evaluador);
+            case "alns" -> new com.paqrap.planificador.alns.BusquedaAlns(evaluador);
+            default -> new com.paqrap.planificador.InsercionPorHolgura(evaluador);
+        };
+
+        Solucion solucion = planificador.planificar(escenario.estado(), parametros);
+
+        int repartido = 0;
+        int partes = 0;
+        for (Ruta viaje : solucion.getRutas()) {
+            for (com.paqrap.modelo.Pedido entrega : viaje.getPedidos()) {
+                exigir(
+                        entrega.getIdOriginal().equals("P-SEIS"),
+                        "Con " + algoritmo + " aparecio una entrega ajena: " + entrega.getId()
+                );
+                repartido += entrega.getCantidad();
+                partes++;
+            }
+        }
+
+        exigir(
+                repartido == 6,
+                "Con " + algoritmo + " deberia repartir los seis productos entre las dos unidades"
+                        + " y repartio " + repartido + "."
+        );
+        exigir(
+                partes >= 2,
+                "Con " + algoritmo + " los seis tendrian que ir en al menos dos partes y fueron "
+                        + partes + "."
+        );
+        exigir(
+                solucion.getCantidadProductosNoAsignados() == 0,
+                "Con " + algoritmo + " quedaron "
+                        + solucion.getCantidadProductosNoAsignados() + " productos sin atender."
+        );
+        exigir(
+                evaluador.asignacionFactible(solucion, escenario.estado()),
+                "Con " + algoritmo + " el plan repartido no es factible."
         );
     }
 

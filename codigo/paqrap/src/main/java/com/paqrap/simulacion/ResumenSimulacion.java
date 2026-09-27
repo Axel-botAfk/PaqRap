@@ -25,6 +25,7 @@ public record ResumenSimulacion(
         int pedidosRecibidos,
         int pedidosEntregados,
         int pedidosPendientes,
+        int productosRecibidos,
         int entregasEnPlazo,
         double distanciaTotalKm,
         double costoTotal,
@@ -40,25 +41,94 @@ public record ResumenSimulacion(
         List<Pedido> vencidosPorDestinoInalcanzable,
         Map<LocalDate, Integer> recibidosPorDia,
         Map<LocalDate, Integer> entregasPorDia,
-        Map<LocalDate, Integer> colaAlCierreDelDia
+        Map<LocalDate, Integer> colaAlCierreDelDia,
+        Map<String, Integer> cantidadPorPedidoOriginal
 ) {
     public boolean huboColapso() {
         return pedidoQueColapso != null;
     }
 
     /**
-     * Pedidos distintos que el cliente hizo, sin contar dos veces los que se partieron.
+     * Pedidos del cliente que recibieron <b>al menos una</b> entrega.
      *
-     * Los contadores crudos cuentan entregas: un pedido partido en dos aparece como dos. Para
-     * informar cobertura hay que agrupar por el pedido original, que es lo que el cliente
-     * reconoce como suyo.
+     * No dice que el pedido esté servido: un pedido de diez del que llegaron cuatro aparece aquí
+     * igual que uno entregado entero. Para saber si el cliente tiene lo que pidió está
+     * {@link #pedidosOriginalesCompletos()}, y esa es la cifra que corresponde informar como
+     * cobertura.
      */
-    public int pedidosOriginalesEntregados() {
-        Set<String> originales = new HashSet<>();
+    public int pedidosOriginalesConAlgunaEntrega() {
+        return entregadoPorPedidoOriginal().size();
+    }
+
+    /** Cuánto producto llegó a cada pedido del cliente, sumando sus partes. */
+    private Map<String, Integer> entregadoPorPedidoOriginal() {
+        Map<String, Integer> porOriginal = new LinkedHashMap<>();
         for (Entrega entrega : entregas) {
-            originales.add(entrega.pedido().getIdOriginal());
+            porOriginal.merge(
+                    entrega.pedido().getIdOriginal(), entrega.pedido().getCantidad(), Integer::sum);
         }
-        return originales.size();
+        return porOriginal;
+    }
+
+    /**
+     * Pedidos del cliente servidos por completo: llegó todo lo que pidió.
+     *
+     * Un pedido partido se sirve en varias visitas, posiblemente en unidades distintas y a horas
+     * distintas. Está completo cuando la suma de lo entregado alcanza la cantidad que el cliente
+     * pidió, no cuando llegó la primera parte.
+     */
+    public int pedidosOriginalesCompletos() {
+        int completos = 0;
+        for (Map.Entry<String, Integer> entrada : entregadoPorPedidoOriginal().entrySet()) {
+            Integer pedido = cantidadPorPedidoOriginal.get(entrada.getKey());
+            if (pedido != null && entrada.getValue() >= pedido) {
+                completos++;
+            }
+        }
+        return completos;
+    }
+
+    /** Pedidos que recibieron algo pero no todo: el cliente sigue esperando el resto. */
+    public int pedidosOriginalesIncompletos() {
+        return pedidosOriginalesConAlgunaEntrega() - pedidosOriginalesCompletos();
+    }
+
+    /**
+     * Pedidos servidos por completo y <b>dentro del plazo</b>.
+     *
+     * El plazo se mide contra la <b>última</b> parte que llegó, no contra la primera: el cliente
+     * no tiene su pedido hasta que llegó todo. Cada parte hereda la fecha de registro y el plazo
+     * del pedido del que salió, de modo que todas comparten la misma fecha límite.
+     *
+     * Es la cifra de servicio que corresponde presentar. {@code entregasEnPlazo} cuenta visitas,
+     * y tres visitas puntuales de un pedido al que le falta una cuarta no son un cliente servido.
+     */
+    public int pedidosOriginalesEnPlazo() {
+        Map<String, Integer> entregado = new LinkedHashMap<>();
+        Map<String, LocalDateTime> ultimaLlegada = new LinkedHashMap<>();
+        Map<String, LocalDateTime> limite = new LinkedHashMap<>();
+
+        for (Entrega entrega : entregas) {
+            String original = entrega.pedido().getIdOriginal();
+            entregado.merge(original, entrega.pedido().getCantidad(), Integer::sum);
+            limite.put(original, entrega.pedido().getFechaLimite());
+            LocalDateTime previa = ultimaLlegada.get(original);
+            if (previa == null || entrega.llegada().isAfter(previa)) {
+                ultimaLlegada.put(original, entrega.llegada());
+            }
+        }
+
+        int enPlazo = 0;
+        for (Map.Entry<String, Integer> entrada : entregado.entrySet()) {
+            Integer pedido = cantidadPorPedidoOriginal.get(entrada.getKey());
+            if (pedido == null || entrada.getValue() < pedido) {
+                continue;
+            }
+            if (!ultimaLlegada.get(entrada.getKey()).isAfter(limite.get(entrada.getKey()))) {
+                enPlazo++;
+            }
+        }
+        return enPlazo;
     }
 
     /** Entregas parciales realizadas: visitas de más que costó partir pedidos. */
@@ -167,8 +237,52 @@ public record ResumenSimulacion(
         return vencidos.size() - vencidosPorDestinoInalcanzable.size();
     }
 
+    /**
+     * Cobertura en pedidos: cuántos de los que llegaron se entregaron.
+     *
+     * Se informa junto a {@link #porcentajeAtendidoEnProductos()} y no en su lugar, porque las
+     * dos cifras responden preguntas distintas y pueden separarse bastante: dejar sin atender
+     * diez pedidos de una unidad no es lo mismo que dejar uno de diez, aunque en pedidos lo
+     * primero se vea diez veces peor y en productos las dos den igual.
+     */
     public double porcentajeAtendido() {
         return pedidosRecibidos == 0 ? 100.0 : 100.0 * pedidosEntregados / pedidosRecibidos;
+    }
+
+    /** Productos efectivamente puestos en manos del cliente. */
+    public int productosEntregados() {
+        int unidades = 0;
+        for (Entrega entrega : entregas) {
+            unidades += entrega.pedido().getCantidad();
+        }
+        return unidades;
+    }
+
+    /** Productos de pedidos que vencieron sin entregarse. */
+    public int productosVencidos() {
+        int unidades = 0;
+        for (Pedido pedido : vencidos) {
+            unidades += pedido.getCantidad();
+        }
+        return unidades;
+    }
+
+    /** Productos que siguen en cola al terminar la corrida. */
+    public int productosPendientes() {
+        return productosRecibidos - productosEntregados() - productosVencidos();
+    }
+
+    /**
+     * Cobertura en productos, que es la unidad con la que mide la función objetivo.
+     *
+     * Es la cifra que corresponde comparar entre algoritmos: el planificador minimiza productos
+     * sin atender, de modo que informar solo el porcentaje de pedidos mediría algo distinto de
+     * lo que la búsqueda optimiza.
+     */
+    public double porcentajeAtendidoEnProductos() {
+        return productosRecibidos == 0
+                ? 100.0
+                : 100.0 * productosEntregados() / productosRecibidos;
     }
 
     /** Entregas diarias sostenidas: el techo real de la flota con este planificador. */

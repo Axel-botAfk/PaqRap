@@ -65,6 +65,9 @@ import java.util.Set;
  * ocurre en las entregas sobre un tramo bloqueado, que son una minoría.
  */
 public final class EnrutadorBloqueos implements CalculadorDistancia {
+    public static long CONSULTAS;
+    public static long BUSQUEDAS;
+
     private static final int NODOS_POR_FILA = Ciudad.ANCHO_KM + 1;
     private static final int TOTAL_NODOS = NODOS_POR_FILA * (Ciudad.ALTO_KM + 1);
     private static final int NO_ALCANZABLE = -1;
@@ -134,6 +137,7 @@ public final class EnrutadorBloqueos implements CalculadorDistancia {
             LocalDateTime instanteSalida,
             double velocidadKmH
     ) {
+        CONSULTAS++;
         if (origen.equals(destino)) {
             return 0.0;
         }
@@ -269,6 +273,7 @@ public final class EnrutadorBloqueos implements CalculadorDistancia {
      * {@code anterior}, queda registrado el árbol de caminos.
      */
     private int[] recorrer(int inicio, Admision admision, int[] anterior) {
+        BUSQUEDAS++;
         int[] distancia = new int[TOTAL_NODOS];
         Arrays.fill(distancia, NO_ALCANZABLE);
         distancia[inicio] = 0;

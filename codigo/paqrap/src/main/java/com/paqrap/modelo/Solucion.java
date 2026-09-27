@@ -34,6 +34,22 @@ public final class Solucion {
         return pedidosNoAsignados.size();
     }
 
+    /**
+     * Productos que nadie atiende.
+     *
+     * Es la cifra que penaliza la función objetivo. Contar pedidos haría que dejar afuera uno de
+     * quince unidades costara lo mismo que dejar afuera uno de una, de modo que al planificador
+     * le convendría sacrificar siempre el grande: cuesta igual y libera quince veces más sitio.
+     */
+    public int getCantidadProductosNoAsignados() {
+        return pedidosNoAsignados.stream().mapToInt(Pedido::getCantidad).sum();
+    }
+
+    /** Productos comprometidos en el plan, sumando todos los viajes. */
+    public int getCantidadProductosAsignados() {
+        return rutas.stream().mapToInt(Ruta::getCargaTotal).sum();
+    }
+
     public String getAlgoritmo() {
         return algoritmo;
     }

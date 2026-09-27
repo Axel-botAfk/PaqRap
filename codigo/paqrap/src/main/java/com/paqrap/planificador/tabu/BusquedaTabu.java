@@ -51,6 +51,18 @@ import java.util.Set;
  * permite salir de óptimos locales.
  */
 public final class BusquedaTabu implements Planificador {
+    /**
+     * Cuantos movimientos al azar componen una sacudida.
+     *
+     * Pocos: la idea es salir del rincon donde la busqueda se atasco, no perder la estructura de
+     * la solucion. Con demasiados, reanudar seria empezar de cero y los reinicios dejarian de
+     * aprovechar lo aprendido.
+     */
+    private static final int SACUDIDAS = 5;
+
+    /** Cuantos movimientos se prueban por sacudida antes de darla por perdida. */
+    private static final int INTENTOS_POR_SACUDIDA = 10;
+
     public static final String NOMBRE = "Búsqueda Tabú";
 
     private static final double EPSILON = 1e-9;
@@ -144,7 +156,18 @@ public final class BusquedaTabu implements Planificador {
             }
 
             if (elegido == null) {
-                break;
+                // La muestra no trajo ningun vecino admisible: o todos eran infactibles, o
+                // estaban prohibidos y ninguno aspiraba. Terminar aqui era desperdiciar el
+                // presupuesto -medido sobre cinco dias, 400 iteraciones costaban lo mismo que
+                // 140 porque la busqueda se acababa sola- asi que se libera la memoria y se
+                // sacude la solucion para volver a intentarlo desde otro sitio.
+                listaTabu = new ListaTabu(parametros.getTenenciaTabu());
+                if (!diversificar(actual, estado, parametros, aleatorio)) {
+                    break;
+                }
+                valorActual = evaluador.objetivo(actual, estado, parametros);
+                sinMejora = 0;
+                continue;
             }
 
             AplicadorMovimiento.aplicar(actual, elegido);
@@ -156,16 +179,20 @@ public final class BusquedaTabu implements Planificador {
                 mejor = actual.copiar();
                 sinMejora = 0;
             } else if (++sinMejora >= parametros.getIteracionesSinMejora()) {
-                // Intensificación: al estancarse se regresa a la mejor solución conocida y se
-                // libera la memoria de corto plazo, de modo que la búsqueda explore otro camino
-                // en lugar de detenerse con presupuesto de tiempo todavía disponible.
-                if (++reinicios > parametros.getReiniciosTabu()) {
-                    break;
-                }
+                // Al estancarse se vuelve a la mejor solucion conocida con la memoria limpia.
                 actual = mejor.copiar();
                 valorActual = valorMejor;
                 listaTabu = new ListaTabu(parametros.getTenenciaTabu());
                 sinMejora = 0;
+
+                // Pasados los primeros reinicios, volver al mismo sitio con la memoria limpia
+                // repite el mismo camino y la busqueda deja de avanzar. A partir de ahi se sacude
+                // antes de reanudar: se pierde calidad de entrada a cambio de mirar otra zona,
+                // que es lo que justifica seguir gastando iteraciones.
+                if (++reinicios > parametros.getReiniciosTabu()
+                        && diversificar(actual, estado, parametros, aleatorio)) {
+                    valorActual = evaluador.objetivo(actual, estado, parametros);
+                }
             }
         }
 
@@ -173,6 +200,50 @@ public final class BusquedaTabu implements Planificador {
         evaluador.sincronizarMetricas(mejor, estado);
         mejor.setAlgoritmo(NOMBRE);
         return mejor;
+    }
+
+    /**
+     * Sacude la solucion con unos cuantos movimientos al azar, sin exigir que mejoren.
+     *
+     * Es la pieza que faltaba para que el presupuesto signifique algo. La busqueda tabu se apoya
+     * en su memoria para no deshacer lo recien hecho, pero cuando la memoria bloquea todo lo
+     * admisible -o cuando la muestra solo trae vecinos infactibles- no hay a donde ir, y antes
+     * eso terminaba la busqueda. Ahora se salta a otra zona y se sigue.
+     *
+     * Solo se aceptan sacudidas que dejen la solucion factible: con una infactible el objetivo
+     * vale infinito y todas las comparaciones posteriores dejarian de distinguir nada.
+     *
+     * @return si se pudo aplicar al menos un movimiento.
+     */
+    private boolean diversificar(
+            Solucion solucion,
+            EstadoOperacion estado,
+            Parametros parametros,
+            Random aleatorio
+    ) {
+        int aplicados = 0;
+        for (int sacudida = 0; sacudida < SACUDIDAS; sacudida++) {
+            // El vecindario se regenera en cada vuelta: describe posiciones de la solucion tal
+            // como esta, y en cuanto se aplica un movimiento los indices de los demas dejan de
+            // corresponder a nada.
+            List<Movimiento> vecindario =
+                    generarVecindario(solucion, estado, parametros, aleatorio);
+            if (vecindario.isEmpty()) {
+                break;
+            }
+            for (int intento = 0; intento < INTENTOS_POR_SACUDIDA; intento++) {
+                Movimiento candidato = vecindario.get(aleatorio.nextInt(vecindario.size()));
+                AplicadorMovimiento.Deshacer deshacer =
+                        AplicadorMovimiento.aplicar(solucion, candidato);
+                if (Double.isInfinite(evaluador.objetivo(solucion, estado, parametros))) {
+                    deshacer.ejecutar();
+                    continue;
+                }
+                aplicados++;
+                break;
+            }
+        }
+        return aplicados > 0;
     }
 
     /**

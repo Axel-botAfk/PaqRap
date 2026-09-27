@@ -12,6 +12,10 @@ import java.time.LocalDateTime;
  * Es lo que permite dibujar el mapa sin que el simulador sepa nada de pantallas: quien dibuja
  * se suscribe, y el simulador solo avisa.
  *
+ * Junto al plan llega el {@link AvanceDeLaOperacion}, que dice lo que ya pasó: cuánto se entregó,
+ * cuánto se perdió por plazo y cuánto producto viaja ahora mismo encima de las unidades. El plan
+ * solo habla del futuro, y sin el pasado no se puede seguir una corrida.
+ *
  * El plan que llega es el que se va a ejecutar hasta el corte siguiente, no necesariamente
  * entero: una unidad solo recorre lo que alcanza a empezar antes de que el reloj llegue al
  * corte. Lo que se dibuje a partir de acá es la intención del planificador, no el resultado.
@@ -23,6 +27,7 @@ public interface Observador {
             LocalDateTime reloj,
             EstadoOperacion estado,
             Solucion plan,
-            MedicionDePlanificacion medicion
+            MedicionDePlanificacion medicion,
+            AvanceDeLaOperacion avance
     );
 }

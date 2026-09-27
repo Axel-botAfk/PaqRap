@@ -25,6 +25,7 @@ public final class Parametros {
     private static final int ITERACIONES_SIN_MEJORA_POR_DEFECTO = 30;
     private static final int REINICIOS_TABU_POR_DEFECTO = 3;
     private static final double PENALIDAD_NO_ASIGNADO_POR_DEFECTO = 10_000.0;
+    private static final double PENALIDAD_ESPERA_POR_DEFECTO = 80.0;
     private static final int VIAJES_CANDIDATOS_POR_DEFECTO = 15;
     private static final int UNIDADES_CANDIDATAS_POR_DEFECTO = 10;
     private static final int PASADAS_BUSQUEDA_LOCAL_POR_DEFECTO = 2;
@@ -40,6 +41,7 @@ public final class Parametros {
     private final int iteracionesSinMejora;
     private final int reiniciosTabu;
     private final double penalidadNoAsignado;
+    private final double penalidadEspera;
     private final double radioVecindarioKm;
     private final int viajesCandidatosPorPedido;
     private final int unidadesCandidatasPorPedido;
@@ -60,6 +62,7 @@ public final class Parametros {
         this.iteracionesSinMejora = constructor.iteracionesSinMejora;
         this.reiniciosTabu = constructor.reiniciosTabu;
         this.penalidadNoAsignado = constructor.penalidadNoAsignado;
+        this.penalidadEspera = constructor.penalidadEspera;
         this.radioVecindarioKm = constructor.radioVecindarioKm;
         this.viajesCandidatosPorPedido = constructor.viajesCandidatosPorPedido;
         this.unidadesCandidatasPorPedido = constructor.unidadesCandidatasPorPedido;
@@ -107,7 +110,41 @@ public final class Parametros {
         return reiniciosTabu;
     }
 
-    /** Penalidad por pedido sin atender dentro de la función objetivo. */
+    /**
+     * Cuanto cuesta, por producto y por hora, que una entrega se programe mas tarde.
+     *
+     * <h2>Que problema resuelve</h2>
+     *
+     * Sin este termino al planificador le sale gratis diferir. Consolidar las entregas en pocos
+     * viajes bien llenos recorre menos kilometros y por tanto puntua mejor, pero el simulador solo
+     * ejecuta el primer tramo del plan antes de rehacerlo: medido sobre una cola de 151 pedidos,
+     * los planes consolidados no entregaban <b>ningun</b> producto en la media hora siguiente,
+     * mientras que los repartidos entre mas unidades entregaban dieciseis. Las unidades se pasaban
+     * el dia posicionandose para entregas que la replanificacion siempre volvia a aplazar.
+     *
+     * <h2>Por que es lineal en el tiempo</h2>
+     *
+     * Penalizar solo a los pedidos que llegan justos a su plazo no bastaria: aplazar uno que tiene
+     * treinta horas de holgura seguiria siendo gratis, y es justo lo que hace la consolidacion.
+     * Cobrar por cada hora de espera equivale a minimizar la suma de los tiempos de entrega, que
+     * es lo que obliga a usar todas las unidades a la vez en lugar de unas pocas muy cargadas.
+     *
+     * Va ponderado por la urgencia del pedido, de modo que aplazar al que tiene el plazo encima
+     * cuesta mucho mas que aplazar al holgado.
+     */
+    public double getPenalidadEspera() {
+        return penalidadEspera;
+    }
+
+    /**
+     * Penalidad por <b>producto</b> sin atender dentro de la función objetivo.
+     *
+     * Se cobra por unidad de producto y no por pedido, porque el producto es lo que ocupa
+     * capacidad y lo que un pedido partido reparte entre varias unidades. Con las cantidades del
+     * caso —entre 1 y 10 unidades por pedido— dejar afuera un pedido promedio cuesta unos 55 000,
+     * de modo que la penalidad sigue dominando por varios órdenes de magnitud al costo marginal
+     * de sumar una entrega y el criterio se mantiene lexicográfico.
+     */
     public double getPenalidadNoAsignado() {
         return penalidadNoAsignado;
     }
@@ -158,6 +195,7 @@ public final class Parametros {
         private int iteracionesSinMejora = ITERACIONES_SIN_MEJORA_POR_DEFECTO;
         private int reiniciosTabu = REINICIOS_TABU_POR_DEFECTO;
         private double penalidadNoAsignado = PENALIDAD_NO_ASIGNADO_POR_DEFECTO;
+        private double penalidadEspera = PENALIDAD_ESPERA_POR_DEFECTO;
         private double radioVecindarioKm = Double.POSITIVE_INFINITY;
         private int viajesCandidatosPorPedido = VIAJES_CANDIDATOS_POR_DEFECTO;
         private int unidadesCandidatasPorPedido = UNIDADES_CANDIDATAS_POR_DEFECTO;
@@ -213,6 +251,15 @@ public final class Parametros {
                 throw new IllegalArgumentException("reiniciosTabu no puede ser negativo.");
             }
             this.reiniciosTabu = valor;
+            return this;
+        }
+
+        /** Cuanto cuesta que un producto espere una hora mas de lo necesario. */
+        public Constructor penalidadEspera(double valor) {
+            if (valor < 0) {
+                throw new IllegalArgumentException("penalidadEspera no puede ser negativa.");
+            }
+            this.penalidadEspera = valor;
             return this;
         }
 

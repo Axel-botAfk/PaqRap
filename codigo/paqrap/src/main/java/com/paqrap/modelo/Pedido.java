@@ -38,6 +38,15 @@ public final class Pedido {
     private final int horasPlazo;
     private final LocalDateTime fechaLimite;
 
+    /**
+     * Si esta entrega es la que paga el acondicionamiento del pedido.
+     *
+     * El acondicionamiento es una hora por <b>pedido</b>, no por visita: si el pedido se parte en
+     * varias entregas, la hora se cobra una sola vez. La lleva la primera parte; las demas no
+     * ocupan a su unidad mas alla de la llegada.
+     */
+    private final boolean pagaAcondicionamiento;
+
     public Pedido(
             String id,
             String clienteId,
@@ -46,7 +55,7 @@ public final class Pedido {
             LocalDateTime fechaRegistro,
             int horasPlazo
     ) {
-        this(id, id, clienteId, destino, cantidad, fechaRegistro, horasPlazo);
+        this(id, id, clienteId, destino, cantidad, fechaRegistro, horasPlazo, true);
     }
 
     private Pedido(
@@ -56,7 +65,8 @@ public final class Pedido {
             Ubicacion destino,
             int cantidad,
             LocalDateTime fechaRegistro,
-            int horasPlazo
+            int horasPlazo,
+            boolean pagaAcondicionamiento
     ) {
         if (id == null || id.isBlank()) {
             throw new IllegalArgumentException("El id del pedido es obligatorio.");
@@ -79,6 +89,7 @@ public final class Pedido {
         this.cantidad = cantidad;
         this.horasPlazo = horasPlazo;
         this.fechaLimite = fechaRegistro.plusHours(horasPlazo);
+        this.pagaAcondicionamiento = pagaAcondicionamiento;
     }
 
     public String getId() {
@@ -111,8 +122,8 @@ public final class Pedido {
                             + " productos, y se pidió " + cantidadDeLaPrimera + ".");
         }
         return List.of(
-                parte("a", cantidadDeLaPrimera),
-                parte("b", cantidad - cantidadDeLaPrimera));
+                parte("a", cantidadDeLaPrimera, true),
+                parte("b", cantidad - cantidadDeLaPrimera, false));
     }
 
     /**
@@ -121,9 +132,16 @@ public final class Pedido {
      * un id que dependiera del momento o de la memoria haría que dos corridas con la misma
      * semilla dejaran de ser comparables.
      */
-    private Pedido parte(String letra, int cuantos) {
+    /**
+     * Una de las partes en que se reparte este pedido.
+     *
+     * Solo la primera arrastra el acondicionamiento, porque es una hora por pedido y no por
+     * visita. Si este pedido ya era una parte que no lo pagaba, ninguna de sus partes lo paga.
+     */
+    private Pedido parte(String letra, int cuantos, boolean paga) {
         return new Pedido(
-                id + letra, idOriginal, clienteId, destino, cuantos, fechaRegistro, horasPlazo);
+                id + letra, idOriginal, clienteId, destino, cuantos, fechaRegistro, horasPlazo,
+                paga && pagaAcondicionamiento);
     }
 
     public String getClienteId() {
@@ -132,6 +150,11 @@ public final class Pedido {
 
     public Ubicacion getDestino() {
         return destino;
+    }
+
+    /** Si esta entrega paga el acondicionamiento, que es una hora por pedido y no por visita. */
+    public boolean pagaAcondicionamiento() {
+        return pagaAcondicionamiento;
     }
 
     public int getCantidad() {

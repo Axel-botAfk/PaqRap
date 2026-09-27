@@ -22,6 +22,7 @@ import com.paqrap.planificador.Evaluador;
 import com.paqrap.planificador.Inventario;
 import com.paqrap.planificador.MetricasRuta;
 import com.paqrap.planificador.Parametros;
+import com.paqrap.planificador.RepartoParcial;
 import com.paqrap.planificador.Planificador;
 import com.paqrap.planificador.ruteo.CalculadorDistancia;
 
@@ -78,11 +79,19 @@ public final class Grasp implements Planificador {
 
         Random random = new Random(parametros.getSemilla());
         Map<String, LocalDateTime> limites = limitesEfectivos(estado);
+        // Lo que no cabe entero en ninguna unidad puede caber repartido entre varios
+        // huecos. Es decision del planificador: solo aqui se conoce la capacidad
+        // suelta que quedo en cada viaje del plan.
+        RepartoParcial reparto = new RepartoParcial(evaluador);
         Solucion mejor = null;
         double valorMejor = Double.POSITIVE_INFINITY;
 
         for (int iteracion = 0; iteracion < parametros.getMaxIteraciones(); iteracion++) {
+            // El reparto por partes va dentro del bucle y no al final: si se aplicara solo a
+            // la mejor solucion ya elegida, el algoritmo estaria comparando planes sin partir y
+            // devolviendo uno partido, y mas presupuesto podria dar un resultado peor.
             Solucion candidata = construirUnaSolucion(estado, parametros, random, limites);
+            reparto.repartir(candidata, estado);
             double valor = evaluador.objetivo(candidata, estado, parametros);
             if (mejor == null || valor < valorMejor) {
                 mejor = candidata;
@@ -90,6 +99,8 @@ public final class Grasp implements Planificador {
             }
         }
 
+        mejor.depurarRutasVacias();
+        evaluador.sincronizarMetricas(mejor, estado);
         return mejor;
     }
 
@@ -133,16 +144,18 @@ public final class Grasp implements Planificador {
         Solucion solucion = new Solucion();
         solucion.setAlgoritmo(NOMBRE);
 
-        List<Pedido> pendientes = new ArrayList<>();
-        for (Pedido pedido : estado.getPedidos()) {
-            if (!pedido.getFechaRegistro().isAfter(estado.getReloj())) {
-                pendientes.add(pedido);
-            }
-        }
+        // Entran todos los pedidos que el simulador considere de esta planificación, incluidos
+        // los que todavía no se registran cuando la lectura es por bloques. Descartarlos aquí los
+        // haría desaparecer: no se planificarían y tampoco figurarían como no asignados. Que no se
+        // puedan entregar antes de existir lo garantiza el borde inferior de la ventana de tiempo,
+        // en Evaluador.calcularMetricas, y no un filtro en la entrada.
+        List<Pedido> pendientes = new ArrayList<>(estado.getPedidos());
         pendientes.sort(Comparator.comparing(pedido -> limites.get(pedido.getId())));
 
         sembrarViajesConCargaABordo(solucion, estado);
-        Contexto contexto = new Contexto(estado, evaluador);
+        Contexto contexto = new Contexto(
+                estado, evaluador, parametros.getPenalidadEspera());
+        contexto.partirDe(solucion);
 
         while (!pendientes.isEmpty()) {
             // Solo compiten los pedidos con el plazo más apretado, que son los únicos que la
@@ -460,10 +473,39 @@ public final class Grasp implements Planificador {
         private final Map<String, Double> costoPorVehiculo = new HashMap<>();
         private final Map<String, List<CargaEnAlmacen>> cargasPorVehiculo = new HashMap<>();
 
-        private Contexto(EstadoOperacion estado, Evaluador evaluador) {
+        /**
+         * Cuanto cuesta por producto y por hora que una entrega se programe mas tarde.
+         *
+         * Entra en el costo con el que se eligen las inserciones, y no solo en el objetivo final,
+         * porque es ahi donde GRASP toma sus decisiones: la lista restringida de candidatos ordena
+         * por costo incremental, de modo que un termino que solo viviera en el objetivo no llegaria
+         * a influir en nada salvo en cual de las construcciones se conserva.
+         *
+         * Medido sobre una cola de 151 pedidos, sin esto GRASP produce planes que no entregan
+         * ningun producto en la media hora siguiente, por mucho que se suba la penalidad.
+         */
+        private final double penalidadEspera;
+
+        private Contexto(EstadoOperacion estado, Evaluador evaluador, double penalidadEspera) {
             this.estado = estado;
             this.evaluador = evaluador;
+            this.penalidadEspera = penalidadEspera;
             this.inventario = new Inventario(estado.getAlmacenes(), estado.getReloj());
+        }
+
+        /**
+         * Da de alta los viajes con los que la solución ya nace.
+         *
+         * La construcción no siempre arranca en blanco: las unidades que traen producto encima
+         * reciben de entrada un viaje ya cargado. Sin registrarlos aquí, el contexto cree que
+         * ninguna unidad tiene viajes y al intentar intercalar un pedido en uno de ellos busca su
+         * posición en una lista vacía.
+         */
+        private void partirDe(Solucion solucion) {
+            viajesPorVehiculo.putAll(Evaluador.indicesPorVehiculo(solucion.getRutas()));
+            for (Ruta viaje : solucion.getRutas()) {
+                costoPorVehiculo.putIfAbsent(viaje.getVehiculo().getId(), 0.0);
+            }
         }
 
         /** Candidato: intercalar el pedido en un viaje ya planificado. */
@@ -521,7 +563,7 @@ public final class Grasp implements Planificador {
                 Almacen almacen
         ) {
             List<MetricasRuta> metricas =
-                    evaluador.evaluarPrograma(vehiculo, programa, estado.getReloj());
+                    evaluador.medidasDe(vehiculo, programa, estado.getReloj());
 
             double costo = 0.0;
             List<CargaEnAlmacen> cargas = new ArrayList<>();
@@ -544,7 +586,19 @@ public final class Grasp implements Planificador {
 
             LocalDateTime llegada = metricas.get(posicionEnPrograma).horasLlegada().get(pedido.getId());
             double holgura = Evaluador.horasEntre(llegada, pedido.getFechaLimite());
-            double incremento = costo - costoPorVehiculo.getOrDefault(vehiculo.getId(), 0.0);
+
+            // Lo que cuesta atender a ESTE cliente aqui: el kilometraje que anade mas lo que se
+            // le hace esperar. Es la pregunta que la lista restringida tiene que ordenar.
+            //
+            // A proposito no se cobra el retraso que la insercion causa a las demas entregas de
+            // la unidad, aunque sea real: al sumarlo, intercalar en medio de una ruta empuja a
+            // todas las siguientes y el incremento se dispara, de modo que a GRASP le sale
+            // siempre mas barato anadir al final. Medido sobre cinco dias de datos reales, eso le
+            // costaba catorce pedidos y un 27% mas de kilometros. Ese empuje si lo ve el objetivo
+            // global, que es donde esta bien contado.
+            double esperaPropia = evaluador.esperaDe(pedido, llegada, estado.getReloj());
+            double incremento = costo - costoPorVehiculo.getOrDefault(vehiculo.getId(), 0.0)
+                    + penalidadEspera * esperaPropia;
 
             return new Insercion(pedido, vehiculo, almacen, indiceRuta, posicion, incremento, holgura);
         }
@@ -557,7 +611,7 @@ public final class Grasp implements Planificador {
 
             List<Ruta> programa = viajesDe(solucion, vehiculo);
             List<MetricasRuta> metricas =
-                    evaluador.evaluarPrograma(vehiculo, programa, estado.getReloj());
+                    evaluador.medidasDe(vehiculo, programa, estado.getReloj());
 
             double costo = 0.0;
             List<CargaEnAlmacen> cargas = new ArrayList<>();

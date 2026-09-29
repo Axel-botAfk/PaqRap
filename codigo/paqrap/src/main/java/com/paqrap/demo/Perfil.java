@@ -133,10 +133,31 @@ public final class Perfil {
                     productoEnCargados += viaje.getCargaTotal();
                 }
             }
-            System.out.printf("  %-14s %9d %8d %9d %9d %9.0f %9.0f   yaCargados %d viajes / %d prod%n",
+            // Clientes por viaje separados por tipo de unidad: dice si los viajes cortos son
+            // decision del objetivo o tope fisico de motos y bicis.
+            java.util.Map<String, int[]> porTipo = new java.util.TreeMap<>();
+            for (com.paqrap.modelo.Ruta viaje : plan.getRutas()) {
+                if (viaje.estaVacia()) {
+                    continue;
+                }
+                int[] cuenta = porTipo.computeIfAbsent(
+                        viaje.getVehiculo().getTipo().name(), t -> new int[3]);
+                cuenta[0]++;
+                cuenta[1] += viaje.getPedidos().size();
+                cuenta[2] += viaje.getCargaTotal();
+            }
+            StringBuilder desglose = new StringBuilder();
+            for (java.util.Map.Entry<String, int[]> e : porTipo.entrySet()) {
+                int[] c = e.getValue();
+                desglose.append(String.format("  %s %d viajes %.1f cli/viaje %.1f prod/viaje",
+                        e.getKey().substring(0, 4), c[0], c[1] / (double) c[0],
+                        c[2] / (double) c[0]));
+            }
+
+            System.out.printf("  %-14s %9d %8d %9d %9d %9.0f %9.0f  %s%n",
                     algoritmo, ms, plan.getCantidadRutas(),
                     plan.getCantidadProductosAsignados(), productosAntesDelCorte,
-                    kmDelPlan, kmAntesDelCorte, viajesCargados, productoEnCargados);
+                    kmDelPlan, kmAntesDelCorte, desglose.toString());
         }
     }
 

@@ -18,6 +18,9 @@ import com.paqrap.simulacion.Simulador;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import com.paqrap.modelo.Pedido;
+import java.util.ArrayList;
+import java.util.List;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 
@@ -57,6 +60,7 @@ import java.time.YearMonth;
  *   -Dpaqrap.duracion=45                         minutos que debe durar en pantalla
  *   -Dpaqrap.sa=5000                             cada cuántos ms se refresca (fluidez)
  *   -Dpaqrap.medicion=true                       sin pausas, a fondo, para medir Ta
+ *   -Dpaqrap.inicio=2027-03-15T14:00             fecha y hora de arranque
  *   -Dpaqrap.periodo=202609                      mes a simular
  *   -Dpaqrap.algoritmo=tabu|grasp|alns|constructivo   cuál planificador corre la operación
  *   -Dpaqrap.bloques=true                        lectura por bloques: cada planificación ve
@@ -91,14 +95,25 @@ public final class DemoSimulacion5Dias {
 
         DatosReales datos;
         try {
-            datos = DatosReales.cargar(carpeta, periodo());
+            datos = DatosReales.cargar(carpeta, java.time.YearMonth.from(inicioElegido(periodo())));
         } catch (IOException falta) {
             System.out.println(falta.getMessage());
             return;
         }
 
         Duration horizonte = Duration.ofDays(DIAS);
-        LocalDateTime inicio = periodo().atDay(1).atStartOfDay();
+        LocalDateTime inicio = inicioElegido(periodo());
+
+        // Nada anterior a la fecha de inicio existe para la operacion, como pide el caso. Sin
+        // este filtro, los pedidos de los dias previos entran todos de golpe en la primera
+        // iteracion -su registro ya paso- y buena parte llega con el plazo vencido de antemano:
+        // arrancar el 10 de marzo de 2026 daba 357 vencidos en el mes mas flojo de todos.
+        List<Pedido> ventas = new ArrayList<>();
+        for (Pedido pedido : datos.ventas()) {
+            if (!pedido.getFechaRegistro().isBefore(inicio)) {
+                ventas.add(pedido);
+            }
+        }
 
         System.out.println("=== SIMULACION 5D (DATOS REALES) ===");
         datos.imprimirResumen();
@@ -149,7 +164,7 @@ public final class DemoSimulacion5Dias {
 
         long antes = System.currentTimeMillis();
         ResumenSimulacion resumen = simulador.correr(
-                inicio, horizonte, datos.ventas(), DatosCaso.flota());
+                inicio, horizonte, ventas, DatosCaso.flota());
         long transcurrido = System.currentTimeMillis() - antes;
 
         Reporte.imprimirResumen(resumen, transcurrido);
@@ -229,6 +244,29 @@ public final class DemoSimulacion5Dias {
         com.paqrap.planificador.alns.ParametrosAlns base =
                 com.paqrap.planificador.alns.ParametrosAlns.porDefecto();
         return valor == null ? base : base.conIteraciones(Integer.parseInt(valor));
+    }
+
+    /**
+     * Instante en que arranca la operacion, o nulo para el primer dia del mes.
+     *
+     * El caso lo pide asi: se coloca fecha y hora, se agarra el dia en esa ubicacion y se avanzan
+     * los dias del escenario. Nada anterior a ese instante existe para la operacion.
+     *
+     * Elegir bien la fecha importa mas de lo que parece. Los archivos del curso concentran sus
+     * 5000 pedidos en cada vez menos dias -31 en enero de 2026, 6 en diciembre de 2028- asi que la
+     * densidad diaria cambia por completo segun donde se arranque, y con ella la dificultad. Y las
+     * primeras horas son siempre irreales porque la flota empieza vacia.
+     *
+     * Formato ISO: {@code 2027-03-15T14:00}. Tambien vale solo la fecha.
+     */
+    private static LocalDateTime inicioElegido(java.time.YearMonth porDefecto) {
+        String valor = System.getProperty("paqrap.inicio");
+        if (valor == null || valor.isBlank()) {
+            return porDefecto.atDay(1).atStartOfDay();
+        }
+        return valor.contains("T")
+                ? LocalDateTime.parse(valor)
+                : java.time.LocalDate.parse(valor).atStartOfDay();
     }
 
     private static YearMonth periodo() {

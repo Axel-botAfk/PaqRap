@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.List;
@@ -44,6 +45,7 @@ import java.util.List;
  * corriendo GRASP nunca haya que pasar un numero de la tabu ni al reves.
  *
  * Propiedades del escenario:
+ *   -Dpaqrap.inicio=2027-03-15T14:00             fecha y hora de arranque
  *   -Dpaqrap.periodo=202610                      mes a simular; por defecto setiembre de 2026
  *   -Dpaqrap.algoritmo=tabu|grasp|alns|constructivo   cual planificador corre la operacion
  *   -Dpaqrap.bloques=true                        lectura por bloques: cada planificacion ve
@@ -83,18 +85,28 @@ public final class DemoDatosReales {
 
         DatosReales datos;
         try {
-            datos = DatosReales.cargar(carpeta, periodo());
+            datos = DatosReales.cargar(carpeta, java.time.YearMonth.from(inicioElegido(periodo())));
         } catch (IOException falta) {
             System.out.println(falta.getMessage());
             System.out.println("Copie ahi los archivos del mes o indique otro con -Dpaqrap.periodo.");
             return;
         }
 
-        List<Pedido> ventas = datos.ventas();
         List<Bloqueo> bloqueos = datos.bloqueos();
         PlanMantenimiento mantenimiento = datos.mantenimiento();
 
-        LocalDateTime inicio = periodo().atDay(1).atStartOfDay();
+        LocalDateTime inicio = inicioElegido(periodo());
+
+        // Nada anterior a la fecha de inicio existe para la operacion, como pide el caso. Sin
+        // este filtro, los pedidos de los dias previos entran todos de golpe en la primera
+        // iteracion -su registro ya paso- y buena parte llega con el plazo vencido de antemano:
+        // arrancar el 10 de marzo de 2026 daba 357 vencidos en el mes mas flojo de todos.
+        List<Pedido> ventas = new ArrayList<>();
+        for (Pedido pedido : datos.ventas()) {
+            if (!pedido.getFechaRegistro().isBefore(inicio)) {
+                ventas.add(pedido);
+            }
+        }
 
         System.out.println("=== DATOS REALES DEL CASO ===");
         datos.imprimirResumen();
@@ -178,6 +190,29 @@ public final class DemoDatosReales {
         com.paqrap.planificador.alns.ParametrosAlns base =
                 com.paqrap.planificador.alns.ParametrosAlns.porDefecto();
         return valor == null ? base : base.conIteraciones(Integer.parseInt(valor));
+    }
+
+    /**
+     * Instante en que arranca la operacion, o nulo para el primer dia del mes.
+     *
+     * El caso lo pide asi: se coloca fecha y hora, se agarra el dia en esa ubicacion y se avanzan
+     * los dias del escenario. Nada anterior a ese instante existe para la operacion.
+     *
+     * Elegir bien la fecha importa mas de lo que parece. Los archivos del curso concentran sus
+     * 5000 pedidos en cada vez menos dias -31 en enero de 2026, 6 en diciembre de 2028- asi que la
+     * densidad diaria cambia por completo segun donde se arranque, y con ella la dificultad. Y las
+     * primeras horas son siempre irreales porque la flota empieza vacia.
+     *
+     * Formato ISO: {@code 2027-03-15T14:00}. Tambien vale solo la fecha.
+     */
+    private static LocalDateTime inicioElegido(java.time.YearMonth porDefecto) {
+        String valor = System.getProperty("paqrap.inicio");
+        if (valor == null || valor.isBlank()) {
+            return porDefecto.atDay(1).atStartOfDay();
+        }
+        return valor.contains("T")
+                ? LocalDateTime.parse(valor)
+                : java.time.LocalDate.parse(valor).atStartOfDay();
     }
 
     private static YearMonth periodo() {

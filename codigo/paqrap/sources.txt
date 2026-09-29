@@ -66,6 +66,7 @@ C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\planificador\tabu\ListaTabu.java
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\planificador\tabu\Movimiento.java
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\planificador\tabu\TipoMovimiento.java
+C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\simulacion\AvanceDeLaOperacion.java
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\simulacion\Entrega.java
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\simulacion\MedicionDePlanificacion.java
 C:\Users\Bleak\OneDrive\Documentos\GitHub\PaqRap\codigo\paqrap\src\main\java\com\paqrap\simulacion\Observador.java

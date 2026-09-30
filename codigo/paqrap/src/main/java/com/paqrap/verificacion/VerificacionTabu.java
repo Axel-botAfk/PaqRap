@@ -5,8 +5,9 @@ import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.modelo.TipoVehiculo;
-import com.paqrap.planificador.InsercionPorHolgura;
+import com.paqrap.planificador.ConstructorVecinoMasCercano;
 import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.grasp.Grasp;
 import com.paqrap.planificador.Parametros;
 import com.paqrap.planificador.tabu.AplicadorMovimiento;
@@ -19,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import com.paqrap.escenarios.Escenario;
+import com.paqrap.planificador.ruteo.DistanciaManhattan;
 
 /**
  * Verificación ejecutable sin JUnit de la búsqueda tabú, en la misma línea que
@@ -36,6 +38,7 @@ public final class VerificacionTabu {
     public static void main(String[] args) {
         pruebaNoEmpeoraSuSolucionInicial();
         pruebaEsIndependienteDeGrasp();
+        pruebaPriorizaVecinoCercanoFactible();
         pruebaRepartoEntreUnidades();
         pruebaPlanResultanteFactible();
         pruebaEncadenaViajes();
@@ -43,7 +46,7 @@ public final class VerificacionTabu {
         pruebaReproducibilidadPorSemilla();
         pruebaAsignacionDePedidoPendiente();
         pruebaMovimientosReversibles();
-        System.out.println("OK - 9 verificaciones de búsqueda tabú superadas.");
+        System.out.println("OK - 10 verificaciones de búsqueda tabú superadas.");
     }
 
     /**
@@ -85,15 +88,36 @@ public final class VerificacionTabu {
                 .construirSolucionInicial(escenario.estado(), parametros);
 
         afirmar(
-                partida.getAlgoritmo().equals(InsercionPorHolgura.NOMBRE),
+                partida.getAlgoritmo().equals(ConstructorVecinoMasCercano.NOMBRE),
                 "La búsqueda tabú sigue partiendo de " + partida.getAlgoritmo() + "."
         );
+
+        Solucion vecino = new ConstructorVecinoMasCercano(escenario.distancias())
+                .planificar(escenario.estado(), parametros);
+        afirmar(firma(partida).equals(firma(vecino)),
+                "La solución inicial de Tabú no coincide con Vecino más cercano.");
 
         Solucion grasp = new Grasp(escenario.distancias()).planificar(escenario.estado(), parametros);
         afirmar(
                 grasp.getAlgoritmo().equals(Grasp.NOMBRE),
                 "GRASP dejó de identificarse como tal."
         );
+    }
+
+    /** La cercanía, no la holgura ni el orden de entrada, decide la primera entrega. */
+    private static void pruebaPriorizaVecinoCercanoFactible() {
+        EstadoOperacion estado = new EstadoOperacion(
+                AHORA,
+                List.of(
+                        Escenario.pedido("LEJOS", 30, 14, 1, AHORA, 8),
+                        Escenario.pedido("CERCA", 28, 14, 1, AHORA, 36)),
+                List.of(DatosCaso.almacenes().get(0)),
+                List.of(Escenario.unidad(TipoVehiculo.AUTO, 1, DatosCaso.UBICACION_CENTRAL)));
+        Solucion solucion = new ConstructorVecinoMasCercano(new DistanciaManhattan())
+                .planificar(estado, parametros(11L));
+        afirmar(!solucion.getRutas().isEmpty(), "El constructor no creó ninguna ruta.");
+        afirmar(solucion.getRutas().get(0).getPedidos().get(0).getId().equals("CERCA"),
+                "Vecino más cercano no atendió primero el destino más próximo.");
     }
 
     /** Plazos, capacidad por viaje y stock por periodo de reposición. */
@@ -149,7 +173,8 @@ public final class VerificacionTabu {
 
     /**
      * El constructivo tiene que repartir el trabajo entre toda la flota, no agotar unas pocas
-     * unidades.
+     * unidades. La cercanía puede concentrar entregas, por lo que se exige mayoría de la
+     * flota y presencia de los tres tipos, no el umbral fijo de la versión por holgura.
      *
      * La primera versión llenaba las unidades una por una, de la más barata a la más cara: con
      * una cola de unas decenas de pedidos, bicicletas y motos se llevaban todo y los autos
@@ -189,7 +214,7 @@ public final class VerificacionTabu {
                 "El plan no usa los tres tipos de unidad, solo " + tiposUsados + "."
         );
         afirmar(
-                unidadesUsadas.size() >= 20,
+                unidadesUsadas.size() > DatosCaso.flota().size() / 2,
                 "Con 60 pedidos y 37 unidades el trabajo quedó concentrado en solo "
                         + unidadesUsadas.size() + " unidades."
         );

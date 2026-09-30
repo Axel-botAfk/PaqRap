@@ -7,7 +7,7 @@ import com.paqrap.modelo.Solucion;
 import com.paqrap.modelo.Ubicacion;
 import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.ruteo.CalculadorDistancia;
-import com.paqrap.planificador.InsercionPorHolgura;
+import com.paqrap.planificador.ConstructorVecinoMasCercano;
 import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.Evaluador;
 import com.paqrap.planificador.Parametros;
@@ -25,7 +25,7 @@ import java.util.Set;
  * Búsqueda tabú para el componente planificador de PaqRap.
  *
  * Es uno de los dos algoritmos que el caso pide comparar, y es independiente del otro: su
- * solución de partida la arma {@link InsercionPorHolgura}, no GRASP. Si arrancara del
+ * solución de partida la arma {@link ConstructorVecinoMasCercano}, no GRASP. Si arrancara del
  * resultado de GRASP, la comparación no mediría dos algoritmos sino uno y su fase de mejora.
  * El constructivo inicial se puede sustituir por cualquier otro {@link Planificador}, lo que
  * permite además correr la variante GRASP + tabú como tercer punto de comparación.
@@ -76,7 +76,7 @@ public final class BusquedaTabu implements Planificador {
     }
 
     public BusquedaTabu(Evaluador evaluador) {
-        this(evaluador, new InsercionPorHolgura(evaluador));
+        this(evaluador, new ConstructorVecinoMasCercano(evaluador));
     }
 
     /** Variante con otro constructivo inicial, para experimentar con el punto de partida. */

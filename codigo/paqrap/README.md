@@ -68,18 +68,17 @@ new BusquedaTabu(evaluador, new Grasp(evaluador));
 
 ### Vecino más cercano — construcción de la tabú
 
-Recorre los pedidos por urgencia y para cada uno elige la unidad que mejor puede atenderlo,
-entre las `k` más cercanas con capacidad suficiente y tomando al menos una cuota de cada tipo.
-Por cada candidata evalúa dos alternativas sobre su programa completo —sumar la entrega al
-final de su último viaje, o estrenar uno cargando en el almacén con producto más cercano— y se
-queda con la más barata. Es determinista: no usa la semilla.
+En cada paso elige el pedido factible más cercano al extremo actual del programa de una
+unidad candidata. Si hace falta un nuevo viaje, mide también el trayecto hasta el almacén de
+carga. La cercanía se calcula sobre la retícula de Manhattan; el evaluador comprueba por
+separado bloqueos, capacidad, inventario, disponibilidad y plazos. Entre opciones a igual
+distancia se prefiere el menor costo incremental. Tras asignar un pedido se reevalúan los
+restantes porque la posición final de la unidad cambió. Es determinista: no usa la semilla ni
+llama a GRASP.
 
-**Es un reparto en paralelo, no unidad por unidad.** La primera versión llenaba cada unidad
-hasta agotarla antes de pasar a la siguiente, empezando por las más baratas. Con una cola de
-unas decenas de pedidos —lo normal en la operación— eso significaba que bicicletas y motos se
-llevaban casi todo y los diez autos quedaban parados: sobre los datos reales del caso la flota
-operaba al 43% mientras se vencían plazos. Recorriendo los pedidos y no las unidades, el
-trabajo se reparte solo, porque una unidad ya ocupada encarece la siguiente inserción.
+**Es un reparto en paralelo, no unidad por unidad.** Cada asignación considera las unidades
+candidatas disponibles; una unidad puede recibir varios viajes, siempre que el programa
+completo siga siendo factible.
 
 La cuota por tipo entre las candidatas es igual de importante, y también aplica a GRASP: al
 arrancar un escenario toda la flota está en el mismo almacén, así que todas empatan en
@@ -153,10 +152,9 @@ acondicionamiento más el viaje, y con un pedido promedio de 6,5 unidades solo l
 siquiera pueden con dos tercios de los pedidos. Multiplicado por 37 unidades y 24 horas, no da
 para mucho más. Dos intentos de subirlo **no funcionaron** y quedaron medidos:
 
-- **Llenar primero las unidades de mayor capacidad** empeora el resultado: a 200 pedidos por día
-  pasa de 1 vencido a 11. Como cada unidad se llena hasta que no puede más, partir por los autos
-  concentra el trabajo en diez unidades y deja ociosas a las otras veintisiete. Queda como
-  parámetro de `ConstructorVecinoMasCercano`, desactivado.
+- **Llenar primero las unidades de mayor capacidad** empeoró una versión experimental anterior:
+  a 200 pedidos por día pasó de 1 vencido a 11. Esa configuración no forma parte del
+  `ConstructorVecinoMasCercano` vigente.
 - **Cuadruplicar el presupuesto de tiempo de la tabú** (400 ms → 1500 ms por iteración) no cambia
   nada: lo que corta la búsqueda son las 120 iteraciones configuradas, no el reloj.
 

@@ -17,7 +17,7 @@ comparten el evaluador y nada más:
 | algoritmo | cómo busca | punto de partida |
 |---|---|---|
 | GRASP | construcción golosa aleatorizada + búsqueda local, repetidas | desde cero en cada iteración |
-| Búsqueda tabú | mejora con memoria de corto plazo | inserción por holgura |
+| Búsqueda tabú | mejora con memoria de corto plazo | vecino más cercano factible, sin usar GRASP |
 | ALNS | destruye 10-35% y repara, con pesos adaptativos | su propia reparación por arrepentimiento |
 
 **Reglas del caso implementadas:** ciudad de 70x50 km sobre retícula, bloqueos por nodo con
@@ -31,6 +31,10 @@ parciales.
 
 Quedan pendientes el trasvase entre unidades, el mantenimiento prospectivo y el componente
 visualizador, que se conecta por el observador que ya expone el simulador.
+
+La [decisión y verificación del constructor independiente de Tabú](codigo/paqrap/docs/semana7-vecino-cercano.md)
+documenta el cambio técnico de la semana 7 y los resultados exploratorios, aún no
+equivalentes a la experimentación final del curso.
 
 ## Estructura
 

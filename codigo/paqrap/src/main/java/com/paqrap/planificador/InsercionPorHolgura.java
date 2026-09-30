@@ -57,14 +57,17 @@ import com.paqrap.planificador.ruteo.CalculadorDistancia;
  * Es determinista: no usa la semilla. La aleatoriedad de la exploración la aporta después la
  * búsqueda tabú.
  */
-public final class InsercionPorHolgura implements Planificador {
+public class InsercionPorHolgura implements Planificador {
     public static final String NOMBRE = "Inserción por holgura";
+
+    protected enum CriterioSeleccion { HOLGURA, VECINO_MAS_CERCANO }
 
     /** Unidades que compiten por cada pedido. */
     public static final int UNIDADES_CANDIDATAS_POR_DEFECTO = 18;
 
     private final Evaluador evaluador;
     private final int unidadesCandidatas;
+    private final CriterioSeleccion criterioSeleccion;
 
     public InsercionPorHolgura(CalculadorDistancia calculadorDistancia) {
         this(new Evaluador(calculadorDistancia), UNIDADES_CANDIDATAS_POR_DEFECTO);
@@ -75,11 +78,17 @@ public final class InsercionPorHolgura implements Planificador {
     }
 
     public InsercionPorHolgura(Evaluador evaluador, int unidadesCandidatas) {
+        this(evaluador, unidadesCandidatas, CriterioSeleccion.HOLGURA);
+    }
+
+    protected InsercionPorHolgura(Evaluador evaluador, int unidadesCandidatas,
+            CriterioSeleccion criterioSeleccion) {
         if (unidadesCandidatas <= 0) {
             throw new IllegalArgumentException("Las unidades candidatas deben ser más de cero.");
         }
         this.evaluador = Objects.requireNonNull(evaluador);
         this.unidadesCandidatas = unidadesCandidatas;
+        this.criterioSeleccion = Objects.requireNonNull(criterioSeleccion);
     }
 
     @Override
@@ -93,11 +102,12 @@ public final class InsercionPorHolgura implements Planificador {
         // puedan entregar antes de existir lo garantiza el borde inferior de la ventana de tiempo,
         // en Evaluador.calcularMetricas, y no un filtro en la entrada.
         List<Pedido> pendientes = new ArrayList<>(estado.getPedidos());
-        Reparto reparto = new Reparto(estado, evaluador, unidadesCandidatas);
+        Reparto reparto = new Reparto(estado, evaluador, unidadesCandidatas, criterioSeleccion);
         List<Pedido> sinAsignar = reparto.repartir(pendientes);
 
         Solucion solucion = new Solucion();
-        solucion.setAlgoritmo(NOMBRE);
+        solucion.setAlgoritmo(criterioSeleccion == CriterioSeleccion.VECINO_MAS_CERCANO
+                ? ConstructorVecinoMasCercano.NOMBRE : NOMBRE);
         reparto.volcarEn(solucion);
         solucion.agregarPedidosNoAsignados(sinAsignar);
 
@@ -116,6 +126,7 @@ public final class InsercionPorHolgura implements Planificador {
         private final Evaluador evaluador;
         private final Inventario inventario;
         private final int unidadesCandidatas;
+        private final CriterioSeleccion criterioSeleccion;
 
         private final Map<String, List<Ruta>> viajesPorUnidad = new LinkedHashMap<>();
         private final Map<String, Double> costoPorUnidad = new HashMap<>();
@@ -129,10 +140,12 @@ public final class InsercionPorHolgura implements Planificador {
          */
         private final Map<String, LocalDateTime> limitePorPedido = new HashMap<>();
 
-        private Reparto(EstadoOperacion estado, Evaluador evaluador, int unidadesCandidatas) {
+        private Reparto(EstadoOperacion estado, Evaluador evaluador, int unidadesCandidatas,
+                CriterioSeleccion criterioSeleccion) {
             this.estado = estado;
             this.evaluador = evaluador;
             this.unidadesCandidatas = unidadesCandidatas;
+            this.criterioSeleccion = criterioSeleccion;
             this.inventario = new Inventario(estado.getAlmacenes(), estado.getReloj());
 
             for (Vehiculo unidad : estado.getVehiculos()) {
@@ -187,7 +200,8 @@ public final class InsercionPorHolgura implements Planificador {
             List<Pedido> sinAsignar = new ArrayList<>();
 
             while (!alternativas.isEmpty()) {
-                Pedido elegido = elMasComprometido(alternativas);
+                Pedido elegido = criterioSeleccion == CriterioSeleccion.VECINO_MAS_CERCANO
+                        ? elVecinoMasCercano(alternativas) : elMasComprometido(alternativas);
                 if (elegido == null) {
                     // A ninguno le queda destino factible; el resto no se puede atender.
                     sinAsignar.addAll(alternativas.keySet());
@@ -199,7 +213,10 @@ public final class InsercionPorHolgura implements Planificador {
 
                 String unidadTocada = destino.unidad().getId();
                 for (Map.Entry<Pedido, Alternativas> entrada : alternativas.entrySet()) {
-                    if (entrada.getValue().involucra(unidadTocada)) {
+                    // En vecino más cercano una unidad puede terminar ahora más cerca de un
+                    // pedido aunque antes no fuese su primera ni segunda opción.
+                    if (criterioSeleccion == CriterioSeleccion.VECINO_MAS_CERCANO
+                            || entrada.getValue().involucra(unidadTocada)) {
                         entrada.setValue(evaluarAlternativas(entrada.getKey()));
                     }
                 }
@@ -230,6 +247,26 @@ public final class InsercionPorHolgura implements Planificador {
             return elegido;
         }
 
+        /** El siguiente destino factible más cercano al extremo actual de alguna unidad. */
+        private Pedido elVecinoMasCercano(Map<Pedido, Alternativas> alternativas) {
+            Pedido elegido = null;
+            Alternativas mejores = null;
+            for (Map.Entry<Pedido, Alternativas> entrada : alternativas.entrySet()) {
+                Alternativas opciones = entrada.getValue();
+                if (opciones.mejor() == null) {
+                    continue;
+                }
+                if (mejores == null
+                        || opciones.mejor().cercaniaKm() < mejores.mejor().cercaniaKm()
+                        || (opciones.mejor().cercaniaKm() == mejores.mejor().cercaniaKm()
+                            && opciones.limite().isBefore(mejores.limite()))) {
+                    elegido = entrada.getKey();
+                    mejores = opciones;
+                }
+            }
+            return elegido;
+        }
+
         private boolean leGanaEnPrioridad(Alternativas candidata, Alternativas actual) {
             double holguraCandidata = candidata.holguraHoras();
             double holguraActual = actual.holguraHoras();
@@ -252,15 +289,15 @@ public final class InsercionPorHolgura implements Planificador {
             for (Vehiculo unidad : candidatas(pedido)) {
                 Opcion enSuUltimoViaje = evaluar(unidad, pedido, false);
                 Opcion enViajeNuevo = evaluar(unidad, pedido, true);
-                Opcion deLaUnidad = masBarata(enSuUltimoViaje, enViajeNuevo);
+                Opcion deLaUnidad = mejorOpcion(enSuUltimoViaje, enViajeNuevo);
                 if (deLaUnidad == null) {
                     continue;
                 }
 
-                if (mejor == null || deLaUnidad.incremento() < mejor.incremento()) {
+                if (mejor == null || precede(deLaUnidad, mejor)) {
                     segunda = mejor;
                     mejor = deLaUnidad;
-                } else if (segunda == null || deLaUnidad.incremento() < segunda.incremento()) {
+                } else if (segunda == null || precede(deLaUnidad, segunda)) {
                     segunda = deLaUnidad;
                 }
             }
@@ -268,14 +305,22 @@ public final class InsercionPorHolgura implements Planificador {
             return new Alternativas(mejor, segunda, limiteDe(pedido));
         }
 
-        private Opcion masBarata(Opcion una, Opcion otra) {
+        private Opcion mejorOpcion(Opcion una, Opcion otra) {
             if (una == null) {
                 return otra;
             }
             if (otra == null) {
                 return una;
             }
-            return una.incremento() <= otra.incremento() ? una : otra;
+            return precede(una, otra) ? una : otra;
+        }
+
+        private boolean precede(Opcion una, Opcion otra) {
+            if (criterioSeleccion == CriterioSeleccion.VECINO_MAS_CERCANO
+                    && una.cercaniaKm() != otra.cercaniaKm()) {
+                return una.cercaniaKm() < otra.cercaniaKm();
+            }
+            return una.incremento() <= otra.incremento();
         }
 
         /**
@@ -334,6 +379,11 @@ public final class InsercionPorHolgura implements Planificador {
             }
 
             MetricasRuta ultima = metricas.get(metricas.size() - 1);
+            Ubicacion origen = situacionPorUnidad.get(unidad.getId()).posicion();
+            double cercaniaKm = viajeNuevo
+                    ? origen.distanciaManhattanKm(almacen.getUbicacion())
+                        + almacen.getUbicacion().distanciaManhattanKm(pedido.getDestino())
+                    : origen.distanciaManhattanKm(pedido.getDestino());
             return new Opcion(
                     unidad,
                     pedido,
@@ -343,7 +393,8 @@ public final class InsercionPorHolgura implements Planificador {
                     costo,
                     cargas,
                     new Situacion(ultima.posicionFinal(), ultima.horaFin()),
-                    ultima.horasLlegada().get(pedido.getId())
+                    ultima.horasLlegada().get(pedido.getId()),
+                    cercaniaKm
             );
         }
 
@@ -534,7 +585,8 @@ public final class InsercionPorHolgura implements Planificador {
             double costoDelPrograma,
             List<CargaEnAlmacen> cargas,
             Situacion situacionFinal,
-            LocalDateTime llegada
+            LocalDateTime llegada,
+            double cercaniaKm
     ) {
     }
 }

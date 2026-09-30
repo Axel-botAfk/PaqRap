@@ -15,6 +15,8 @@ import com.paqrap.simulacion.ResumenSimulacion;
 import com.paqrap.simulacion.Simulador;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -65,6 +67,7 @@ import java.util.concurrent.Future;
  *   -Dpaqrap.espera=80                          costo por producto y hora de espera
  *   -Dpaqrap.alns.iteraciones=200               esfuerzo de ALNS
  *   -Dpaqrap.grasp.construcciones=8              esfuerzo de GRASP
+ *   -Dpaqrap.resultadosCsv=salida/resultados.csv  conserva métricas sin redondear
  */
 public final class BancoDePruebas {
     private static final YearMonth PERIODO_POR_DEFECTO = YearMonth.of(2026, 9);
@@ -125,7 +128,40 @@ public final class BancoDePruebas {
         hilos.shutdown();
         long transcurrido = System.currentTimeMillis() - antes;
 
+        String rutaCsv = System.getProperty("paqrap.resultadosCsv");
+        if (rutaCsv != null && !rutaCsv.isBlank()) {
+            escribirCsv(Path.of(rutaCsv), resultados, dias);
+        }
         imprimir(resultados, transcurrido, semillas.size());
+    }
+
+    /** Exporta los valores crudos para análisis estadístico sin transcribir la tabla redondeada. */
+    private static void escribirCsv(Path destino, List<Resultado> resultados, int dias)
+            throws IOException {
+        StringBuilder csv = new StringBuilder(
+                "periodo,dias,algoritmo,semilla,productos_entregados,productos_pendientes,"
+                + "productos_vencidos,porcentaje_productos,distancia_km,costo_soles,"
+                + "tiempo_ms\n");
+        for (Resultado resultado : resultados) {
+            ResumenSimulacion s = resultado.resumen();
+            csv.append(periodo()).append(',')
+                    .append(dias).append(',')
+                    .append(resultado.algoritmo()).append(',')
+                    .append(resultado.semilla()).append(',')
+                    .append(s.productosEntregados()).append(',')
+                    .append(s.productosPendientes()).append(',')
+                    .append(s.productosVencidos()).append(',')
+                    .append(s.porcentajeAtendidoEnProductos()).append(',')
+                    .append(s.distanciaTotalKm()).append(',')
+                    .append(s.costoTotal()).append(',')
+                    .append(resultado.milisegundos()).append('\n');
+        }
+        Path padre = destino.toAbsolutePath().getParent();
+        if (padre != null) {
+            Files.createDirectories(padre);
+        }
+        Files.writeString(destino, csv, StandardCharsets.UTF_8);
+        System.out.println("CSV de resultados: " + destino.toAbsolutePath());
     }
 
     private static void imprimir(List<Resultado> resultados, long transcurrido, int cuantasSemillas) {

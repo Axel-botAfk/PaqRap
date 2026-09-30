@@ -301,6 +301,11 @@ javac -encoding UTF-8 -d out $(find src/main/java -name '*.java')
 java -cp out com.paqrap.demo.DemoTabu
 ```
 
+Para exportar resultados numéricos sin redondear, `BancoDePruebas` admite
+`-Dpaqrap.resultadosCsv=ruta/resultados.csv`. El CSV incluye periodo, horizonte,
+algoritmo, semilla y métricas por corrida; los tiempos del banco paralelo no deben
+usarse para calibrar el intervalo de simulación.
+
 Uso principal:
 
 ```java

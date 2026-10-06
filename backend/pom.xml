@@ -47,4 +47,21 @@
             </plugin>
         </plugins>
     </build>
+    <!-- La persistencia MySQL se activa solo al construir el backend con -Pmysql. -->
+    <profiles>
+        <profile>
+            <id>mysql</id>
+            <dependencies>
+                <dependency>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-jdbc</artifactId>
+                </dependency>
+                <dependency>
+                    <groupId>com.mysql</groupId>
+                    <artifactId>mysql-connector-j</artifactId>
+                    <scope>runtime</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>

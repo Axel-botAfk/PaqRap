@@ -1,0 +1,33 @@
+# ---------- Java / Maven ----------
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---------- Node / React ----------
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+
+# ---------- Editores y sistema ----------
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ---------- Secretos: NUNCA subir al repositorio ----------
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+secrets/
+
+# ---------- Logs y temporales ----------
+*.log
+tmp/

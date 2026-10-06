@@ -38,6 +38,37 @@ function TarjetaMetrica({ etiqueta, valor, nota, alerta = false }) {
   </div>;
 }
 
+function DibujoVehiculo({ tipo }) {
+  switch (tipo) {
+    case 'AUTO':
+      return <g fill="none" stroke="#24659b" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 21V14h3l3-5h10l4 5h2v7H5Z" fill="#dcecf8" />
+        <path d="M11 14h12M16 9v5" /><circle cx="10" cy="22" r="2.3" fill="#24659b" /><circle cx="23" cy="22" r="2.3" fill="#24659b" />
+      </g>;
+    case 'MOTO':
+      return <g fill="none" stroke="#21805a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="23" r="3.5" /><circle cx="25" cy="23" r="3.5" />
+        <path d="m8 23 5-7h6l5 7M12 16l-2-3h5m7 1 2-3h3M17 16l-2 7h10" />
+      </g>;
+    case 'BICICLETA':
+      return <g fill="none" stroke="#b27a16" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="7" cy="23" r="4" /><circle cx="25" cy="23" r="4" />
+        <path d="m7 23 7-10 5 10H7l7-10m5 10 6-10m-12 0h5m5 0h4m-13-3 2-1" />
+      </g>;
+    case 'CAMION':
+      return <g fill="none" stroke="#754d98" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10h17v12H3zM20 14h5l4 5v3h-9z" fill="#ede5f5" />
+        <circle cx="9" cy="23" r="2.2" fill="#754d98" /><circle cx="24" cy="23" r="2.2" fill="#754d98" />
+      </g>;
+    default:
+      return <g fill="none" stroke="#0b3644" strokeWidth="2.4"><rect x="8" y="8" width="16" height="16" rx="3" /><path d="M16 11v7m0 3v1" /></g>;
+  }
+}
+
+function IconoLeyenda({ tipo, texto }) {
+  return <span className="leyenda-vehiculo"><svg viewBox="0 0 32 32" aria-hidden="true"><DibujoVehiculo tipo={tipo} /></svg>{texto}</span>;
+}
+
 function MapaOperacion({ ejecucion, rutaSeleccionada }) {
   const rutas = ejecucion?.rutas || [];
   const vehiculos = ejecucion?.vehiculos || [];
@@ -62,13 +93,16 @@ function MapaOperacion({ ejecucion, rutaSeleccionada }) {
       })}
       {puntos.map((p, indice) => <circle key={`p${indice}`} cx={x(p.x)} cy={y(p.y)} r="4" fill="#d89039" stroke="white" strokeWidth="1.5" />)}
       {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
-      {vehiculos.map(vehiculo => <g key={vehiculo.id}>
-        <circle cx={x(vehiculo.ubicacion?.x)} cy={y(vehiculo.ubicacion?.y)} r="7" fill="#0b3644" stroke="white" strokeWidth="2" />
-        <title>{`${vehiculo.id} · ${vehiculo.estado}`}</title>
-      </g>)}
+      {vehiculos.map(vehiculo => <svg key={vehiculo.id}
+        x={x(vehiculo.ubicacion?.x) - 13} y={y(vehiculo.ubicacion?.y) - 13}
+        width="26" height="26" viewBox="0 0 32 32">
+        <title>{`${vehiculo.id} · ${vehiculo.tipo} · ${vehiculo.estado}`}</title>
+        <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+        <DibujoVehiculo tipo={vehiculo.tipo} />
+      </svg>)}
     </svg>
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-vehiculo" /> Vehículo</span><span><i className="punto punto-alerta" /> Sin asignar</span></div>
+    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
     <p className="mapa-aviso">Las líneas muestran el plan vigente de forma esquemática; no son calles recorridas ni entregas confirmadas.</p>
   </div>;
 }

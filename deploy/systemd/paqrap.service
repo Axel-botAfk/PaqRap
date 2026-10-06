@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=paqrap
 WorkingDirectory=/opt/paqrap
+Environment=PAQRAP_DATA_DIR=/opt/paqrap/datos/reales
 ExecStart=/usr/bin/java -Xmx1g -jar /opt/paqrap/paqrap.jar --server.port=8081 --server.address=127.0.0.1
 Restart=on-failure
 SuccessExitStatus=143

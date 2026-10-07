@@ -8,7 +8,7 @@ iniciada con Vecino Mas Cercano. Lee los archivos de `codigo/paqrap/datos/reales
 - JDK 17 o superior y Maven 3.9 o superior.
 - Desde la raiz del repositorio: `mvn clean package`.
 - Desde la raiz: `java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar`.
-- Por defecto escucha solo en `127.0.0.1:8081`. `GET /api/salud` debe
+- Por defecto escucha solo en `127.0.0.1:8080`. `GET /api/salud` debe
   responder `{"estado":"OK"}`.
 - Si se arranca fuera de la raiz, configurar `PAQRAP_DATA_DIR` con la ruta
   absoluta a `codigo/paqrap/datos/reales`. `PAQRAP_PORT` y
@@ -20,7 +20,9 @@ memoria y se pierden al reiniciar el proceso.
 Para usar MySQL como fuente de pedidos, bloqueos, mantenimiento, almacenes y
 vehículos, consulta [`database/README.md`](../database/README.md). La conexión
 se activa con `-Pmysql` al compilar y `--spring.profiles.active=mysql` al
-ejecutar. Las ejecuciones y sus resultados **todavía no** se persisten.
+ejecutar. `db.properties` externo contiene la contraseña cifrada y
+`PAQRAP_DB_KEY` contiene la clave de descifrado. Las ejecuciones y sus
+resultados **todavía no** se persisten.
 
 ## Contrato con la GUI
 

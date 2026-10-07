@@ -8,7 +8,7 @@ del equipo.
 
 ## Uso local
 
-Requiere Node.js 20.19+ o 22.12+ y el backend activo en `127.0.0.1:8081`.
+Requiere Node.js 20.19+ o 22.12+ y el backend activo en `127.0.0.1:8080`.
 
 ```sh
 npm ci

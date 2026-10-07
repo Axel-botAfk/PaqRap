@@ -21,15 +21,19 @@ healthcheck. Si ya existe `.env.docker`, reutiliza las mismas credenciales.
 
 ## Conectar el backend local
 
-Detén primero cualquier backend anterior que use el puerto `8081`. Luego
+Detén primero cualquier backend anterior que use el puerto `8080`. Luego
 ejecuta el lanzador local desde la raíz del repositorio:
 
 ```powershell
 & .\scripts\start-local-backend-mysql.ps1
+# Para probar solo la conexión, sin iniciar HTTP:
+& .\scripts\start-local-backend-mysql.ps1 -TestConnection
 ```
 
-El script lee la contraseña local sin imprimirla, compila con `-Pmysql` y
-activa el perfil `mysql`. Busca Maven en `PATH` y, en este equipo, en la
+El script lee la contraseña local sin imprimirla, compila con `-Pmysql`,
+crea `db.properties` con AES-GCM y activa el perfil `mysql`. Genera una clave
+aleatoria en `PAQRAP_DB_KEY` para este proceso y vuelve a cifrar el archivo en
+cada arranque. Busca Maven en `PATH` y, en este equipo, en la
 instalación local `..\tmp\maven`. Si prefieres hacerlo manualmente, consulta
 [database/README.md](README.md) para los comandos equivalentes.
 Mantén Vite en `http://127.0.0.1:5173/` (`cd frontend; npm run dev`) para ver la GUI.
@@ -37,8 +41,8 @@ Mantén Vite en `http://127.0.0.1:5173/` (`cd frontend; npm run dev`) para ver l
 Verifica en otra terminal:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8081/api/salud
-Invoke-RestMethod http://127.0.0.1:8081/api/datos/periodos
+Invoke-RestMethod http://127.0.0.1:8080/api/salud
+Invoke-RestMethod http://127.0.0.1:8080/api/datos/periodos
 ```
 
 La salud debe indicar `fuente: MYSQL`, y los periodos incluir `202901`,

@@ -1,0 +1,87 @@
+name: Despliegue
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: despliegue
+  cancel-in-progress: false
+
+jobs:
+  construir-y-desplegar:
+    runs-on: ubuntu-latest
+    env:
+      DESPLEGAR: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- Backend (Java 17 + Maven): compila y corre las pruebas ----------
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Compilar y probar el backend
+        run: mvn -B clean package -Pmysql
+
+      # ---------- Frontend (React + Vite) ----------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Compilar el frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      # ---------- Despliegue: solo desde main ----------
+      - name: Preparar la conexión SSH
+        if: env.DESPLEGAR == 'true'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Subir backend, frontend y datos a la VM
+        if: env.DESPLEGAR == 'true'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          OPCIONES="-i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o BatchMode=yes"
+          DESTINO="$SSH_USER@$SSH_HOST"
+          ssh $OPCIONES "$DESTINO" 'rm -rf /var/www/paqrap/* /opt/paqrap/datos/reales/*'
+          scp $OPCIONES backend/target/paqrap-backend-1.0-SNAPSHOT.jar "$DESTINO:/opt/paqrap/paqrap.jar.nuevo"
+          scp -r $OPCIONES frontend/dist/* "$DESTINO:/var/www/paqrap/"
+          scp -r $OPCIONES codigo/paqrap/datos/reales/* "$DESTINO:/opt/paqrap/datos/reales/"
+
+      - name: Reiniciar el servicio y comprobar que responde
+        if: env.DESPLEGAR == 'true'
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+        run: |
+          ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o BatchMode=yes "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTO'
+          set -e
+          mv /opt/paqrap/paqrap.jar.nuevo /opt/paqrap/paqrap.jar
+          sudo systemctl restart paqrap
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8081/api/salud; then echo; echo "Despliegue correcto"; exit 0; fi
+            sleep 3
+          done
+          systemctl status paqrap --no-pager | tail -n 20
+          exit 1
+          REMOTO

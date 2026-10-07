@@ -1,4 +1,5 @@
-# Inicia el backend contra el MySQL local. Detener antes otro backend en 8081.
+# Inicia el backend contra el MySQL local. -TestConnection verifica sin arrancar HTTP.
+param([switch]$TestConnection)
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $envFile = Join-Path $repo '.env.docker'
@@ -10,9 +11,7 @@ $linea = Get-Content -LiteralPath $envFile |
 if (-not $linea -or $linea -eq 'PAQRAP_DB_PASSWORD=') {
     throw 'PAQRAP_DB_PASSWORD no está configurada en .env.docker.'
 }
-$env:PAQRAP_DB_URL = 'jdbc:mysql://127.0.0.1:3307/paqrap'
-$env:PAQRAP_DB_USER = 'paqrap_app'
-$env:PAQRAP_DB_PASSWORD = $linea.Substring('PAQRAP_DB_PASSWORD='.Length)
+$password = $linea.Substring('PAQRAP_DB_PASSWORD='.Length)
 
 $maven = Get-Command mvn.cmd -ErrorAction SilentlyContinue
 if (-not $maven) { $maven = Get-Command mvn -ErrorAction SilentlyContinue }
@@ -32,8 +31,29 @@ try {
     }
     & $mavenPath @mavenArgs -pl backend -am -Pmysql -DskipTests package
     if ($LASTEXITCODE -ne 0) { throw 'No se pudo compilar el backend MySQL.' }
-    Write-Host 'Backend MySQL en http://127.0.0.1:8081. Detén con Ctrl+C.'
-    java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar --spring.profiles.active=mysql
+    $keyBytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
+    $env:PAQRAP_DB_KEY = [Convert]::ToBase64String($keyBytes)
+    $env:PAQRAP_DB_CONFIG = Join-Path $repo 'db.properties'
+    $encrypted = $password | & java -cp backend/target/classes com.paqrap.api.DbPasswordCipher encrypt
+    if ($LASTEXITCODE -ne 0 -or -not $encrypted) { throw 'No se pudo cifrar la contraseña local.' }
+    [System.IO.File]::WriteAllLines($env:PAQRAP_DB_CONFIG, @(
+        'db.host=127.0.0.1',
+        'db.port=3307',
+        'db.name=paqrap',
+        'db.user=paqrap_app',
+        "db.password.encrypted=$encrypted"
+    ), [System.Text.Encoding]::ASCII)
+    $password = $null
+    if ($TestConnection) {
+        & $mavenPath @mavenArgs -pl backend -am -Pmysql '-Dtest=MysqlConnectionIT' '-Dsurefire.failIfNoSpecifiedTests=false' test
+        if ($LASTEXITCODE -ne 0) { throw 'Falló la prueba de conexión MySQL.' }
+    } else {
+        Write-Host 'Backend MySQL en http://127.0.0.1:8080. Detén con Ctrl+C.'
+        java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar --spring.profiles.active=mysql
+    }
 } finally {
+    Remove-Item Env:PAQRAP_DB_KEY -ErrorAction SilentlyContinue
     Pop-Location
 }

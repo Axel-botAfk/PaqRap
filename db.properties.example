@@ -1,0 +1,9 @@
+# Copiar a db.properties (ignorado por Git). Este ejemplo corresponde al Docker local.
+# El backend HTTP usa 127.0.0.1:8080; MySQL usa un puerto distinto.
+db.host=127.0.0.1
+db.port=3307
+db.name=paqrap
+db.user=paqrap_app
+db.password.encrypted=REEMPLAZAR_CON_BASE64_AES_GCM
+# Opcional: si se define, db.url reemplaza la URL construida con host/port/name.
+# db.url=jdbc:mysql://127.0.0.1:3307/paqrap

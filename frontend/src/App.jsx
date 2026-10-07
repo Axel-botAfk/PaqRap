@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
+import { ANCHO, ALTO, nodosBloqueados, tramosDeRuta } from './mapa.js';
 
 const ESCENARIOS = [
   { id: 'OPERACION_DIARIA', nombre: 'Operación día a día', ayuda: 'Planificación y avance de un día.' },
@@ -70,32 +71,42 @@ function IconoLeyenda({ tipo, texto }) {
 }
 
 function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
+  const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const rutas = ejecucion?.rutas || [];
   const vehiculos = ejecucion?.vehiculos || [];
   const noAsignados = ejecucion?.noAsignados || [];
   const almacenes = mapaDatos?.almacenes || [];
   const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
+  const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, instante]);
+  const trazos = useMemo(() => rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados]);
+  const finalizada = ejecucion && esFinal(ejecucion.estado);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map(parada => parada.destino));
   const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0 && !mapaDatos;
-  const x = valor => Math.max(0, Math.min(690, (valor ?? 0) * 10));
-  const y = valor => Math.max(0, Math.min(490, (valor ?? 0) * 10));
+  const x = valor => Math.max(0, Math.min(700, (valor ?? 0) * 10));
+  const y = valor => Math.max(0, Math.min(500, (ALTO - (valor ?? 0)) * 10));
 
   return <div className="mapa-wrap">
-    <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Grilla del modelo · 70 × 50 nodos</span></div>
+    <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Retícula 70 × 50 km · nodos 0–70 y 0–50</span></div>
     <svg className="mapa" viewBox="0 0 700 500" role="img" aria-label="Mapa esquemático de rutas, pedidos y vehículos">
       <rect width="700" height="500" fill="#f4f8f8" />
-      {Array.from({ length: 8 }, (_, i) => <line key={`v${i}`} x1={i * 100} x2={i * 100} y1="0" y2="500" className="grid-line" />)}
-      {Array.from({ length: 6 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 100} y2={i * 100} className="grid-line" />)}
+      {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2="500" className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
+      {Array.from({ length: ALTO + 1 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 10} y2={i * 10} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
       {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
         <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
           fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
-      {rutas.map((ruta, indice) => {
-        const coordenadas = [ruta.origen, ...ruta.paradas.map(p => p.destino)]
-          .filter(Boolean).map(p => `${x(p.x)},${y(p.y)}`).join(' ');
-        return <polyline key={`${ruta.id}-${indice}`} points={coordenadas} fill="none"
-          stroke={ruta.id === rutaSeleccionada ? '#c64d39' : '#2a8494'}
-          strokeWidth={ruta.id === rutaSeleccionada ? 4 : 1.8} strokeOpacity={rutaSeleccionada && ruta.id !== rutaSeleccionada ? .25 : .72} />;
-      })}
+      {trazos.flatMap(({ ruta, tramos }, indice) => tramos.map((tramo, n) => {
+        const coordenadas = tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
+        const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
+        return <g key={`${ruta.id}-${indice}-${n}`} className={`trazo-ruta ${finalizada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
+          <polyline className="trazo-visible" points={coordenadas} fill="none" />
+          <polyline className="trazo-interaccion" points={coordenadas} fill="none"
+            tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
+            onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
+            onFocus={() => setRutaEnFoco(ruta.id)} onBlur={() => setRutaEnFoco(null)}>
+            <title>{`${ruta.id} · ${ruta.vehiculoId} · ${ruta.paradas.length} parada(s)`}</title>
+          </polyline>
+        </g>;
+      }))}
       {puntos.map((p, indice) => <circle key={`p${indice}`} cx={x(p.x)} cy={y(p.y)} r="4" fill="#d89039" stroke="white" strokeWidth="1.5" />)}
       {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
       {almacenes.map(almacen => <g key={almacen.id} transform={`translate(${x(almacen.ubicacion.x)},${y(almacen.ubicacion.y)})`}>
@@ -114,7 +125,11 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
     </svg>
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
     <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
-    <p className="mapa-aviso">Las líneas muestran el plan vigente de forma esquemática; no son calles recorridas ni entregas confirmadas.</p>
+    <div className="almacenes-contexto"><b>Almacenes del caso</b><div className="almacenes-tarjetas">{almacenes.map(almacen => <div key={almacen.id} className="almacen-tarjeta">
+      <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
+      <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {almacen.tipo === 'CENTRAL' ? 'abastecimiento principal' : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>
+    </div>)}</div><small>La flota parte de la central; los almacenes intermedios apoyan la reposición y se reabastecen diariamente. El stock mostrado es inicial, no inventario en vivo.</small></div>
+    <p className="mapa-aviso">Cada tramo visual usa solo movimientos norte, sur, este u oeste y evita los bloqueos activos en el reloj mostrado. No es un registro GPS ni una entrega confirmada. Al terminar, el trazo se atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
   </div>;
 }
 

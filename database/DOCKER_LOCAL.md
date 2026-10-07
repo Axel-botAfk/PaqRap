@@ -72,3 +72,25 @@ de estrés (`TABU`, horizonte de 1 día) terminó en estado `COLAPSADA` con 10.
 Esta base es solo para desarrollo local. `paqrap_app` queda con permiso `SELECT`;
 los resultados de las corridas aún permanecen en memoria del backend y no se
 guardan en MySQL.
+
+## Mapa de la beta
+
+El visualizador dibuja los nodos `0..70` y `0..50` de la ciudad del caso. Cada
+arista mide 1 km y el origen `(0,0)` está abajo a la izquierda. Para cada par
+almacén/parada, calcula un **trazo esquemático** por pasos cardinales (norte,
+sur, este u oeste) evitando los nodos bloqueados en la instantánea mostrada.
+Si un destino está aislado, no inventa una línea de ruta. El trazo no equivale
+a un historial GPS ni reproduce los tiempos de paso exactos del motor de Java.
+Al finalizar la ejecución se atenúa; al pasar el cursor o enfocar con Tab se
+resalta. Los almacenes se muestran con su ubicación y stock **inicial**; esta
+beta todavía no expone el inventario dinámico de cada almacén.
+
+Pruebas del trazador y compilación del frontend: `cd frontend; npm test; npm run build`.
+Verificación realizada el 06/10/2026 contra el MySQL local: `/api/salud`
+informó `MYSQL/OK`, el periodo `202902` devolvió 15 pedidos, dos bloqueos y
+tres almacenes. Con semilla `7`, la corrida diaria `202901` terminó con ocho
+pedidos recibidos (siete entregados), cinco días `202902` con 15 recibidos
+(14 entregados) y estrés `202903` con Búsqueda Tabú quedó `COLAPSADA` (10
+recibidos). Esto valida la conexión y la lectura de semillas, no la calidad
+logística del resultado. Los pedidos entregados y recibidos no tienen por qué
+coincidir: el resto puede quedar pendiente al finalizar el horizonte.

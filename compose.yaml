@@ -1,0 +1,32 @@
+name: paqrap-local
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: "no"
+    environment:
+      MYSQL_DATABASE: paqrap
+      MYSQL_ROOT_PASSWORD: ${PAQRAP_MYSQL_ROOT_PASSWORD:?Configura PAQRAP_MYSQL_ROOT_PASSWORD en .env.docker}
+      MYSQL_USER: paqrap_app
+      MYSQL_PASSWORD: ${PAQRAP_DB_PASSWORD:?Configura PAQRAP_DB_PASSWORD en .env.docker}
+      TZ: America/Lima
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - paqrap_mysql_data:/var/lib/mysql
+      - ./database/paqrap_mysql.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/seed_operacion_diaria.sql:/docker-entrypoint-initdb.d/02-seed-operacion.sql:ro
+      - ./database/seed_cinco_dias.sql:/docker-entrypoint-initdb.d/03-seed-cinco-dias.sql:ro
+      - ./database/seed_colapso.sql:/docker-entrypoint-initdb.d/04-seed-colapso.sql:ro
+      - ./database/docker/05-app-readonly.sql:/docker-entrypoint-initdb.d/05-app-readonly.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u "$$MYSQL_USER" -D paqrap -Nse 'SELECT COUNT(*) FROM almacen' >/dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+volumes:
+  paqrap_mysql_data:

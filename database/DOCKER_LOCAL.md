@@ -1,0 +1,74 @@
+# MySQL local de PaqRap con Docker
+
+Esta opción no modifica tu servicio Windows `MySQL80`: el contenedor escucha solo en
+`127.0.0.1:3307`. El esquema y las tres semillas se cargan **solo la primera vez**
+que se crea su volumen `paqrap_mysql_data`. Las contraseñas se generan en
+`.env.docker`, archivo ignorado por Git; no se publican en el repositorio.
+
+## Arranque
+
+1. Abre Docker Desktop y espera a que indique que el motor está activo.
+2. Desde la raíz del repositorio, en PowerShell:
+
+```powershell
+& .\scripts\start-local-db.ps1
+docker compose --env-file .env.docker ps
+```
+
+No ejecutes `docker compose config` sin `--quiet`: puede imprimir las contraseñas
+interpoladas. El script verifica la configuración sin mostrarlas y espera el
+healthcheck. Si ya existe `.env.docker`, reutiliza las mismas credenciales.
+
+## Conectar el backend local
+
+Detén primero cualquier backend anterior que use el puerto `8081`. Luego
+ejecuta el lanzador local desde la raíz del repositorio:
+
+```powershell
+& .\scripts\start-local-backend-mysql.ps1
+```
+
+El script lee la contraseña local sin imprimirla, compila con `-Pmysql` y
+activa el perfil `mysql`. Busca Maven en `PATH` y, en este equipo, en la
+instalación local `..\tmp\maven`. Si prefieres hacerlo manualmente, consulta
+[database/README.md](README.md) para los comandos equivalentes.
+Mantén Vite en `http://127.0.0.1:5173/` (`cd frontend; npm run dev`) para ver la GUI.
+
+Verifica en otra terminal:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8081/api/salud
+Invoke-RestMethod http://127.0.0.1:8081/api/datos/periodos
+```
+
+La salud debe indicar `fuente: MYSQL`, y los periodos incluir `202901`,
+`202902` y `202903`. Para probarlos en la GUI:
+
+| Periodo | Fecha sugerida | Escenario | Esperado en la base |
+| --- | --- | --- | --- |
+| `202901` | `2029-01-15` | Operación día a día | 8 pedidos, 1 bloqueo, 1 mantenimiento. |
+| `202902` | `2029-02-01` | Simulación de 5 días | 15 pedidos, 2 bloqueos, 2 mantenimientos. |
+| `202903` | `2029-03-01` | Colapso logístico | 10 pedidos de estrés, 1 bloqueo, 2 mantenimientos. |
+
+Los tres almacenes y 37 vehículos vienen del esquema base. El bloqueo se
+resalta en el mapa **solo durante su vigencia**; ajusta fecha y hora para
+verlo. El resultado de colapso no está precargado: lo determina el simulador.
+
+## Detener sin perder datos
+
+```powershell
+docker compose --env-file .env.docker down
+```
+
+El volumen se conserva. **No uses `down -v`** salvo que quieras borrar
+deliberadamente toda la base de pruebas y reinicializar las semillas. Cambiar
+los SQL montados no altera una base ya inicializada; para nuevas pruebas usa
+migraciones o ejecuta los scripts adicionales manualmente.
+
+Verificación local realizada el 06/10/2026 con semilla de algoritmo `7`:
+operación diaria terminó con 8 pedidos, cinco días terminó con 15 y el caso
+de estrés (`TABU`, horizonte de 1 día) terminó en estado `COLAPSADA` con 10.
+
+Esta base es solo para desarrollo local. `paqrap_app` queda con permiso `SELECT`;
+los resultados de las corridas aún permanecen en memoria del backend y no se
+guardan en MySQL.

@@ -1,5 +1,8 @@
 # Base de datos MySQL de PaqRap
 
+Para levantar una instancia local aislada con Docker y las tres semillas,
+consulta [DOCKER_LOCAL.md](DOCKER_LOCAL.md).
+
 ## Ejecución en Workbench
 
 Abrir [`paqrap_mysql.sql`](paqrap_mysql.sql) y ejecutar el archivo completo sobre **MySQL 8.0.16 o superior**. Crea `paqrap`, selecciona la base, construye las tablas en orden de dependencia y carga una muestra pequeña. El script está pensado para una base nueva; no se debe ejecutar dos veces sobre las mismas tablas. No contiene `DROP`.

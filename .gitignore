@@ -22,6 +22,7 @@ Thumbs.db
 # ---------- Secretos: NUNCA subir al repositorio ----------
 .env
 .env.*
+!.env.docker.example
 *.pem
 *.key
 id_rsa*

@@ -1,13 +1,18 @@
 package com.paqrap.api;
 
 import com.paqrap.api.ApiModels.PeriodoVista;
+import com.paqrap.api.ApiModels.MapaDatosVista;
+import com.paqrap.datos.DatosCaso;
 import com.paqrap.datos.DatosReales;
 import com.paqrap.modelo.Bloqueo;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.PlanMantenimiento;
+import com.paqrap.modelo.Almacen;
+import com.paqrap.modelo.Vehiculo;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.context.annotation.Profile;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -19,7 +24,8 @@ import java.util.List;
 
 /** Solo acepta periodos calculados a partir de fechas, nunca rutas proporcionadas por HTTP. */
 @Service
-final class DatosService {
+@Profile("!mysql")
+final class DatosService implements DatosFuente {
     private final Path carpeta;
 
     DatosService(@Value("${paqrap.data-dir}") String carpetaConfigurada) {
@@ -28,7 +34,9 @@ final class DatosService {
 
     Path carpeta() { return carpeta; }
 
-    List<String> periodos() {
+    public String tipo() { return "ARCHIVOS"; }
+
+    public List<String> periodos() {
         try {
             if (!Files.isDirectory(carpeta)) {
                 throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "DATOS_NO_DISPONIBLES",
@@ -43,20 +51,38 @@ final class DatosService {
         }
     }
 
-    PeriodoVista periodo(String aaaamm) {
+    public PeriodoVista periodo(String aaaamm) {
         YearMonth mes = parsearPeriodo(aaaamm);
         try {
             DatosReales datos = DatosReales.cargar(carpeta, mes);
             return new PeriodoVista(aaaamm, datos.ventas().size(), datos.bloqueos().size(),
                     datos.mantenimiento().getCantidadDeJornadas(),
-                    Files.isRegularFile(datos.archivoMantenimiento()));
+                    Files.isRegularFile(datos.archivoMantenimiento()),
+                    datos.ventas().stream().map(p -> p.getFechaRegistro().toLocalDate())
+                            .min(java.time.LocalDate::compareTo).orElse(null));
         } catch (IOException e) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PERIODO_NO_DISPONIBLE",
                     "Faltan archivos de ventas o bloqueos para ese periodo.");
         }
     }
 
-    DatosEntrada cargar(LocalDateTime inicio, int dias) {
+    public MapaDatosVista mapa(String aaaamm) {
+        YearMonth mes = parsearPeriodo(aaaamm);
+        try {
+            DatosReales datos = DatosReales.cargar(carpeta, mes);
+            return new MapaDatosVista(almacenes().stream().map(Vistas::almacen).toList(),
+                    datos.bloqueos().stream().map(Vistas::bloqueo).toList());
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "PERIODO_NO_DISPONIBLE",
+                    "Faltan archivos para ese periodo.");
+        }
+    }
+
+    public List<Almacen> almacenes() { return DatosCaso.almacenes(); }
+
+    public List<Vehiculo> flota() { return DatosCaso.flota(); }
+
+    public DatosEntrada cargar(LocalDateTime inicio, int dias) {
         List<Pedido> ventas = new ArrayList<>();
         List<Bloqueo> bloqueos = new ArrayList<>();
         PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
@@ -81,7 +107,7 @@ final class DatosService {
         return new DatosEntrada(List.copyOf(ventas), List.copyOf(bloqueos), mantenimiento);
     }
 
-    private static YearMonth parsearPeriodo(String valor) {
+    static YearMonth parsearPeriodo(String valor) {
         if (!valor.matches("[0-9]{6}")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PERIODO_INVALIDO",
                     "El periodo debe tener formato aaaamm.");
@@ -95,6 +121,4 @@ final class DatosService {
         }
     }
 
-    record DatosEntrada(List<Pedido> ventas, List<Bloqueo> bloqueos,
-                        PlanMantenimiento mantenimiento) { }
 }

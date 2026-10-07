@@ -69,12 +69,14 @@ function IconoLeyenda({ tipo, texto }) {
   return <span className="leyenda-vehiculo"><svg viewBox="0 0 32 32" aria-hidden="true"><DibujoVehiculo tipo={tipo} /></svg>{texto}</span>;
 }
 
-function MapaOperacion({ ejecucion, rutaSeleccionada }) {
+function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
   const rutas = ejecucion?.rutas || [];
   const vehiculos = ejecucion?.vehiculos || [];
   const noAsignados = ejecucion?.noAsignados || [];
+  const almacenes = mapaDatos?.almacenes || [];
+  const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map(parada => parada.destino));
-  const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0;
+  const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0 && !mapaDatos;
   const x = valor => Math.max(0, Math.min(690, (valor ?? 0) * 10));
   const y = valor => Math.max(0, Math.min(490, (valor ?? 0) * 10));
 
@@ -84,6 +86,9 @@ function MapaOperacion({ ejecucion, rutaSeleccionada }) {
       <rect width="700" height="500" fill="#f4f8f8" />
       {Array.from({ length: 8 }, (_, i) => <line key={`v${i}`} x1={i * 100} x2={i * 100} y1="0" y2="500" className="grid-line" />)}
       {Array.from({ length: 6 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 100} y2={i * 100} className="grid-line" />)}
+      {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
+        <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
+          fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
       {rutas.map((ruta, indice) => {
         const coordenadas = [ruta.origen, ...ruta.paradas.map(p => p.destino)]
           .filter(Boolean).map(p => `${x(p.x)},${y(p.y)}`).join(' ');
@@ -93,6 +98,12 @@ function MapaOperacion({ ejecucion, rutaSeleccionada }) {
       })}
       {puntos.map((p, indice) => <circle key={`p${indice}`} cx={x(p.x)} cy={y(p.y)} r="4" fill="#d89039" stroke="white" strokeWidth="1.5" />)}
       {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
+      {almacenes.map(almacen => <g key={almacen.id} transform={`translate(${x(almacen.ubicacion.x)},${y(almacen.ubicacion.y)})`}>
+        <title>{`${almacen.id} · ${almacen.tipo} · stock inicial ${almacen.stockInicial}`}</title>
+        {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
+          : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
+        <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
+      </g>)}
       {vehiculos.map(vehiculo => <svg key={vehiculo.id}
         x={x(vehiculo.ubicacion?.x) - 13} y={y(vehiculo.ubicacion?.y) - 13}
         width="26" height="26" viewBox="0 0 32 32">
@@ -102,7 +113,7 @@ function MapaOperacion({ ejecucion, rutaSeleccionada }) {
       </svg>)}
     </svg>
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
+    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
     <p className="mapa-aviso">Las líneas muestran el plan vigente de forma esquemática; no son calles recorridas ni entregas confirmadas.</p>
   </div>;
 }
@@ -159,6 +170,8 @@ export default function App() {
   const [periodos, setPeriodos] = useState([]);
   const [periodo, setPeriodo] = useState('');
   const [detalle, setDetalle] = useState(null);
+  const [mapaDatos, setMapaDatos] = useState(null);
+  const [fuente, setFuente] = useState('ARCHIVOS');
   const [dia, setDia] = useState('');
   const [hora, setHora] = useState('00:00');
   const [horizonte, setHorizonte] = useState(30);
@@ -175,16 +188,19 @@ export default function App() {
 
   useEffect(() => {
     let activo = true;
+    api.salud().then(info => { if (activo) setFuente(info.fuente || 'ARCHIVOS'); }).catch(() => {});
     api.periodos().then(lista => { if (activo) setPeriodos(lista); })
       .catch(e => { if (activo) setError(`No se pudo cargar el catálogo: ${e.message}`); });
     return () => { activo = false; };
   }, []);
 
   useEffect(() => {
-    if (!periodo) { setDetalle(null); return; }
+    if (!periodo) { setDetalle(null); setMapaDatos(null); return; }
     let activo = true;
-    api.periodo(periodo).then(info => { if (activo) setDetalle(info); })
+    api.periodo(periodo).then(info => { if (activo) { setDetalle(info); setDia(anterior => anterior || info.primeraFechaPedido || ''); } })
       .catch(e => { if (activo) { setDetalle(null); setError(e.message); } });
+    api.mapa(periodo).then(info => { if (activo) setMapaDatos(info); })
+      .catch(e => { if (activo) { setMapaDatos(null); setError(e.message); } });
     return () => { activo = false; };
   }, [periodo]);
 
@@ -277,7 +293,7 @@ export default function App() {
         {[['operacion', 'Operación'], ['pedidos', 'Pedidos'], ['incidencias', 'Alertas']].map(([clave, titulo]) =>
           <button key={clave} type="button" className={seccion === clave ? 'activo' : ''} onClick={() => setSeccion(clave)}>{titulo}</button>)}
       </nav>
-      <div className="barra-pie"><strong>Sin base de datos</strong><span>Las corridas viven temporalmente en memoria. Las selecciones comienzan vacías.</span></div>
+      <div className="barra-pie"><strong>{fuente === 'MYSQL' ? 'Datos en MySQL' : 'Datos desde archivos'}</strong><span>Las corridas viven temporalmente en memoria; el historial aún no es persistente.</span></div>
     </aside>
 
     <main className="contenido">
@@ -299,7 +315,8 @@ export default function App() {
           {aviso && <p className="aviso-conexion" role="status">{aviso}</p>}
           <p className="nota-formulario">La ejecución es asincrónica. Puedes abrir el mismo enlace en otro dispositivo para consultar su estado.</p>
         </form>
-        <MapaOperacion ejecucion={ejecucion} rutaSeleccionada={rutaSeleccionada} /></div>
+        <MapaOperacion ejecucion={ejecucion} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
+          instante={ejecucion?.reloj || (dia ? `${dia}T${hora}:00` : null)} /></div>
         <div className="metricas">
           <TarjetaMetrica etiqueta="Pedidos entregados" valor={numero(ejecucion?.avance?.pedidosEntregados)} nota="Entrega efectiva acumulada" />
           <TarjetaMetrica etiqueta="Productos entregados" valor={numero(ejecucion?.avance?.productosEntregados)} nota="Unidades acumuladas" />
@@ -309,7 +326,7 @@ export default function App() {
         </div>
         <div className="dos-columnas"><ListaRutas ejecucion={ejecucion} seleccion={rutaSeleccionada} alSeleccionar={setRutaSeleccionada} /><section className="panel resumen"><div className="panel-titulo"><div><h2>Resumen de la corrida</h2><p>Disponible al terminar o detectar colapso.</p></div></div>{!ejecucion?.resumen ? <p className="vacio">Todavía no hay un resumen final.</p> : <dl><div><dt>Pedidos recibidos</dt><dd>{numero(ejecucion.resumen.pedidosRecibidos)}</dd></div><div><dt>Pedidos pendientes</dt><dd>{numero(ejecucion.resumen.pedidosPendientes)}</dd></div><div><dt>Distancia total</dt><dd>{decimal(ejecucion.resumen.distanciaTotalKm, ' km')}</dd></div><div><dt>Costo total</dt><dd>S/ {decimal(ejecucion.resumen.costoTotal)}</dd></div><div><dt>Fin de simulación</dt><dd>{fecha(ejecucion.resumen.fin)}</dd></div></dl>}</section></div>
       </>}
-      {seccion === 'pedidos' && <><div className="encabezado-seccion"><div><span className="sobrelinea">ESTADO ACTUAL</span><h2>Pedidos visibles</h2></div><p>No se pueden registrar ni cargar pedidos desde esta beta; se leen de los archivos del curso.</p></div><TablaPedidos ejecucion={ejecucion} /></>}
+      {seccion === 'pedidos' && <><div className="encabezado-seccion"><div><span className="sobrelinea">ESTADO ACTUAL</span><h2>Pedidos visibles</h2></div><p>No se pueden registrar pedidos desde esta beta; se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}.</p></div><TablaPedidos ejecucion={ejecucion} /></>}
       {seccion === 'incidencias' && <><div className="encabezado-seccion"><div><span className="sobrelinea">MONITOREO</span><h2>Alertas y excepciones</h2></div><p>Se muestran únicamente hechos informados por la corrida activa.</p></div><PanelIncidencias ejecucion={ejecucion} /></>}
       <footer className="pie">PaqRap · Beta académica. No usar para decisiones logísticas reales.</footer>
     </main>

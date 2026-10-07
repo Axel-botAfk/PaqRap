@@ -1,12 +1,16 @@
 package com.paqrap.api;
 
 import com.paqrap.api.ApiModels.AvanceVista;
+import com.paqrap.api.ApiModels.AlmacenVista;
+import com.paqrap.api.ApiModels.BloqueoVista;
 import com.paqrap.api.ApiModels.Coordenada;
 import com.paqrap.api.ApiModels.PedidoVista;
 import com.paqrap.api.ApiModels.ResumenVista;
 import com.paqrap.api.ApiModels.RutaVista;
 import com.paqrap.api.ApiModels.VehiculoVista;
 import com.paqrap.modelo.Pedido;
+import com.paqrap.modelo.Almacen;
+import com.paqrap.modelo.Bloqueo;
 import com.paqrap.modelo.Ruta;
 import com.paqrap.modelo.Ubicacion;
 import com.paqrap.modelo.Vehiculo;
@@ -22,6 +26,16 @@ final class Vistas {
 
     static Coordenada coordenada(Ubicacion ubicacion) {
         return new Coordenada(ubicacion.x(), ubicacion.y());
+    }
+
+    static AlmacenVista almacen(Almacen almacen) {
+        return new AlmacenVista(almacen.getId(), almacen.getTipo().name(),
+                coordenada(almacen.getUbicacion()), almacen.getStockInicial());
+    }
+
+    static BloqueoVista bloqueo(Bloqueo bloqueo) {
+        return new BloqueoVista(bloqueo.inicio(), bloqueo.fin(),
+                bloqueo.nodos().stream().map(Vistas::coordenada).toList());
     }
 
     static PedidoVista pedido(Pedido pedido, String estado, String motivo) {

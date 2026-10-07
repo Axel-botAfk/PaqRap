@@ -6,7 +6,6 @@ import com.paqrap.api.ApiModels.EjecucionVista;
 import com.paqrap.api.ApiModels.Escenario;
 import com.paqrap.api.ApiModels.Estado;
 import com.paqrap.api.ApiModels.EventoVista;
-import com.paqrap.datos.DatosCaso;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.planificador.Evaluador;
 import com.paqrap.planificador.Parametros;
@@ -38,7 +37,7 @@ import java.util.concurrent.TimeUnit;
 @Service
 final class EjecucionesService {
     private static final int MAX_REGISTROS = 32;
-    private final DatosService datos;
+    private final DatosFuente datos;
     private final EventosWebSocket eventos;
     private final ConcurrentMap<UUID, Ejecucion> ejecuciones = new ConcurrentHashMap<>();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(
@@ -49,7 +48,7 @@ final class EjecucionesService {
                 return hilo;
             }, new ThreadPoolExecutor.AbortPolicy());
 
-    EjecucionesService(DatosService datos, EventosWebSocket eventos) {
+    EjecucionesService(DatosFuente datos, EventosWebSocket eventos) {
         this.datos = datos;
         this.eventos = eventos;
     }
@@ -61,7 +60,7 @@ final class EjecucionesService {
                     "Escenario, algoritmo e inicio son obligatorios.");
         }
         int dias = dias(request);
-        DatosService.DatosEntrada entrada = datos.cargar(request.inicio(), dias);
+        DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias);
         limpiarAntiguas();
         if (ejecuciones.size() >= MAX_REGISTROS) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "CAPACIDAD_AGOTADA",
@@ -110,7 +109,7 @@ final class EjecucionesService {
     }
 
     private void correr(Ejecucion ejecucion, CrearEjecucionRequest request, int dias,
-                        DatosService.DatosEntrada entrada) {
+                        DatosFuente.DatosEntrada entrada) {
         try {
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.EN_CURSO, null, null),
@@ -131,7 +130,7 @@ final class EjecucionesService {
                     .construir();
 
             Simulador simulador = new Simulador(planificador, ruteo,
-                    DatosCaso.almacenes(), parametros, Duration.ofMinutes(30),
+                    datos.almacenes(), parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
@@ -158,7 +157,7 @@ final class EjecucionesService {
                     });
 
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
-                    Duration.ofDays(dias), entrada.ventas(), DatosCaso.flota());
+                    Duration.ofDays(dias), entrada.ventas(), datos.flota());
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             EjecucionVista anterior = ejecucion.vista;
             Estado finalEstado = resumen.huboColapso() ? Estado.COLAPSADA : Estado.TERMINADA;

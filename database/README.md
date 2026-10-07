@@ -60,26 +60,65 @@ Los archivos son texto con formato propio. `LOAD DATA INFILE` no basta para los 
 
 Las clases de `codigo/paqrap` **son clases de dominio, no entidades JPA**: no tienen `@Entity`, constructores de hidratación ni mapeos. Mantenerlas evita alterar el planificador y permite usar `JdbcTemplate` en `backend`. Con JDBC **no corresponde usar `@JoinColumn`**: las uniones están definidas por las claves foráneas del SQL. Si se opta por JPA en otra fase, las referencias serían `Pedido → Cliente` con `@JoinColumn(name="cliente_id")`, `Pedido → Ubicacion` con `@JoinColumn(name="destino_id")`, `Ruta → Plan/Almacen/Vehiculo` con `plan_id`, `almacen_id`, `vehiculo_id`, y `Ruta ↔ PedidoParte` mediante la entidad intermedia `ruta_parada` porque tiene `orden` y `llegada_estimada`.
 
-## Conexión Spring Boot y trabajo pendiente en Java
+## Conexión local con Spring Boot
 
-El perfil Maven `mysql` de [`backend/pom.xml`](../backend/pom.xml) añade `spring-boot-starter-jdbc` y el driver MySQL. [`application-mysql.properties`](../backend/src/main/resources/application-mysql.properties) define la conexión con variables de entorno. Desde la raíz del repositorio, después de crear la base y un usuario MySQL con permisos para `paqrap`:
+El perfil Maven `mysql` de [`backend/pom.xml`](../backend/pom.xml) añade `spring-boot-starter-jdbc` y el driver MySQL. [`application-mysql.properties`](../backend/src/main/resources/application-mysql.properties) define la conexión con variables de entorno. Ahora `MysqlDatosService` lee pedidos, bloqueos, mantenimientos, almacenes y flota con consultas parametrizadas. La API publica esos datos en `/api/datos/periodos`, `/api/datos/periodos/{aaaamm}` y `/api/datos/mapa/{aaaamm}`; las corridas usan esas entradas cuando se activa el perfil `mysql`. El perfil normal sigue leyendo los TXT.
+
+### Preparar una base local nueva
+
+1. En MySQL Workbench, con una cuenta administradora local, ejecuta `paqrap_mysql.sql` sobre una base nueva. No lo ejecutes sobre una base con datos que quieras conservar: el archivo crea tablas sin `DROP`, pero no es una migración.
+2. Ejecuta por separado `seed_operacion_diaria.sql`, `seed_cinco_dias.sql` y `seed_colapso.sql` para agregar las tres demostraciones sintéticas. Son idempotentes para sus propios registros. La muestra de septiembre de 2026 del esquema sigue disponible.
+3. Crea un usuario **solo de lectura** para la aplicación desde Workbench. Sustituye la contraseña de ejemplo por una que elijas y no la copies al repositorio:
+
+```sql
+CREATE USER IF NOT EXISTS 'paqrap_app'@'127.0.0.1' IDENTIFIED BY '<elige-una-contraseña-local>';
+GRANT SELECT ON paqrap.* TO 'paqrap_app'@'127.0.0.1';
+```
+
+4. En una terminal PowerShell nueva, configura la contraseña sin guardarla en un archivo versionado y arranca desde la raíz del repositorio:
 
 ```powershell
 $env:PAQRAP_DB_USER = 'paqrap_app'
-$env:PAQRAP_DB_PASSWORD = '<contraseña-local>'
+$env:PAQRAP_DB_PASSWORD = '<tu-contraseña-local>'
 mvn -pl backend -am -Pmysql -DskipTests package
 java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar --spring.profiles.active=mysql
 ```
 
-El perfil establece la conexión, pero **la API aún lee archivos y guarda ejecuciones en `ConcurrentMap`**. Para que lea y escriba en MySQL se necesitan adaptadores JDBC en `backend`, sin duplicar `Pedido`, `Ruta` ni otras clases de dominio:
+5. Verifica `GET http://127.0.0.1:8081/api/salud`: debe devolver `"fuente":"MYSQL"`. Consulta `GET /api/datos/periodos`; las semillas agregan `202901`, `202902` y `202903`. La GUI local usa el mismo proxy `/api` de Vite.
 
-1. `ArchivoFuenteRepository`, `PedidoRepository`, `BloqueoRepository`, `MantenimientoRepository` y `CatalogoRepository`: carga transaccional de TXT y reconstrucción de `DatosService.DatosEntrada` desde SQL. Resolver primero la identidad del pedido por `(archivo_id, codigo)` cuando se consulten varios meses; el código solo no es único.
-2. `EjecucionRepository`: crear por UUID, actualizar estados y snapshots de flota/inventario y recuperar una corrida con `GET /api/ejecuciones/{id}`. Al iniciar después de un reinicio, decidir qué hacer con corridas que quedaron `EN_CURSO`.
-3. `PlanRepository`: insertar un `plan` por replanificación, sus `ruta`, `ruta_parada` y partes no asignadas en una sola transacción; conservar `orden_plan` y `orden`.
-4. `ResultadoRepository`: registrar `Entrega` real, `Averia`, mediciones, vencimientos y resumen al cerrar la corrida. Mantener la escritura idempotente por `(pedido_parte_id)` para no duplicar entregas al reintentar.
-5. Integrar esos repositorios en `DatosService` y `EjecucionesService` detrás de un perfil o interfaz, manteniendo el flujo asíncrono y las publicaciones WebSocket. Crear en BD el mismo UUID antes de encolar la tarea y confirmar la transacción antes de publicar cada estado.
+| Seed | Fecha para ejecutar | Escenario | Contenido |
+| --- | --- | --- | --- |
+| `seed_operacion_diaria.sql` | 2029-01-15 | Operación día a día | 8 pedidos, 1 bloqueo, 1 mantenimiento. |
+| `seed_cinco_dias.sql` | 2029-02-01 | Simulación de 5 días | 15 pedidos distribuidos en 5 días, 2 bloqueos, 2 mantenimientos. |
+| `seed_colapso.sql` | 2029-03-01 | Colapso logístico | 10 pedidos lejanos con plazo de 1 hora, 1 bloqueo, 2 mantenimientos. Es un caso de estrés; comprobar el resultado en el simulador, no asumirlo por el nombre. |
 
-Las operaciones de varios pasos deben usar `@Transactional`. No se requiere `spring.jpa.hibernate.ddl-auto` porque este diseño usa JDBC y el esquema se crea mediante el SQL. Los secretos permanecen en variables de entorno, nunca en el repositorio.
+Los tres seeds comparten los tres almacenes y la flota de 37 vehículos del esquema base. Son **datos sintéticos**, no parte de los archivos del curso. Las capas del mapa muestran almacenes y bloqueos vigentes a la hora seleccionada; las rutas son planes calculados, no entregas confirmadas.
+
+Comprueba la carga sin modificar datos:
+
+```sql
+SELECT DATE_FORMAT(registrado_en, '%Y%m') periodo, COUNT(*) pedidos
+FROM pedido WHERE registrado_en >= '2029-01-01' AND registrado_en < '2029-04-01'
+GROUP BY periodo ORDER BY periodo;
+-- Esperado: 202901=8, 202902=15, 202903=10.
+SELECT COUNT(*) almacenes FROM almacen; -- Esperado: 3.
+SELECT COUNT(*) vehiculos FROM vehiculo; -- Esperado: 37.
+SELECT f.nombre, COUNT(b.id) bloqueos FROM archivo_fuente f
+LEFT JOIN bloqueo b ON b.archivo_id=f.id
+WHERE f.nombre LIKE 'demo.bloqueos.%' GROUP BY f.nombre;
+```
+
+### Límite de la integración actual
+
+La base es la fuente de **entradas y catálogos**, pero **no guarda las ejecuciones ni los resultados**: estos siguen en `ConcurrentMap` y desaparecen al reiniciar el backend. No se insertan entregas o planes ficticios en el seed. Para persistir la salida de cada corrida hacen falta adaptadores transaccionales adicionales, sin duplicar `Pedido`, `Ruta` ni otras clases de dominio:
+
+El perfil MySQL lee los identificadores y tipos de la flota desde `vehiculo`; las especificaciones de capacidad, velocidad y costo siguen viniendo de `TipoVehiculo` en Java. Si se modifican esos valores en `tipo_vehiculo`, el motor todavía no los aplicará automáticamente. Mantener ambos sincronizados hasta implementar la configuración dinámica.
+
+1. Importación transaccional de todos los TXT del curso a `archivo_fuente`, `pedido`, `bloqueo` y `mantenimiento_programado`. Actualmente solo están la muestra original y los tres seeds.
+2. `EjecucionRepository`: crear por UUID, actualizar estados y recuperar una corrida tras reinicio; resolver las corridas que queden `EN_CURSO` si el proceso se interrumpe.
+3. `PlanRepository` y `ResultadoRepository`: guardar versiones de rutas, partes no asignadas, entregas reales, averías y resúmenes en transacciones idempotentes.
+
+Las operaciones de varios pasos deben usar `@Transactional`. No se requiere `spring.jpa.hibernate.ddl-auto` porque este diseño usa JDBC y el esquema se crea mediante el SQL. Los secretos permanecen en variables de entorno, nunca en el repositorio. La aplicación solo necesita `SELECT` en esta fase.
 
 Las reglas que involucran varias filas siguen en la capa de dominio/transacción: la suma de cantidades de las partes de un pedido no puede exceder el original, una parte no puede aparecer a la vez en `ruta_parada` y `plan_pedido_no_asignado` del mismo plan, y cada tramo de una poligonal debe ser horizontal o vertical. Las restricciones `CHECK` de una sola fila no bastan para expresar esas reglas.
 

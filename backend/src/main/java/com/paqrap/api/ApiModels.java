@@ -3,6 +3,7 @@ package com.paqrap.api;
 import jakarta.validation.constraints.NotNull;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,6 +69,13 @@ public final class ApiModels {
 
     public record PeriodoVista(
             String periodo, int pedidos, int bloqueos, int jornadasMantenimiento,
-            boolean mantenimientoDisponible
+            boolean mantenimientoDisponible, LocalDate primeraFechaPedido
     ) { }
+
+    public record AlmacenVista(String id, String tipo, Coordenada ubicacion,
+                               int stockInicial) { }
+    public record BloqueoVista(LocalDateTime inicio, LocalDateTime fin,
+                               List<Coordenada> nodos) { }
+    public record MapaDatosVista(List<AlmacenVista> almacenes,
+                                 List<BloqueoVista> bloqueos) { }
 }

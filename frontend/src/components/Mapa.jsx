@@ -27,6 +27,30 @@ const x = v => Math.min(ANCHO, Math.max(0, v ?? 0)) * PASO;
 const y = v => (ALTO - Math.min(ALTO, Math.max(0, v ?? 0))) * PASO;
 const puntos = tramo => tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
 
+/* Siluetas de perfil, en blanco sobre la insignia de la unidad. Caben en 20 × 14. */
+function SiluetaVehiculo({ tipo, color }) {
+  const trazo = { stroke: '#fff', fill: 'none', strokeLinecap: 'round', strokeLinejoin: 'round' };
+  if (tipo === 'MOTO') {
+    return <g {...trazo} strokeWidth="1.2">
+      <circle cx="-4.6" cy="2.4" r="2.3" />
+      <circle cx="4.6" cy="2.4" r="2.3" />
+      <path d="M-4.6 2.4 L-1.6 -1.2 H2.2 L4.6 2.4 M2.2 -1.2 L3.2 -3.6 H5" />
+    </g>;
+  }
+  if (tipo === 'BICICLETA') {
+    return <g {...trazo} strokeWidth="1">
+      <circle cx="-4.6" cy="2.4" r="2.5" />
+      <circle cx="4.6" cy="2.4" r="2.5" />
+      <path d="M-4.6 2.4 L-2.4 -2 L2.6 -1.4 L4.6 2.4 M-2.4 -2 L-0.4 2.4 L2.6 -1.4 M2.6 -1.4 L2.2 -3.4 H3.8" />
+    </g>;
+  }
+  return <g>
+    <path d="M-6.2 2.2 V-0.2 L-4.6 -0.7 L-3.1 -3.6 H3.1 L4.6 -0.7 L6.2 -0.2 V2.2 Z" fill="#fff" />
+    <circle cx="-3.6" cy="2.6" r="1.8" fill="#fff" stroke={color} strokeWidth="0.9" />
+    <circle cx="3.6" cy="2.6" r="1.8" fill="#fff" stroke={color} strokeWidth="0.9" />
+  </g>;
+}
+
 export default function Mapa({ ejecucion, rutaSeleccionada, alSeleccionarRuta, mapaDatos, instante, children }) {
   const [zoom, setZoom] = useState(1);
   const [centro, setCentro] = useState({ x: ANCHO * PASO / 2, y: ALTO * PASO / 2 });
@@ -188,13 +212,18 @@ export default function Mapa({ ejecucion, rutaSeleccionada, alSeleccionarRuta, m
 
         {vehiculosVisibles.map(vehiculo => {
           const fuera = vehiculo.estado === 'AVERIADO' || vehiculo.estado === 'EN_MANTENIMIENTO';
+          const relleno = fuera ? 'var(--red)' : COLOR[vehiculo.tipo] || 'var(--ink)';
+          /* Una unidad se dibuja como una insignia redondeada con la silueta de su tipo, para
+             no confundirla con los destinos (círculos pequeños) ni con los almacenes
+             (cuadrados): la forma distingue el tipo aunque el color no se perciba. */
           return <g key={vehiculo.id}
             transform={`translate(${x(vehiculo.ubicacion?.x)}, ${y(vehiculo.ubicacion?.y)})`}>
             <title>{`${vehiculo.id} · ${vehiculo.tipo} · ${vehiculo.estado} · ${vehiculo.cargaAbordo}/${vehiculo.capacidad}`}</title>
-            <circle r="7" fill={fuera ? 'var(--red)' : COLOR[vehiculo.tipo] || 'var(--ink)'}
-              stroke="#fff" strokeWidth="2" />
-            {fuera && <path d="M-2.8 -2.8 L2.8 2.8 M2.8 -2.8 L-2.8 2.8" stroke="#fff"
-              strokeWidth="1.8" strokeLinecap="round" />}
+            <rect x="-10" y="-7" width="20" height="14" rx="4" fill={relleno}
+              stroke="#fff" strokeWidth="1.8" />
+            <SiluetaVehiculo tipo={vehiculo.tipo} color={relleno} />
+            {fuera && <path d="M-3 -3 L3 3 M3 -3 L-3 3" stroke="#fff"
+              strokeWidth="2" strokeLinecap="round" />}
           </g>;
         })}
 
@@ -250,7 +279,8 @@ export default function Mapa({ ejecucion, rutaSeleccionada, alSeleccionarRuta, m
       <span><i className="ln" style={{ background: 'var(--moto)' }} />MOTO</span>
       <span><i className="ln" style={{ background: 'var(--bici)' }} />BICICLETA</span>
       <span><i className="sq" />ALMACÉN</span>
-      <span><i className="dot" style={{ background: 'var(--auto)' }} />PLANIFICADO</span>
+      <span><i className="veh" />UNIDAD (AUTO · MOTO · BICI)</span>
+      <span><i className="dot" style={{ background: 'var(--auto)' }} />DESTINO PLANIFICADO</span>
       <span><i className="dot" style={{ background: 'var(--red)' }} />SIN ASIGNAR</span>
       <span><i className="sq" style={{ background: 'var(--red)' }} />BLOQUEO ({bloqueosActivos.length})</span>
       <span>S SALIDA · F ÚLTIMA LLEGADA</span>

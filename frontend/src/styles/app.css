@@ -359,6 +359,7 @@ button { font-family: inherit; cursor: pointer }
 .dot { width: 9px; height: 9px; display: inline-block; border-radius: 50% }
 .ln { width: 15px; height: 3px; display: inline-block; border-radius: 2px }
 .sq { width: 9px; height: 9px; display: inline-block; background: var(--ink) }
+.veh { width: 16px; height: 11px; display: inline-block; border-radius: 3px; background: var(--ink) }
 
 .mapa-vacio {
   position: absolute; z-index: 28;

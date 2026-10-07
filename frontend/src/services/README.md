@@ -1,8 +1,12 @@
 # services
 
-Comunicación con el backend, siempre con rutas relativas:
+Comunicación con el backend y utilidades sin interfaz. Siempre rutas relativas:
+REST por `fetch("/api/...")` y WebSocket por `wss://<mismo-dominio>/ws/ejecuciones/{id}`.
 
-- REST: `fetch("/api/...")`
-- WebSocket: `wss://<mismo-dominio>/ws/ejecuciones/{id}`
+| Archivo | Qué hace |
+| --- | --- |
+| `api.js` | Llamadas REST y construcción de la URL del WebSocket. |
+| `useEjecucion.js` | Conexión con una ejecución: WebSocket, respaldo REST cada 5 s y marca de «desactualizado». |
+| `formato.js` | Fechas, números y duraciones en es-PE. Sin dato se muestra «Sin datos», nunca 0. |
 
-Un archivo para la API REST y otro para el WebSocket. Responsables: Ariana y Axel.
+Responsables: Ariana y Axel. Lo que falta del lado del servidor está en `docs/api-pendiente.md`.

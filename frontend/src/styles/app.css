@@ -1,0 +1,573 @@
+/* Estilos de PaqRap sobre los tokens de tokens.css.
+
+   La estructura sigue al prototipo HTML v6 del equipo: el mapa ocupa toda la pantalla
+   y encima flotan la barra superior, la franja de indicadores, el menú lateral y las
+   tarjetas de configuración y de rutas. Las pantallas que no son el mapa (Pedidos y
+   Averías) se dibujan como una «hoja» que cubre el mapa.
+
+   Las medidas y los colores salen de las variables; aquí no hay valores sueltos salvo
+   los que el prototipo ya fijaba. */
+
+* { box-sizing: border-box }
+
+html, body, #root { height: 100%; margin: 0 }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 14px;
+  overflow: hidden;
+}
+
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); margin: 0 }
+button { font-family: inherit; cursor: pointer }
+
+.app { position: fixed; inset: 0 }
+.app.mini { --sw: 0px }
+.app.hoja { --hdr: var(--toph) }
+
+/* ── Mapa a pantalla completa ────────────────────────────────────────── */
+
+.mapa-fondo { position: absolute; inset: 0; background: #f2eeed }
+
+/* El fondo va a sangre, pero la retícula se dibuja en el hueco libre: así los rótulos de
+   los ejes y de los almacenes no quedan debajo del menú ni del riel de rutas. */
+.mapa-lienzo {
+  position: absolute;
+  top: var(--hdr); bottom: 0;
+  left: var(--sw); right: 0;
+  padding: 14px 16px 10px;
+  transition: left .2s ease, right .2s ease;
+}
+
+.app.con-riel .mapa-lienzo { right: 368px }
+/* Con la configuración abierta se reserva su ancho como relleno, de modo que la retícula
+   se encoja en lugar de quedar medio tapada. Al plegarla, el mapa recupera el espacio. */
+.app.con-cfg .mapa-lienzo { padding-left: 348px }
+.mapa { width: 100%; height: 100%; display: block }
+.reticula { stroke: var(--line); stroke-width: .6; pointer-events: none }
+.reticula-fuerte { stroke: var(--line-strong); stroke-width: .9; pointer-events: none }
+.eje { font: 800 9px var(--font-body); fill: rgba(32, 30, 29, .5); pointer-events: none }
+
+/* Trazo de ruta: el color lo pone cada grupo con --c según el tipo de unidad. Encima va
+   una línea transparente y gruesa que recibe el cursor y el foco de teclado, para que
+   resaltar una ruta no dependa de apuntarle a 3 px. */
+.trazo-visible {
+  stroke: var(--c, var(--ink));
+  stroke-width: 3; stroke-linecap: round; stroke-linejoin: round;
+  opacity: .85; pointer-events: none;
+  vector-effect: non-scaling-stroke;
+  transition: opacity .2s, stroke-width .2s;
+}
+
+.trazo-final .trazo-visible { opacity: .22 }
+.trazo-atenuado .trazo-visible { opacity: .2 }
+.trazo-resaltado .trazo-visible,
+.trazo:hover .trazo-visible,
+.trazo:focus-within .trazo-visible { stroke-width: 5; opacity: 1 }
+
+.trazo-interaccion { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer }
+.trazo-interaccion:focus-visible { stroke: color-mix(in srgb, var(--ambar) 28%, transparent); outline: none }
+
+.nodo-bloqueado { fill: var(--red); fill-opacity: .75; pointer-events: none }
+
+/* Marcadores de salida (S) y de última llegada (F) de cada ruta. */
+.marcador-salida path { stroke: #fff; stroke-width: 2.4; stroke-linecap: round }
+.marcador-salida circle { fill: var(--verde); stroke: #fff; stroke-width: 2 }
+.marcador-llegada circle { fill: var(--red-d); stroke: #fff; stroke-width: 2.4 }
+.marcador-llegada.marcador-resaltado circle, .marcador-llegada:hover circle { stroke: var(--ink); stroke-width: 3 }
+.marcador-salida text, .marcador-llegada text { fill: #fff; font: 800 9px var(--font-heading); pointer-events: none }
+
+/* ── Barra superior ──────────────────────────────────────────────────── */
+
+.top {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: var(--toph);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid var(--line);
+}
+
+.marca {
+  width: 34px; height: 34px; flex: none;
+  display: grid; place-items: center;
+  background: var(--red); color: #fff;
+  font: 800 11px var(--font-heading);
+  border-radius: 50%;
+}
+
+.wordmark { font: 800 17px/1 var(--font-heading); letter-spacing: -.01em; flex: none }
+
+.burger {
+  width: 34px; height: 34px; flex: none;
+  display: grid; place-items: center;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 0;
+}
+
+.burger:hover { background: var(--red-100); border-color: var(--red-200) }
+.burger i { display: block; width: 15px; height: 2px; background: var(--ink); box-shadow: 0 5px 0 var(--ink), 0 -5px 0 var(--ink) }
+
+.top h1 { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.coord { font: 800 11px var(--font-body); letter-spacing: .04em; color: rgba(32, 30, 29, .6); white-space: nowrap }
+
+/* ── Franja de indicadores ───────────────────────────────────────────── */
+
+.kbar {
+  position: absolute;
+  top: var(--toph); left: 0; right: 0;
+  height: var(--kh);
+  z-index: 39;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(6px);
+  border-bottom: 1.5px solid var(--line-strong);
+}
+
+.app.hoja .kbar { display: none }
+
+.chips { display: flex; flex: 1 1 auto; min-width: 0 }
+
+.chip {
+  flex: 1 1 0; min-width: 112px;
+  padding: 5px 16px 6px;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; justify-content: center;
+}
+
+.chip span { display: block; font: 800 8.5px var(--font-heading); letter-spacing: .11em; color: rgba(32, 30, 29, .55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+/* El valor no debe envolver: si lo hace, empuja la etiqueta fuera de la franja. */
+.chip b { display: block; font: 800 21px/1.1 var(--font-heading); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.chip[data-alerta] b { color: var(--red) }
+
+.kmeta {
+  flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  font: 800 10px var(--font-heading); letter-spacing: .09em;
+  color: rgba(32, 30, 29, .5); white-space: nowrap;
+}
+
+.kmeta .vivo { color: var(--red) }
+.kmeta .desact { color: #fff; background: var(--ambar); padding: 3px 8px; border-radius: 999px }
+
+/* ── Menú lateral ────────────────────────────────────────────────────── */
+
+.side {
+  position: absolute;
+  top: var(--hdr); bottom: 0; left: 0;
+  width: var(--sw);
+  z-index: 35;
+  background: #f6f1f0;
+  border-right: 1px solid var(--line);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: width .2s ease;
+}
+
+.app.mini .side { border-right: 0 }
+.side h6 { margin: 16px 18px 8px; font-size: 10px; font-weight: 800; letter-spacing: .12em; color: rgba(32, 30, 29, .5); white-space: nowrap }
+
+.side nav {
+  display: flex; flex-direction: column;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto;
+}
+
+.side nav button {
+  display: block; text-align: left;
+  background: transparent; border: 0;
+  border-left: 4px solid transparent;
+  padding: 9px 18px;
+  font-size: 13.5px;
+  color: rgba(32, 30, 29, .72);
+  white-space: nowrap;
+}
+
+.side nav button:hover { background: var(--red-100); color: var(--red-d) }
+.side nav button[data-on] { background: #fff; border-left-color: var(--red); color: var(--ink); font-weight: 800 }
+.side footer { flex: none; padding: 14px 18px; border-top: 1px solid var(--line); font-size: 10.5px; color: rgba(32, 30, 29, .45) }
+
+/* ── Tarjetas flotantes sobre el mapa ────────────────────────────────── */
+
+.float {
+  position: absolute;
+  z-index: 30;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(32, 30, 29, .14);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  transition: left .2s ease;
+}
+
+.float > header {
+  flex: none;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+}
+
+.float > header h2 { font: 800 10.5px var(--font-heading); letter-spacing: .11em; color: var(--red-d) }
+.float .body { padding: 14px 16px 16px; overflow: auto; flex: 1 1 auto; min-height: 0 }
+.float .body.sin-aire { padding: 0 }
+
+.x {
+  width: 24px; height: 24px; flex: none;
+  border: 1px solid var(--line); background: #fff; border-radius: 6px;
+  font: 800 12px var(--font-heading); color: rgba(32, 30, 29, .6); padding: 0;
+}
+
+.x:hover { background: var(--red-100); border-color: var(--red-200); color: var(--red-d) }
+
+.cfg {
+  left: calc(var(--sw) + 16px);
+  top: calc(var(--hdr) + 16px);
+  width: 316px;
+  max-height: calc(100% - var(--hdr) - 32px);
+}
+
+.app.cfgoff .cfg { display: none }
+
+.cfgtab {
+  position: absolute; z-index: 31;
+  left: calc(var(--sw) + 16px); top: calc(var(--hdr) + 16px);
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(32, 30, 29, .14);
+  padding: 9px 12px;
+  font: 800 10.5px var(--font-heading); letter-spacing: .1em; color: var(--red-d);
+}
+
+.cfgtab:hover { background: var(--red-100) }
+
+.riel-der {
+  position: absolute; z-index: 30;
+  right: 16px; top: calc(var(--hdr) + 16px); bottom: 16px;
+  width: 352px;
+  display: flex; flex-direction: column; gap: 12px;
+  pointer-events: none;
+}
+
+.riel-der > section { pointer-events: auto; position: static; min-height: 0 }
+.riel-der .jornada { flex: 0 1 auto; max-height: 48% }
+.riel-der .rutas { flex: 1 1 296px }
+.riel-der .detalle { flex: 1 1 auto; min-height: 0 }
+
+/* ── Tarjeta de ruta ─────────────────────────────────────────────────── */
+
+.rt {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%; text-align: left;
+  padding: 7px 12px;
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--line); border-left: 4px solid transparent;
+  overflow: hidden;
+}
+
+.rt:hover { background: #faf7f6 }
+.rt[data-on] { background: var(--red-100); border-left-color: var(--red) }
+.rt .l1, .rt .l2 { display: flex; align-items: center; gap: 8px; min-width: 0; width: 100% }
+.rt .id { font: 800 13px var(--font-heading); flex: none }
+.rt .l1 .pill { margin-left: auto; flex: none }
+.rt .l2 { font-size: 11px; color: rgba(32, 30, 29, .6) }
+.rt .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+.rt .num { margin-left: auto; flex: none; font: 800 11.5px var(--font-heading); color: var(--ink); white-space: nowrap }
+
+.pill {
+  display: inline-block; padding: 2px 9px;
+  font: 800 10.5px var(--font-heading); letter-spacing: .04em;
+  color: #fff; border-radius: 999px;
+}
+
+.pill.v { background: var(--verde) }
+.pill.a { background: var(--ambar) }
+.pill.r { background: var(--red) }
+.pill.n { background: #fff; color: rgba(32, 30, 29, .65); border: 1px solid var(--line-strong) }
+
+/* ── Herramientas y leyenda del mapa ─────────────────────────────────── */
+
+.tools {
+  position: absolute; z-index: 31;
+  right: 16px; top: calc(var(--hdr) + 16px);
+  display: flex; gap: 5px; align-items: center;
+}
+
+/* Cuando el riel de rutas está abierto, las herramientas se corren a su izquierda. */
+.app.con-riel .tools { right: calc(352px + 28px) }
+.app.alerta .tools { top: calc(var(--hdr) + 16px + var(--bh, 44px)) }
+.app.alerta .panel-filtros { top: calc(var(--hdr) + 60px + var(--bh, 44px)) }
+.panel-filtros { top: calc(var(--hdr) + 60px) }
+.app.con-riel .panel-filtros { right: calc(352px + 28px) }
+.tools .coord { margin-right: 4px; background: rgba(255, 255, 255, .9); padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line) }
+
+.tools button {
+  width: 28px; height: 28px;
+  border: 1px solid var(--line); background: #fff; border-radius: 6px;
+  font: 800 13px var(--font-heading);
+}
+
+.tools button:hover { background: var(--red-100); border-color: var(--red-200) }
+.tools button.ancho { width: auto; padding: 0 10px; font-size: 9.5px; letter-spacing: .09em }
+.tools button[data-on] { background: var(--red); border-color: var(--red); color: #fff }
+
+.panel-filtros {
+  position: absolute; z-index: 31;
+  right: 16px;
+  width: 196px;
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(32, 30, 29, .14);
+  padding: 12px;
+}
+
+.filtro-grupo { margin-bottom: 12px }
+.filtro-grupo > span { display: block; font: 800 9.5px var(--font-heading); letter-spacing: .1em; color: rgba(32, 30, 29, .55); margin-bottom: 5px }
+.filtro-opciones { display: flex; flex-wrap: wrap; gap: 4px }
+
+.filtro-opciones button {
+  border: 1px solid var(--line); background: #fff; border-radius: 6px;
+  padding: 4px 8px; font: 800 10.5px var(--font-heading);
+}
+
+.filtro-opciones button[data-on] { background: var(--ink); border-color: var(--ink); color: #fff }
+
+.leyenda-caja {
+  position: absolute; z-index: 29;
+  left: calc(var(--sw) + 16px); bottom: 16px;
+  max-width: 356px;
+  transition: left .2s ease;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(32, 30, 29, .14);
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  font: 800 10px var(--font-heading); letter-spacing: .05em;
+}
+
+/* Con la tarjeta de configuración abierta, la leyenda se corre a su derecha. */
+.app.con-cfg .leyenda-caja { left: calc(var(--sw) + 348px) }
+.leyenda-caja span { display: flex; align-items: center; gap: 5px; color: rgba(32, 30, 29, .7) }
+.dot { width: 9px; height: 9px; display: inline-block; border-radius: 50% }
+.ln { width: 15px; height: 3px; display: inline-block; border-radius: 2px }
+.sq { width: 9px; height: 9px; display: inline-block; background: var(--ink) }
+
+.mapa-vacio {
+  position: absolute; z-index: 28;
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  text-align: center; max-width: 360px;
+  padding: 20px 24px;
+  background: rgba(255, 255, 255, .96);
+  border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(32, 30, 29, .14);
+}
+
+.mapa-vacio b { display: block; font: 800 15px var(--font-heading); margin-bottom: 6px }
+.mapa-vacio span { font-size: 12px; color: rgba(32, 30, 29, .62); line-height: 1.45 }
+
+/* ── Banner de avería ────────────────────────────────────────────────── */
+
+.banner {
+  position: absolute; z-index: 38;
+  top: var(--hdr); left: var(--sw); right: 0;
+  background: var(--red); color: #fff;
+  padding: 10px 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+  box-shadow: 0 6px 22px rgba(236, 48, 19, .28);
+}
+
+.banner b { font-size: 13.5px }
+.banner .k { font: 800 9.5px var(--font-heading); letter-spacing: .12em; border: 1px solid rgba(255, 255, 255, .55); padding: 2px 7px; border-radius: 999px; flex: none }
+.banner .btn { margin-left: auto }
+.app.alerta .cfg, .app.alerta .cfgtab, .app.alerta .riel-der { top: calc(var(--hdr) + 16px + var(--bh, 44px)) }
+.app.alerta .cfg { max-height: calc(100% - var(--hdr) - 32px - var(--bh, 44px)) }
+
+/* ── Hojas: las vistas que no son el mapa ────────────────────────────── */
+
+.sheet {
+  position: absolute;
+  top: var(--hdr); left: var(--sw); right: 0; bottom: 0;
+  z-index: 32;
+  background: var(--ground);
+  overflow: auto;
+  padding: 20px 24px 26px;
+}
+
+/* ── Piezas comunes ──────────────────────────────────────────────────── */
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 18px }
+
+.kpi {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-top: 4px solid var(--k, var(--red));
+  padding: 13px 18px 15px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+  min-width: 0; overflow-wrap: anywhere;
+}
+
+.kpi span { display: block; font: 800 10px var(--font-heading); letter-spacing: .11em; color: rgba(32, 30, 29, .55) }
+.kpi b { display: block; font: 800 32px/1.15 var(--font-heading); color: var(--k, var(--red)) }
+.kpi small { display: block; font-size: 10.5px; color: rgba(32, 30, 29, .5); margin-top: 2px }
+
+.card { background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow-sm); overflow: hidden; margin-bottom: 18px }
+.card > header { padding: 11px 16px; border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between }
+.card > header h2 { font: 800 11px var(--font-heading); letter-spacing: .11em; color: var(--red-d) }
+.card .body { padding: 14px 16px 16px }
+.card .body.sin-aire { padding: 0 }
+
+.sect { font: 800 11px var(--font-heading); letter-spacing: .08em; color: var(--red-d); padding-bottom: 6px; border-bottom: 1px solid var(--line); margin: 0 0 12px }
+.muted { color: rgba(32, 30, 29, .55) }
+
+/* ── Pestañas ────────────────────────────────────────────────────────── */
+
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px }
+
+.tabs button {
+  border: 1px solid var(--line); background: var(--color-neutral-200);
+  border-radius: 8px; padding: 9px 16px;
+  font: 800 12.5px var(--font-heading); color: rgba(32, 30, 29, .72);
+}
+
+.tabs button:hover { background: var(--red-100); border-color: var(--red-200) }
+.tabs button[data-on] { background: var(--red); border-color: var(--red); color: #fff }
+
+/* ── Formularios ─────────────────────────────────────────────────────── */
+
+label.campo { display: block; font: 800 9.5px var(--font-heading); letter-spacing: .1em; color: rgba(32, 30, 29, .55); margin-bottom: 12px }
+
+.campo input, .campo select, .campo textarea {
+  display: block; width: 100%; margin-top: 4px;
+  padding: 7px 9px;
+  font-family: var(--font-body); font-size: 13px; font-weight: 400;
+  letter-spacing: normal; color: var(--ink);
+  background: #fff; border: 1px solid var(--line-strong); border-radius: 6px;
+}
+
+.campo input:focus, .campo select:focus { outline: 2px solid var(--red); outline-offset: -1px }
+.campo input:read-only { background: var(--color-neutral-200); color: rgba(32, 30, 29, .6) }
+
+.par { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px }
+
+.btn {
+  border: 1px solid var(--line-strong); background: #fff; border-radius: 6px;
+  padding: 8px 12px;
+  font: 800 10.5px var(--font-heading); letter-spacing: .09em; color: var(--ink);
+}
+
+.btn:hover:not(:disabled) { background: var(--red-100); border-color: var(--red-200) }
+.btn:disabled { opacity: .45; cursor: not-allowed }
+.btn-primario { background: var(--red); border-color: var(--red); color: #fff }
+.btn-primario:hover:not(:disabled) { background: var(--red-d); border-color: var(--red-d); color: #fff }
+.acciones { display: flex; gap: 8px }
+.acciones .btn { flex: 1 }
+
+.nota { font-size: 11px; line-height: 1.45; color: rgba(32, 30, 29, .55); margin: 12px 0 0 }
+.nota-dato { font-size: 11.5px; margin: 0 0 12px }
+
+.escenarios { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px }
+
+.escenarios button {
+  text-align: left; border: 1px solid var(--line); border-radius: 8px;
+  background: #fff; padding: 8px 11px;
+}
+
+.escenarios button:hover { border-color: var(--red-200); background: var(--red-100) }
+.escenarios button[data-on] { border-color: var(--red); background: var(--red-100) }
+.escenarios b { display: block; font: 800 12.5px var(--font-heading) }
+.escenarios small { font-size: 10.5px; color: rgba(32, 30, 29, .55) }
+
+/* ── Tablas y listas ─────────────────────────────────────────────────── */
+
+table { width: 100%; border-collapse: collapse; font-size: 12px }
+
+th {
+  text-align: left;
+  font: 800 9.5px var(--font-heading); letter-spacing: .09em;
+  color: rgba(32, 30, 29, .55);
+  padding: 8px 10px; border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+}
+
+td { padding: 7px 10px; border-bottom: 1px solid var(--line) }
+tbody tr:hover { background: #faf7f6 }
+.mono { font-family: ui-monospace, monospace; font-size: 11.5px }
+.tabla-caja { overflow-x: auto }
+
+dl.resumen { margin: 0; display: grid }
+dl.resumen > div { display: flex; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line) }
+dl.resumen dt { font-size: 11.5px; color: rgba(32, 30, 29, .6) }
+dl.resumen dd { margin: 0; font: 800 12px var(--font-heading) }
+
+.vacio { font-size: 12px; color: rgba(32, 30, 29, .55); padding: 18px; text-align: center; line-height: 1.5 }
+
+/* ── Avisos ──────────────────────────────────────────────────────────── */
+
+.aviso { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; font-size: 11.5px; line-height: 1.45; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff }
+.aviso b { font: 800 9.5px var(--font-heading); letter-spacing: .1em; flex: none; padding-top: 1px }
+.aviso-error { background: var(--red-100); border-color: var(--red) }
+.aviso-error b { color: var(--red-d) }
+.aviso-ambar { background: #fdf6e8; border-color: var(--ambar) }
+.aviso > button { margin-left: auto; border: 0; background: transparent; font: 800 14px var(--font-heading); line-height: 1; padding: 0 2px }
+
+.aviso-flotante { position: fixed; right: 16px; bottom: 16px; width: min(440px, calc(100% - 32px)); z-index: 45; box-shadow: 0 6px 22px rgba(32, 30, 29, .2) }
+
+.modal-fondo { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(45, 43, 43, .46) }
+
+.modal {
+  width: min(520px, 100%);
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: var(--shadow-lg);
+  padding: 24px;
+}
+
+.modal h2 { font-size: 20px; color: var(--red-d); margin-bottom: 8px }
+.modal p { font-size: 13px; line-height: 1.5; color: rgba(32, 30, 29, .75); margin: 0 }
+.modal .acciones { margin-top: 18px }
+
+/* ── Pantallas angostas ──────────────────────────────────────────────── */
+
+@media (max-width: 1340px) {
+  .cfg { width: 274px }
+  .riel-der { width: 326px }
+}
+
+@media (max-width: 1080px) {
+  .riel-der { width: 300px }
+  .leyenda-caja { max-width: 300px }
+}
+
+@media (max-width: 920px) {
+  .app { --sw: 0px }
+  .side { width: 232px; box-shadow: 0 6px 22px rgba(32, 30, 29, .18) }
+  .app.mini .side { width: 0 }
+  .cfg { left: 16px; right: 16px; width: auto; max-height: 40% }
+  .riel-der { left: 16px; right: 16px; width: auto; top: auto; height: 38%; bottom: 16px }
+  .app.con-cfg .mapa-lienzo { padding-left: 16px }
+  .riel-der .rutas { flex: 1 1 auto }
+  .riel-der .detalle { display: none }
+  .leyenda-caja { display: none }
+  .banner { left: 0 }
+  .sheet { left: 0; padding: 16px }
+}
+
+@media (max-width: 560px) {
+  .top { gap: 9px; padding: 0 11px }
+  .wordmark { font-size: 15px }
+  .top h1 { font-size: 13px }
+  .coord { display: none }
+  /* La franja se desplaza en horizontal: mejor chips anchos que valores recortados. */
+  .chip { min-width: 142px; padding: 4px 12px 5px }
+  .chip b { font-size: 18px }
+  .kmeta { display: none }
+  .par { grid-template-columns: 1fr }
+  .kpi b { font-size: 26px }
+}

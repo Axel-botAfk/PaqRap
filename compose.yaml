@@ -18,6 +18,7 @@ services:
       - ./database/seed_operacion_diaria.sql:/docker-entrypoint-initdb.d/02-seed-operacion.sql:ro
       - ./database/seed_cinco_dias.sql:/docker-entrypoint-initdb.d/03-seed-cinco-dias.sql:ro
       - ./database/seed_colapso.sql:/docker-entrypoint-initdb.d/04-seed-colapso.sql:ro
+      - ./database/seed_ampliacion.sql:/docker-entrypoint-initdb.d/04b-seed-ampliacion.sql:ro
       - ./database/docker/05-app-readonly.sql:/docker-entrypoint-initdb.d/05-app-readonly.sql:ro
     healthcheck:
       test:

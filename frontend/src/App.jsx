@@ -81,6 +81,11 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
   const trazos = useMemo(() => rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados]);
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map(parada => parada.destino));
+  const salidas = [...new Map(rutas.filter(ruta => ruta.origen)
+    .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
+  const llegadas = rutas.filter(ruta => ruta.paradas.length > 0).map(ruta => ({
+    id: ruta.id, vehiculoId: ruta.vehiculoId, punto: ruta.paradas.at(-1).destino
+  }));
   const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0 && !mapaDatos;
   const x = valor => Math.max(0, Math.min(700, (valor ?? 0) * 10));
   const y = valor => Math.max(0, Math.min(500, (ALTO - (valor ?? 0)) * 10));
@@ -107,7 +112,7 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
           </polyline>
         </g>;
       }))}
-      {puntos.map((p, indice) => <circle key={`p${indice}`} cx={x(p.x)} cy={y(p.y)} r="4" fill="#d89039" stroke="white" strokeWidth="1.5" />)}
+      {puntos.map((p, indice) => <circle key={`p${indice}`} className="mapa-parada" cx={x(p.x)} cy={y(p.y)} r="6" />)}
       {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
       {almacenes.map(almacen => <g key={almacen.id} transform={`translate(${x(almacen.ubicacion.x)},${y(almacen.ubicacion.y)})`}>
         <title>{`${almacen.id} · ${almacen.tipo} · stock inicial ${almacen.stockInicial}`}</title>
@@ -122,9 +127,22 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
         <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
         <DibujoVehiculo tipo={vehiculo.tipo} />
       </svg>)}
+      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
+        transform={`translate(${x(punto.x)},${y(punto.y)})`}>
+        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
+        <path d="M0 -10 V-17" /><circle cx="0" cy="-21" r="10" />
+        <text x="0" y="-17" textAnchor="middle">S</text>
+      </g>)}
+      {llegadas.map((llegada, indice) => <g key={`llegada-${llegada.id}-${indice}`}
+        className={`mapa-llegada ${llegada.id === rutaSeleccionada || llegada.id === rutaEnFoco ? 'marcador-resaltado' : ''}`}
+        transform={`translate(${x(llegada.punto.x)},${y(llegada.punto.y)})`}
+        onMouseEnter={() => setRutaEnFoco(llegada.id)} onMouseLeave={() => setRutaEnFoco(null)}>
+        <title>{`Última llegada de ${llegada.id} · ${llegada.vehiculoId} · nodo (${llegada.punto.x}, ${llegada.punto.y})`}</title>
+        <circle r="10" /><text x="0" y="4" textAnchor="middle">F</text>
+      </g>)}
     </svg>
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
+    <div className="leyenda"><span><i className="punto punto-salida" /> S: salida</span><span><i className="punto punto-llegada" /> F: última llegada</span><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
     <div className="almacenes-contexto"><b>Almacenes del caso</b><div className="almacenes-tarjetas">{almacenes.map(almacen => <div key={almacen.id} className="almacen-tarjeta">
       <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
       <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {almacen.tipo === 'CENTRAL' ? 'abastecimiento principal' : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>

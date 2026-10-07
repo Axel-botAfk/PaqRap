@@ -19,6 +19,13 @@
 .trazo-resaltado .trazo-visible,.trazo-ruta:hover .trazo-visible,.trazo-ruta:focus-within .trazo-visible{stroke:#c64d39;stroke-width:4.2;opacity:1}
 .trazo-interaccion{stroke:transparent;stroke-width:14;pointer-events:stroke;cursor:pointer}
 .trazo-interaccion:focus-visible{stroke:#e49e4030;outline:none}
+.mapa-parada{fill:#f0a323;stroke:#fff;stroke-width:2.5;paint-order:stroke;filter:drop-shadow(0 1px 2px #4b381e99)}
+.mapa-salida path{stroke:#fff;stroke-width:3;stroke-linecap:round}
+.mapa-salida circle{fill:#087452;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 2px 3px #063f32a3)}
+.mapa-llegada circle{fill:#db541d;stroke:#fff;stroke-width:3;filter:drop-shadow(0 2px 3px #5a241bb3)}
+.mapa-llegada.marcador-resaltado circle,.mapa-llegada:hover circle{stroke:#143742;stroke-width:3.5}
+.mapa-salida text,.mapa-llegada text{fill:#fff;font:800 11px Manrope,Arial;pointer-events:none}
+.punto-salida{background:#087452}.punto-llegada{background:#db541d}
 .almacenes-contexto{margin:10px 15px 0;padding:12px 14px;border:1px solid #dbe7e9;border-radius:9px;background:#f7fafb;display:grid;gap:8px;color:#16414d}
 .almacenes-contexto>b{font:800 12px Manrope,Arial}
 .almacenes-contexto>small{font-size:10px;color:#657f86;line-height:1.45}

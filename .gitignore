@@ -28,6 +28,7 @@ Thumbs.db
 id_rsa*
 id_ed25519*
 secrets/
+db.properties
 
 # ---------- Logs y temporales ----------
 *.log

@@ -65,7 +65,11 @@ Las clases de `codigo/paqrap` **son clases de dominio, no entidades JPA**: no ti
 
 ## Conexión local con Spring Boot
 
-El perfil Maven `mysql` de [`backend/pom.xml`](../backend/pom.xml) añade `spring-boot-starter-jdbc` y el driver MySQL. [`application-mysql.properties`](../backend/src/main/resources/application-mysql.properties) define la conexión con variables de entorno. Ahora `MysqlDatosService` lee pedidos, bloqueos, mantenimientos, almacenes y flota con consultas parametrizadas. La API publica esos datos en `/api/datos/periodos`, `/api/datos/periodos/{aaaamm}` y `/api/datos/mapa/{aaaamm}`; las corridas usan esas entradas cuando se activa el perfil `mysql`. El perfil normal sigue leyendo los TXT.
+El perfil Maven `mysql` de [`backend/pom.xml`](../backend/pom.xml) añade `spring-boot-starter-jdbc` y el driver MySQL. `MysqlConnectionConfig` carga un `db.properties` externo, descifra la contraseña con la clave Base64 de 32 bytes en `PAQRAP_DB_KEY` y entrega un `DataSource` a `MysqlDatosService`. El archivo se busca en la raíz al ejecutar desde el repositorio; `PAQRAP_DB_CONFIG` permite indicar una ruta absoluta. El perfil normal sigue leyendo los TXT. La API MySQL lee pedidos, bloqueos, mantenimientos, almacenes y flota con consultas parametrizadas y cierra cada conexión con `try-with-resources`.
+
+[`db.properties.example`](../db.properties.example) documenta `db.host`, `db.port`, `db.name`, `db.user` y `db.password.encrypted`. `db.url` es opcional y reemplaza la URL construida con host, puerto y nombre; permite ajustar parámetros JDBC sin cambiar Java. El backend HTTP escucha en `127.0.0.1:8080` por defecto (`PAQRAP_PORT` puede cambiarlo); el MySQL de Docker escucha en `127.0.0.1:3307`. Son puertos de servicios distintos.
+
+Para el MySQL de Docker, [`start-local-backend-mysql.ps1`](../scripts/start-local-backend-mysql.ps1) genera `db.properties` cifrado y una clave efímera antes de iniciar el backend. `-TestConnection` ejecuta solo la prueba de conexión. La contraseña original sigue en `.env.docker` porque Docker Compose la necesita: esto es **temporal para desarrollo local** y el cifrado del segundo archivo no protege frente a alguien que pueda leer `.env.docker` o el entorno del proceso. Ambos archivos están ignorados por Git. En un entorno real, el proceso debe recibir el secreto y la clave por un mecanismo de secretos externo, con permisos de acceso mínimos; el código de consultas no requiere cambios.
 
 ### Preparar una base local nueva
 
@@ -78,16 +82,31 @@ CREATE USER IF NOT EXISTS 'paqrap_app'@'127.0.0.1' IDENTIFIED BY '<elige-una-con
 GRANT SELECT ON paqrap.* TO 'paqrap_app'@'127.0.0.1';
 ```
 
-4. En una terminal PowerShell nueva, configura la contraseña sin guardarla en un archivo versionado y arranca desde la raíz del repositorio:
+4. En una terminal PowerShell nueva, desde la raíz del repositorio, compila y crea `db.properties` a partir de la plantilla. Escribe la contraseña cuando PowerShell la pida; no la pongas en el historial:
 
 ```powershell
-$env:PAQRAP_DB_USER = 'paqrap_app'
-$env:PAQRAP_DB_PASSWORD = '<tu-contraseña-local>'
 mvn -pl backend -am -Pmysql -DskipTests package
+$keyBytes = New-Object byte[] 32
+$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+try { $rng.GetBytes($keyBytes) } finally { $rng.Dispose() }
+$env:PAQRAP_DB_KEY = [Convert]::ToBase64String($keyBytes)
+$secret = Read-Host 'Contraseña de paqrap_app' -AsSecureString
+$pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret)
+try {
+    $plain = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer)
+    $cipher = $plain | java -cp backend/target/classes com.paqrap.api.DbPasswordCipher encrypt
+} finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer)
+    Remove-Variable plain,secret -ErrorAction SilentlyContinue
+}
+@('db.host=127.0.0.1','db.port=3306','db.name=paqrap','db.user=paqrap_app',"db.password.encrypted=$cipher") | Set-Content db.properties -Encoding ASCII
+mvn -pl backend -am -Pmysql '-Dtest=MysqlConnectionIT' '-Dsurefire.failIfNoSpecifiedTests=false' test
 java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar --spring.profiles.active=mysql
 ```
 
-5. Verifica `GET http://127.0.0.1:8081/api/salud`: debe devolver `"fuente":"MYSQL"`. Consulta `GET /api/datos/periodos`; las semillas agregan `202901`, `202902` y `202903`. La GUI local usa el mismo proxy `/api` de Vite.
+La prueba solo ejecuta `SELECT 1` y confirma que se carga el archivo, se descifra la contraseña, MySQL responde y la conexión se cierra. Si falla, Maven indica el problema de configuración o conexión. Conserva `PAQRAP_DB_KEY` en la misma terminal mientras uses ese `db.properties`; al perderla, genera otra clave y vuelve a cifrar la contraseña.
+
+5. Verifica `GET http://127.0.0.1:8080/api/salud`: debe devolver `"fuente":"MYSQL"`. Consulta `GET /api/datos/periodos`; las semillas agregan `202901`, `202902` y `202903`. La GUI local usa el mismo proxy `/api` de Vite.
 
 | Seed | Fecha para ejecutar | Escenario | Contenido |
 | --- | --- | --- | --- |
@@ -121,7 +140,7 @@ El perfil MySQL lee los identificadores y tipos de la flota desde `vehiculo`; la
 2. `EjecucionRepository`: crear por UUID, actualizar estados y recuperar una corrida tras reinicio; resolver las corridas que queden `EN_CURSO` si el proceso se interrumpe.
 3. `PlanRepository` y `ResultadoRepository`: guardar versiones de rutas, partes no asignadas, entregas reales, averías y resúmenes en transacciones idempotentes.
 
-Las operaciones de varios pasos deben usar `@Transactional`. No se requiere `spring.jpa.hibernate.ddl-auto` porque este diseño usa JDBC y el esquema se crea mediante el SQL. Los secretos permanecen en variables de entorno, nunca en el repositorio. La aplicación solo necesita `SELECT` en esta fase.
+Las operaciones de varios pasos deben usar `@Transactional`. No se requiere `spring.jpa.hibernate.ddl-auto` porque este diseño usa JDBC y el esquema se crea mediante el SQL. `db.properties` cifrado y su clave se mantienen fuera de Git; la clave llega por variable de entorno. La aplicación solo necesita `SELECT` en esta fase.
 
 Las reglas que involucran varias filas siguen en la capa de dominio/transacción: la suma de cantidades de las partes de un pedido no puede exceder el original, una parte no puede aparecer a la vez en `ruta_parada` y `plan_pedido_no_asignado` del mismo plan, y cada tramo de una poligonal debe ser horizontal o vertical. Las restricciones `CHECK` de una sola fila no bastan para expresar esas reglas.
 

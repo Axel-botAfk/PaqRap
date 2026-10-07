@@ -5,14 +5,21 @@ $repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $envFile = Join-Path $repo '.env.docker'
 
 if (-not (Test-Path -LiteralPath $envFile)) {
-    $rootPassword = [Convert]::ToHexString(
-        [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
-    $appPassword = [Convert]::ToHexString(
-        [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rootBytes = New-Object byte[] 24
+        $appBytes = New-Object byte[] 24
+        $rng.GetBytes($rootBytes)
+        $rng.GetBytes($appBytes)
+    } finally {
+        $rng.Dispose()
+    }
+    $rootPassword = -join ($rootBytes | ForEach-Object { $_.ToString('x2') })
+    $appPassword = -join ($appBytes | ForEach-Object { $_.ToString('x2') })
     [System.IO.File]::WriteAllLines($envFile, @(
         "PAQRAP_MYSQL_ROOT_PASSWORD=$rootPassword",
         "PAQRAP_DB_PASSWORD=$appPassword"
-    ))
+    ), [System.Text.Encoding]::ASCII)
     Write-Host 'Se creó .env.docker con contraseñas aleatorias. No lo subas a Git.'
 }
 

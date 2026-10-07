@@ -21,12 +21,20 @@ class ApiControllerTest {
     void saludNoExponeConfiguracion() throws Exception {
         mvc.perform(get("/api/salud"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.estado").value("OK"));
+                .andExpect(jsonPath("$.estado").value("OK"))
+                .andExpect(jsonPath("$.fuente").value("ARCHIVOS"));
     }
 
     @Test
     void rechazaPeriodoConTraversal() throws Exception {
         mvc.perform(get("/api/datos/periodos/no-es-periodo"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("PERIODO_INVALIDO"));
+    }
+
+    @Test
+    void rechazaPeriodoInvalidoEnMapa() throws Exception {
+        mvc.perform(get("/api/datos/mapa/2029xx"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("PERIODO_INVALIDO"));
     }

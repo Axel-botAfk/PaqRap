@@ -8,7 +8,7 @@ del equipo.
 
 ## Uso local
 
-Requiere Node.js 20.19+ o 22.12+ y el backend activo en `127.0.0.1:8081`.
+Requiere Node.js 20.19+ o 22.12+ y el backend activo en `127.0.0.1:8080`.
 
 ```sh
 npm ci
@@ -27,7 +27,8 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 
 ## Comportamiento
 
-- El catálogo de periodos y sus conteos procede de los archivos del curso.
+- El catálogo procede de los TXT del curso o de MySQL, según el perfil del backend.
+- El mapa distingue los tres almacenes y los nodos bloqueados vigentes a la hora simulada.
 - El usuario selecciona periodo, fecha/hora, escenario y algoritmo.
 - `POST /api/ejecuciones` inicia una corrida asincrónica; WebSocket actualiza
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado

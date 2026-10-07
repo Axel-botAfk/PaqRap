@@ -22,8 +22,10 @@ async function solicitud(ruta, opciones = {}) {
 }
 
 export const api = {
+  salud: () => solicitud('/api/salud'),
   periodos: () => solicitud('/api/datos/periodos'),
   periodo: (aaaamm) => solicitud(`/api/datos/periodos/${encodeURIComponent(aaaamm)}`),
+  mapa: (aaaamm) => solicitud(`/api/datos/mapa/${encodeURIComponent(aaaamm)}`),
   iniciar: (datos) => solicitud('/api/ejecuciones', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

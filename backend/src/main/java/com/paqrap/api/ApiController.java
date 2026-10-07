@@ -3,6 +3,7 @@ package com.paqrap.api;
 import com.paqrap.api.ApiModels.CrearEjecucionRequest;
 import com.paqrap.api.ApiModels.EjecucionVista;
 import com.paqrap.api.ApiModels.PeriodoVista;
+import com.paqrap.api.ApiModels.MapaDatosVista;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,22 +22,25 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api")
 class ApiController {
-    private final DatosService datos;
+    private final DatosFuente datos;
     private final EjecucionesService ejecuciones;
 
-    ApiController(DatosService datos, EjecucionesService ejecuciones) {
+    ApiController(DatosFuente datos, EjecucionesService ejecuciones) {
         this.datos = datos;
         this.ejecuciones = ejecuciones;
     }
 
     @GetMapping("/salud")
-    Map<String, String> salud() { return Map.of("estado", "OK"); }
+    Map<String, String> salud() { return Map.of("estado", "OK", "fuente", datos.tipo()); }
 
     @GetMapping("/datos/periodos")
     List<String> periodos() { return datos.periodos(); }
 
     @GetMapping("/datos/periodos/{aaaamm}")
     PeriodoVista periodo(@PathVariable String aaaamm) { return datos.periodo(aaaamm); }
+
+    @GetMapping("/datos/mapa/{aaaamm}")
+    MapaDatosVista mapa(@PathVariable String aaaamm) { return datos.mapa(aaaamm); }
 
     @PostMapping("/ejecuciones")
     ResponseEntity<EjecucionVista> crear(@Valid @RequestBody CrearEjecucionRequest solicitud) {

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
+import { ANCHO, ALTO, nodosBloqueados, tramosDeRuta } from './mapa.js';
 
 const ESCENARIOS = [
   { id: 'OPERACION_DIARIA', nombre: 'Operación día a día', ayuda: 'Planificación y avance de un día.' },
@@ -38,38 +39,115 @@ function TarjetaMetrica({ etiqueta, valor, nota, alerta = false }) {
   </div>;
 }
 
-function MapaOperacion({ ejecucion, rutaSeleccionada }) {
+function DibujoVehiculo({ tipo }) {
+  switch (tipo) {
+    case 'AUTO':
+      return <g fill="none" stroke="#24659b" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 21V14h3l3-5h10l4 5h2v7H5Z" fill="#dcecf8" />
+        <path d="M11 14h12M16 9v5" /><circle cx="10" cy="22" r="2.3" fill="#24659b" /><circle cx="23" cy="22" r="2.3" fill="#24659b" />
+      </g>;
+    case 'MOTO':
+      return <g fill="none" stroke="#21805a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="8" cy="23" r="3.5" /><circle cx="25" cy="23" r="3.5" />
+        <path d="m8 23 5-7h6l5 7M12 16l-2-3h5m7 1 2-3h3M17 16l-2 7h10" />
+      </g>;
+    case 'BICICLETA':
+      return <g fill="none" stroke="#b27a16" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="7" cy="23" r="4" /><circle cx="25" cy="23" r="4" />
+        <path d="m7 23 7-10 5 10H7l7-10m5 10 6-10m-12 0h5m5 0h4m-13-3 2-1" />
+      </g>;
+    case 'CAMION':
+      return <g fill="none" stroke="#754d98" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10h17v12H3zM20 14h5l4 5v3h-9z" fill="#ede5f5" />
+        <circle cx="9" cy="23" r="2.2" fill="#754d98" /><circle cx="24" cy="23" r="2.2" fill="#754d98" />
+      </g>;
+    default:
+      return <g fill="none" stroke="#0b3644" strokeWidth="2.4"><rect x="8" y="8" width="16" height="16" rx="3" /><path d="M16 11v7m0 3v1" /></g>;
+  }
+}
+
+function IconoLeyenda({ tipo, texto }) {
+  return <span className="leyenda-vehiculo"><svg viewBox="0 0 32 32" aria-hidden="true"><DibujoVehiculo tipo={tipo} /></svg>{texto}</span>;
+}
+
+function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
+  const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const rutas = ejecucion?.rutas || [];
   const vehiculos = ejecucion?.vehiculos || [];
   const noAsignados = ejecucion?.noAsignados || [];
+  const almacenes = mapaDatos?.almacenes || [];
+  const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
+  const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, instante]);
+  const trazos = useMemo(() => rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados]);
+  const finalizada = ejecucion && esFinal(ejecucion.estado);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map(parada => parada.destino));
-  const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0;
-  const x = valor => Math.max(0, Math.min(690, (valor ?? 0) * 10));
-  const y = valor => Math.max(0, Math.min(490, (valor ?? 0) * 10));
+  const salidas = [...new Map(rutas.filter(ruta => ruta.origen)
+    .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
+  const llegadas = rutas.filter(ruta => ruta.paradas.length > 0).map(ruta => ({
+    id: ruta.id, vehiculoId: ruta.vehiculoId, punto: ruta.paradas.at(-1).destino
+  }));
+  const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0 && !mapaDatos;
+  const x = valor => Math.max(0, Math.min(700, (valor ?? 0) * 10));
+  const y = valor => Math.max(0, Math.min(500, (ALTO - (valor ?? 0)) * 10));
 
   return <div className="mapa-wrap">
-    <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Grilla del modelo · 70 × 50 nodos</span></div>
+    <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Retícula 70 × 50 km · nodos 0–70 y 0–50</span></div>
     <svg className="mapa" viewBox="0 0 700 500" role="img" aria-label="Mapa esquemático de rutas, pedidos y vehículos">
       <rect width="700" height="500" fill="#f4f8f8" />
-      {Array.from({ length: 8 }, (_, i) => <line key={`v${i}`} x1={i * 100} x2={i * 100} y1="0" y2="500" className="grid-line" />)}
-      {Array.from({ length: 6 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 100} y2={i * 100} className="grid-line" />)}
-      {rutas.map((ruta, indice) => {
-        const coordenadas = [ruta.origen, ...ruta.paradas.map(p => p.destino)]
-          .filter(Boolean).map(p => `${x(p.x)},${y(p.y)}`).join(' ');
-        return <polyline key={`${ruta.id}-${indice}`} points={coordenadas} fill="none"
-          stroke={ruta.id === rutaSeleccionada ? '#c64d39' : '#2a8494'}
-          strokeWidth={ruta.id === rutaSeleccionada ? 4 : 1.8} strokeOpacity={rutaSeleccionada && ruta.id !== rutaSeleccionada ? .25 : .72} />;
-      })}
-      {puntos.map((p, indice) => <circle key={`p${indice}`} cx={x(p.x)} cy={y(p.y)} r="4" fill="#d89039" stroke="white" strokeWidth="1.5" />)}
+      {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2="500" className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
+      {Array.from({ length: ALTO + 1 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 10} y2={i * 10} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
+      {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
+        <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
+          fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
+      {trazos.flatMap(({ ruta, tramos }, indice) => tramos.map((tramo, n) => {
+        const coordenadas = tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
+        const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
+        return <g key={`${ruta.id}-${indice}-${n}`} className={`trazo-ruta ${finalizada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
+          <polyline className="trazo-visible" points={coordenadas} fill="none" />
+          <polyline className="trazo-interaccion" points={coordenadas} fill="none"
+            tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
+            onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
+            onFocus={() => setRutaEnFoco(ruta.id)} onBlur={() => setRutaEnFoco(null)}>
+            <title>{`${ruta.id} · ${ruta.vehiculoId} · ${ruta.paradas.length} parada(s)`}</title>
+          </polyline>
+        </g>;
+      }))}
+      {puntos.map((p, indice) => <circle key={`p${indice}`} className="mapa-parada" cx={x(p.x)} cy={y(p.y)} r="6" />)}
       {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
-      {vehiculos.map(vehiculo => <g key={vehiculo.id}>
-        <circle cx={x(vehiculo.ubicacion?.x)} cy={y(vehiculo.ubicacion?.y)} r="7" fill="#0b3644" stroke="white" strokeWidth="2" />
-        <title>{`${vehiculo.id} · ${vehiculo.estado}`}</title>
+      {almacenes.map(almacen => <g key={almacen.id} transform={`translate(${x(almacen.ubicacion.x)},${y(almacen.ubicacion.y)})`}>
+        <title>{`${almacen.id} · ${almacen.tipo} · stock inicial ${almacen.stockInicial}`}</title>
+        {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
+          : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
+        <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
+      </g>)}
+      {vehiculos.map(vehiculo => <svg key={vehiculo.id}
+        x={x(vehiculo.ubicacion?.x) - 13} y={y(vehiculo.ubicacion?.y) - 13}
+        width="26" height="26" viewBox="0 0 32 32">
+        <title>{`${vehiculo.id} · ${vehiculo.tipo} · ${vehiculo.estado}`}</title>
+        <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+        <DibujoVehiculo tipo={vehiculo.tipo} />
+      </svg>)}
+      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
+        transform={`translate(${x(punto.x)},${y(punto.y)})`}>
+        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
+        <path d="M0 -10 V-17" /><circle cx="0" cy="-21" r="10" />
+        <text x="0" y="-17" textAnchor="middle">S</text>
+      </g>)}
+      {llegadas.map((llegada, indice) => <g key={`llegada-${llegada.id}-${indice}`}
+        className={`mapa-llegada ${llegada.id === rutaSeleccionada || llegada.id === rutaEnFoco ? 'marcador-resaltado' : ''}`}
+        transform={`translate(${x(llegada.punto.x)},${y(llegada.punto.y)})`}
+        onMouseEnter={() => setRutaEnFoco(llegada.id)} onMouseLeave={() => setRutaEnFoco(null)}>
+        <title>{`Última llegada de ${llegada.id} · ${llegada.vehiculoId} · nodo (${llegada.punto.x}, ${llegada.punto.y})`}</title>
+        <circle r="10" /><text x="0" y="4" textAnchor="middle">F</text>
       </g>)}
     </svg>
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-vehiculo" /> Vehículo</span><span><i className="punto punto-alerta" /> Sin asignar</span></div>
-    <p className="mapa-aviso">Las líneas muestran el plan vigente de forma esquemática; no son calles recorridas ni entregas confirmadas.</p>
+    <div className="leyenda"><span><i className="punto punto-salida" /> S: salida</span><span><i className="punto punto-llegada" /> F: última llegada</span><span><i className="punto punto-ruta" /> Ruta planificada</span><span><i className="punto punto-pedido" /> Parada prevista</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
+    <div className="almacenes-contexto"><b>Almacenes del caso</b><div className="almacenes-tarjetas">{almacenes.map(almacen => <div key={almacen.id} className="almacen-tarjeta">
+      <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
+      <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {almacen.tipo === 'CENTRAL' ? 'abastecimiento principal' : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>
+    </div>)}</div><small>La flota parte de la central; los almacenes intermedios apoyan la reposición y se reabastecen diariamente. El stock mostrado es inicial, no inventario en vivo.</small></div>
+    <p className="mapa-aviso">Cada tramo visual usa solo movimientos norte, sur, este u oeste y evita los bloqueos activos en el reloj mostrado. No es un registro GPS ni una entrega confirmada. Al terminar, el trazo se atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
   </div>;
 }
 
@@ -125,6 +203,8 @@ export default function App() {
   const [periodos, setPeriodos] = useState([]);
   const [periodo, setPeriodo] = useState('');
   const [detalle, setDetalle] = useState(null);
+  const [mapaDatos, setMapaDatos] = useState(null);
+  const [fuente, setFuente] = useState('ARCHIVOS');
   const [dia, setDia] = useState('');
   const [hora, setHora] = useState('00:00');
   const [horizonte, setHorizonte] = useState(30);
@@ -141,16 +221,19 @@ export default function App() {
 
   useEffect(() => {
     let activo = true;
+    api.salud().then(info => { if (activo) setFuente(info.fuente || 'ARCHIVOS'); }).catch(() => {});
     api.periodos().then(lista => { if (activo) setPeriodos(lista); })
       .catch(e => { if (activo) setError(`No se pudo cargar el catálogo: ${e.message}`); });
     return () => { activo = false; };
   }, []);
 
   useEffect(() => {
-    if (!periodo) { setDetalle(null); return; }
+    if (!periodo) { setDetalle(null); setMapaDatos(null); return; }
     let activo = true;
-    api.periodo(periodo).then(info => { if (activo) setDetalle(info); })
+    api.periodo(periodo).then(info => { if (activo) { setDetalle(info); setDia(anterior => anterior || info.primeraFechaPedido || ''); } })
       .catch(e => { if (activo) { setDetalle(null); setError(e.message); } });
+    api.mapa(periodo).then(info => { if (activo) setMapaDatos(info); })
+      .catch(e => { if (activo) { setMapaDatos(null); setError(e.message); } });
     return () => { activo = false; };
   }, [periodo]);
 
@@ -243,7 +326,7 @@ export default function App() {
         {[['operacion', 'Operación'], ['pedidos', 'Pedidos'], ['incidencias', 'Alertas']].map(([clave, titulo]) =>
           <button key={clave} type="button" className={seccion === clave ? 'activo' : ''} onClick={() => setSeccion(clave)}>{titulo}</button>)}
       </nav>
-      <div className="barra-pie"><strong>Sin base de datos</strong><span>Las corridas viven temporalmente en memoria. Las selecciones comienzan vacías.</span></div>
+      <div className="barra-pie"><strong>{fuente === 'MYSQL' ? 'Datos en MySQL' : 'Datos desde archivos'}</strong><span>Las corridas viven temporalmente en memoria; el historial aún no es persistente.</span></div>
     </aside>
 
     <main className="contenido">
@@ -265,7 +348,8 @@ export default function App() {
           {aviso && <p className="aviso-conexion" role="status">{aviso}</p>}
           <p className="nota-formulario">La ejecución es asincrónica. Puedes abrir el mismo enlace en otro dispositivo para consultar su estado.</p>
         </form>
-        <MapaOperacion ejecucion={ejecucion} rutaSeleccionada={rutaSeleccionada} /></div>
+        <MapaOperacion ejecucion={ejecucion} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
+          instante={ejecucion?.reloj || (dia ? `${dia}T${hora}:00` : null)} /></div>
         <div className="metricas">
           <TarjetaMetrica etiqueta="Pedidos entregados" valor={numero(ejecucion?.avance?.pedidosEntregados)} nota="Entrega efectiva acumulada" />
           <TarjetaMetrica etiqueta="Productos entregados" valor={numero(ejecucion?.avance?.productosEntregados)} nota="Unidades acumuladas" />
@@ -275,7 +359,7 @@ export default function App() {
         </div>
         <div className="dos-columnas"><ListaRutas ejecucion={ejecucion} seleccion={rutaSeleccionada} alSeleccionar={setRutaSeleccionada} /><section className="panel resumen"><div className="panel-titulo"><div><h2>Resumen de la corrida</h2><p>Disponible al terminar o detectar colapso.</p></div></div>{!ejecucion?.resumen ? <p className="vacio">Todavía no hay un resumen final.</p> : <dl><div><dt>Pedidos recibidos</dt><dd>{numero(ejecucion.resumen.pedidosRecibidos)}</dd></div><div><dt>Pedidos pendientes</dt><dd>{numero(ejecucion.resumen.pedidosPendientes)}</dd></div><div><dt>Distancia total</dt><dd>{decimal(ejecucion.resumen.distanciaTotalKm, ' km')}</dd></div><div><dt>Costo total</dt><dd>S/ {decimal(ejecucion.resumen.costoTotal)}</dd></div><div><dt>Fin de simulación</dt><dd>{fecha(ejecucion.resumen.fin)}</dd></div></dl>}</section></div>
       </>}
-      {seccion === 'pedidos' && <><div className="encabezado-seccion"><div><span className="sobrelinea">ESTADO ACTUAL</span><h2>Pedidos visibles</h2></div><p>No se pueden registrar ni cargar pedidos desde esta beta; se leen de los archivos del curso.</p></div><TablaPedidos ejecucion={ejecucion} /></>}
+      {seccion === 'pedidos' && <><div className="encabezado-seccion"><div><span className="sobrelinea">ESTADO ACTUAL</span><h2>Pedidos visibles</h2></div><p>No se pueden registrar pedidos desde esta beta; se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}.</p></div><TablaPedidos ejecucion={ejecucion} /></>}
       {seccion === 'incidencias' && <><div className="encabezado-seccion"><div><span className="sobrelinea">MONITOREO</span><h2>Alertas y excepciones</h2></div><p>Se muestran únicamente hechos informados por la corrida activa.</p></div><PanelIncidencias ejecucion={ejecucion} /></>}
       <footer className="pie">PaqRap · Beta académica. No usar para decisiones logísticas reales.</footer>
     </main>

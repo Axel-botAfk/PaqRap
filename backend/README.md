@@ -8,7 +8,7 @@ iniciada con Vecino Mas Cercano. Lee los archivos de `codigo/paqrap/datos/reales
 - JDK 17 o superior y Maven 3.9 o superior.
 - Desde la raiz del repositorio: `mvn clean package`.
 - Desde la raiz: `java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar`.
-- Por defecto escucha solo en `127.0.0.1:8081`. `GET /api/salud` debe
+- Por defecto escucha solo en `127.0.0.1:8080`. `GET /api/salud` debe
   responder `{"estado":"OK"}`.
 - Si se arranca fuera de la raiz, configurar `PAQRAP_DATA_DIR` con la ruta
   absoluta a `codigo/paqrap/datos/reales`. `PAQRAP_PORT` y
@@ -17,6 +17,13 @@ iniciada con Vecino Mas Cercano. Lee los archivos de `codigo/paqrap/datos/reales
 No se necesita `.env` ni base de datos. Las ejecuciones se mantienen en
 memoria y se pierden al reiniciar el proceso.
 
+Para usar MySQL como fuente de pedidos, bloqueos, mantenimiento, almacenes y
+vehículos, consulta [`database/README.md`](../database/README.md). La conexión
+se activa con `-Pmysql` al compilar y `--spring.profiles.active=mysql` al
+ejecutar. `db.properties` externo contiene la contraseña cifrada y
+`PAQRAP_DB_KEY` contiene la clave de descifrado. Las ejecuciones y sus
+resultados **todavía no** se persisten.
+
 ## Contrato con la GUI
 
 | Metodo y ruta | Descripcion |
@@ -24,6 +31,7 @@ memoria y se pierden al reiniciar el proceso.
 | `GET /api/salud` | Salud basica. |
 | `GET /api/datos/periodos` | Lista de periodos `aaaamm` disponibles. |
 | `GET /api/datos/periodos/{aaaamm}` | Conteos del periodo. |
+| `GET /api/datos/mapa/{aaaamm}` | Almacenes y bloqueos del periodo para la GUI. |
 | `POST /api/ejecuciones` | Inicia una corrida; devuelve 202 e identificador. |
 | `GET /api/ejecuciones/{id}` | Estado e instantanea mas reciente. |
 | `POST /api/ejecuciones/{id}/cancelar` | Cancela la corrida. |

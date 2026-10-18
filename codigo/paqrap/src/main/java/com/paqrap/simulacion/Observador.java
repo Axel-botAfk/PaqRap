@@ -1,9 +1,11 @@
 package com.paqrap.simulacion;
 
 import com.paqrap.modelo.Solucion;
+import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.EstadoOperacion;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Enganche para mirar la corrida mientras ocurre.
@@ -30,4 +32,7 @@ public interface Observador {
             MedicionDePlanificacion medicion,
             AvanceDeLaOperacion avance
     );
+
+    /** Posiciones ya ejecutadas al cierre de cada salto; no son rutas futuras. */
+    default void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) { }
 }

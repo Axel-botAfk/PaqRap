@@ -6,8 +6,12 @@ import com.paqrap.api.ApiModels.EjecucionVista;
 import com.paqrap.api.ApiModels.Escenario;
 import com.paqrap.api.ApiModels.Estado;
 import com.paqrap.api.ApiModels.EventoVista;
+import com.paqrap.api.ApiModels.FotogramaVista;
+import com.paqrap.api.ApiModels.FotogramasVista;
 import com.paqrap.modelo.Solucion;
+import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.Parametros;
 import com.paqrap.planificador.Planificador;
 import com.paqrap.planificador.grasp.Grasp;
@@ -16,12 +20,17 @@ import com.paqrap.planificador.ruteo.MapaBloqueos;
 import com.paqrap.planificador.tabu.BusquedaTabu;
 import com.paqrap.simulacion.ResumenSimulacion;
 import com.paqrap.simulacion.Simulador;
+import com.paqrap.simulacion.Observador;
+import com.paqrap.simulacion.MedicionDePlanificacion;
+import com.paqrap.simulacion.AvanceDeLaOperacion;
 import jakarta.annotation.PreDestroy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -37,6 +46,8 @@ import java.util.concurrent.TimeUnit;
 @Service
 final class EjecucionesService {
     private static final int MAX_REGISTROS = 32;
+    private static final int MAX_FOTOGRAMAS = 2048;
+    private static final int PAGINA_FOTOGRAMAS = 100;
     private final DatosFuente datos;
     private final EventosWebSocket eventos;
     private final ConcurrentMap<UUID, Ejecucion> ejecuciones = new ConcurrentHashMap<>();
@@ -91,6 +102,34 @@ final class EjecucionesService {
         return ejecucion.vista;
     }
 
+    FotogramasVista fotogramas(UUID id, long desde) {
+        Ejecucion ejecucion = ejecuciones.get(id);
+        if (ejecucion == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "EJECUCION_NO_ENCONTRADA",
+                    "No existe una ejecución con ese identificador.");
+        }
+        if (desde < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INDICE_INVALIDO",
+                    "El índice inicial no puede ser negativo.");
+        }
+        synchronized (ejecucion) {
+            long primero = ejecucion.fotogramas.isEmpty() ? ejecucion.siguienteIndice
+                    : ejecucion.fotogramas.peekFirst().indice();
+            long inicio = Math.max(desde, primero);
+            List<FotogramaVista> pagina = new ArrayList<>();
+            for (FotogramaVista fotograma : ejecucion.fotogramas) {
+                if (fotograma.indice() >= inicio && pagina.size() < PAGINA_FOTOGRAMAS) {
+                    pagina.add(fotograma);
+                }
+            }
+            long siguiente = pagina.isEmpty() ? inicio : pagina.get(pagina.size() - 1).indice() + 1;
+            Estado estado = ejecucion.vista.estado();
+            boolean completo = estado == Estado.TERMINADA || estado == Estado.COLAPSADA
+                    || estado == Estado.FALLIDA || estado == Estado.CANCELADA;
+            return new FotogramasVista(primero, siguiente, completo, List.copyOf(pagina));
+        }
+    }
+
     EjecucionVista cancelar(UUID id) {
         Ejecucion ejecucion = ejecuciones.get(id);
         if (ejecucion == null) {
@@ -129,13 +168,19 @@ final class EjecucionesService {
                     .iteracionesSinMejora(25)
                     .construir();
 
+            List<Vehiculo> flota = datos.flota();
+            registrarFotograma(ejecucion, request.inicio(), flota);
             Simulador simulador = new Simulador(planificador, ruteo,
                     datos.almacenes(), parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
                     .conIntervaloMinimo(Duration.ofMinutes(15))
-                    .observadoPor((reloj, estado, plan, medicion, avance) -> {
+                    .observadoPor(new Observador() {
+                    @Override
+                    public void alPlanificar(LocalDateTime reloj, EstadoOperacion estado,
+                                            Solucion plan, MedicionDePlanificacion medicion,
+                                            AvanceDeLaOperacion avance) {
                         if (Thread.currentThread().isInterrupted()
                                 || ejecucion.vista.estado() == Estado.CANCELADA) {
                             throw new CancellationException("Ejecución cancelada");
@@ -154,16 +199,27 @@ final class EjecucionesService {
                         actualizar(ejecucion, siguiente, copia.getRutas().isEmpty()
                                 && !copia.getPedidosNoAsignados().isEmpty()
                                         ? "PLAN_SIN_ASIGNACIONES" : "PROGRESO");
+                    }
+
+                    @Override
+                    public void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) {
+                        registrarFotograma(ejecucion, reloj, vehiculos);
+                    }
                     });
 
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
-                    Duration.ofDays(dias), entrada.ventas(), datos.flota());
+                    Duration.ofDays(dias), entrada.ventas(), flota);
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             EjecucionVista anterior = ejecucion.vista;
             Estado finalEstado = resumen.huboColapso() ? Estado.COLAPSADA : Estado.TERMINADA;
+            List<ApiModels.VehiculoVista> posicionesFinales;
+            synchronized (ejecucion) {
+                FotogramaVista ultimo = ejecucion.fotogramas.peekLast();
+                posicionesFinales = ultimo == null ? anterior.vehiculos() : ultimo.vehiculos();
+            }
             EjecucionVista finalVista = new EjecucionVista(anterior.id(), finalEstado,
                     anterior.escenario(), anterior.algoritmo(), anterior.inicio(), resumen.fin(),
-                    LocalDateTime.now(), anterior.avance(), anterior.vehiculos(),
+                    LocalDateTime.now(), anterior.avance(), posicionesFinales,
                     anterior.rutas(), anterior.noAsignados(), Vistas.resumen(resumen), null, null);
             actualizar(ejecucion, finalVista, resumen.huboColapso() ? "COLAPSO" : "TERMINADA");
         } catch (CancellationException e) {
@@ -182,6 +238,19 @@ final class EjecucionesService {
             ejecucion.vista = vista;
         }
         eventos.publicar(new EventoVista(tipo, vista));
+    }
+
+    private static void registrarFotograma(Ejecucion ejecucion, LocalDateTime reloj,
+                                           List<Vehiculo> vehiculos) {
+        List<ApiModels.VehiculoVista> posiciones = vehiculos.stream().map(Vistas::vehiculo).toList();
+        synchronized (ejecucion) {
+            if (ejecucion.vista.estado() == Estado.CANCELADA) return;
+            ejecucion.fotogramas.addLast(new FotogramaVista(
+                    ejecucion.siguienteIndice++, reloj, posiciones));
+            if (ejecucion.fotogramas.size() > MAX_FOTOGRAMAS) {
+                ejecucion.fotogramas.removeFirst();
+            }
+        }
     }
 
     private static EjecucionVista cambiarEstado(EjecucionVista anterior, Estado estado,
@@ -221,6 +290,8 @@ final class EjecucionesService {
     private static final class Ejecucion {
         volatile EjecucionVista vista;
         volatile Future<?> tarea;
+        final ArrayDeque<FotogramaVista> fotogramas = new ArrayDeque<>();
+        long siguienteIndice;
         Ejecucion(EjecucionVista vista) { this.vista = vista; }
     }
 }

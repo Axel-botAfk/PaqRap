@@ -34,6 +34,7 @@ resultados **todavía no** se persisten.
 | `GET /api/datos/mapa/{aaaamm}` | Almacenes y bloqueos del periodo para la GUI. |
 | `POST /api/ejecuciones` | Inicia una corrida; devuelve 202 e identificador. |
 | `GET /api/ejecuciones/{id}` | Estado e instantanea mas reciente. |
+| `GET /api/ejecuciones/{id}/fotogramas?desde=N` | Posiciones ejecutadas al cierre de cada salto, en páginas de hasta 100 fotogramas. |
 | `POST /api/ejecuciones/{id}/cancelar` | Cancela la corrida. |
 | `WS /ws/ejecuciones/{id}` | Instantanea inicial y eventos posteriores. |
 
@@ -52,6 +53,15 @@ admiten nombres de archivo enviados por el cliente. Los eventos son objetos
 otros tipos posibles. Ante desconexion del WebSocket, consultar el mismo ID
 por REST. Las `rutas` son el plan vigente, no entregas ya realizadas; la
 cantidad entregada se toma de `avance` o `resumen`.
+
+Los fotogramas registran las posiciones de las unidades **después** de avanzar
+el reloj, sin ralentizar el motor ni falsear las mediciones de tiempo. La
+respuesta incluye `primero`, `siguiente`, `completo` y `fotogramas`; el cliente
+usa `siguiente` para consultar la página posterior. Se conservan como máximo
+2048 fotogramas por ejecución en memoria, por lo que una corrida muy larga
+puede descartar los más antiguos. El último fotograma alimenta las posiciones
+de vehículos de la respuesta final. Como las ejecuciones, este historial se
+pierde al reiniciar el backend.
 
 Las coordenadas son celdas de la grilla del modelo, no latitud/longitud. La
 GUI debe distinguir pedido planificado, pendiente y entregado, y acompanar

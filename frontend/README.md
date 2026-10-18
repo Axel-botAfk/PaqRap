@@ -33,6 +33,10 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 - `POST /api/ejecuciones` inicia una corrida asincrónica; WebSocket actualiza
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado
   si la conexión en vivo se interrumpe.
+- El mapa consulta además los fotogramas de posiciones realmente ejecutadas.
+  Los reproduce a ritmo visible aunque el cálculo haya terminado en segundos;
+  incluye pausa, selección de instante y tres velocidades. Cuando varias
+  unidades comparten nodo se muestra un contador para evitar iconos superpuestos.
 - El ID de ejecución queda en `?ejecucion=...`; abrir ese enlace en otro
   dispositivo muestra la misma corrida mientras permanezca en memoria.
 - Rutas y paradas representan planificación, no entregas consumadas. Las
@@ -40,7 +44,11 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 - No hay alta de pedidos, selección desde una base de datos ni historial de
   incidencias. Esos paneles muestran estados vacíos hasta tener datos.
 - La grilla dibuja segmentos esquemáticos entre puntos. No afirma reproducir
-  el recorrido de calles ni la posición en tiempo real de un repartidor.
+  el recorrido de calles ni la posición en tiempo real de un repartidor. Los
+  fotogramas sí contienen posiciones muestreadas del simulador, pero los nodos
+  entre dos muestras son una transición visual, no telemetría. Durante la
+  reproducción, las rutas y métricas de otros paneles siguen mostrando la
+  instantánea más reciente de la API, no el plan histórico de ese fotograma.
 
 La beta debe permanecer bajo acceso controlado mientras el backend no tenga
 autenticación ni límites por usuario. Nunca colocar claves en `src/` ni en

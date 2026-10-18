@@ -456,6 +456,7 @@ public final class Simulador {
 
             colaAlCierreDelDia.put(corte.toLocalDate(), pendientes.size());
             reloj = corte;
+            observador.alAvanzar(reloj, List.copyOf(unidades.values()));
             esperarElSalto(arranqueDelSalto);
 
             if (detenerAlColapsar && !vencidos.isEmpty()) {

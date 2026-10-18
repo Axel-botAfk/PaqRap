@@ -66,3 +66,19 @@ export function tramosDeRuta(ruta, bloqueados) {
   }
   return tramos;
 }
+
+// Transición visual entre dos posiciones observadas. Los nodos intermedios son
+// esquemáticos; el servidor solo confirma los extremos al cierre de cada salto.
+export function posicionVisual(origen, destino, progreso, bloqueados = new Set()) {
+  if (!valido(destino)) return origen;
+  if (!valido(origen)) return destino;
+  return posicionEnCamino(caminoEnGrilla(origen, destino, bloqueados),
+    origen, destino, progreso);
+}
+
+export function posicionEnCamino(camino, origen, destino, progreso) {
+  if (!camino.length) return progreso >= 1 ? destino : origen;
+  const paso = Math.min(camino.length - 1,
+    Math.floor(Math.max(0, Math.min(1, progreso)) * (camino.length - 1)));
+  return camino[paso];
+}

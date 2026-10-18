@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { caminoEnGrilla, nodosBloqueados, tramosDeRuta } from './mapa.js';
+import { caminoEnGrilla, nodosBloqueados, posicionVisual, tramosDeRuta } from './mapa.js';
 
 test('cada paso de la ruta es horizontal o vertical y de una arista', () => {
   const camino = caminoEnGrilla({ x: 1, y: 1 }, { x: 4, y: 3 });
@@ -29,4 +29,16 @@ test('no dibuja un tramo cuando no hay acceso al destino', () => {
 test('rechaza puntos fuera del modelo', () => {
   assert.deepEqual(caminoEnGrilla({ x: -1, y: 0 }, { x: 2, y: 2 }), []);
   assert.deepEqual(caminoEnGrilla({ x: 0, y: 0 }, { x: 71, y: 2 }), []);
+});
+
+test('la transición visual avanza por nodos cardinales y llega al destino', () => {
+  const origen = { x: 1, y: 1 };
+  const destino = { x: 4, y: 3 };
+  let anterior = origen;
+  for (let i = 1; i <= 20; i++) {
+    const actual = posicionVisual(origen, destino, i / 20);
+    assert.ok(Math.abs(actual.x - anterior.x) + Math.abs(actual.y - anterior.y) <= 1);
+    anterior = actual;
+  }
+  assert.deepEqual(anterior, destino);
 });

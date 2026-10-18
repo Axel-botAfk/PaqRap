@@ -36,6 +36,13 @@ public final class ApiModels {
             int cargaAbordo
     ) { }
 
+    /** Posición observada después de ejecutar un salto del simulador. */
+    public record FotogramaVista(long indice, LocalDateTime reloj,
+                                List<VehiculoVista> vehiculos) { }
+
+    public record FotogramasVista(long primero, long siguiente, boolean completo,
+                                 List<FotogramaVista> fotogramas) { }
+
     public record RutaVista(
             String id, String vehiculoId, String tipoVehiculo, String almacenId,
             Coordenada origen, int carga, double distanciaKm, double costo,

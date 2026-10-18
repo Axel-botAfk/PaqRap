@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
-import { ANCHO, ALTO, nodosBloqueados, tramosDeRuta } from './mapa.js';
+import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosDeRuta } from './mapa.js';
+
+const LISTA_VACIA = [];
 
 const ESCENARIOS = [
   { id: 'OPERACION_DIARIA', nombre: 'Operación día a día', ayuda: 'Planificación y avance de un día.' },
@@ -70,17 +72,65 @@ function IconoLeyenda({ tipo, texto }) {
   return <span className="leyenda-vehiculo"><svg viewBox="0 0 32 32" aria-hidden="true"><DibujoVehiculo tipo={tipo} /></svg>{texto}</span>;
 }
 
-function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
+function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante, fotogramas,
+  indiceFotograma, alCambiarFotograma, reproduciendo, alReproducir, pasoMs, alCambiarPaso }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
+  const fotograma = fotogramas[indiceFotograma];
+  const posicionesObservadas = fotograma?.vehiculos ?? ejecucion?.vehiculos ?? LISTA_VACIA;
+  const [vehiculosAnimados, setVehiculosAnimados] = useState(posicionesObservadas);
+  const anteriores = useRef(null);
   const rutas = ejecucion?.rutas || [];
-  const vehiculos = ejecucion?.vehiculos || [];
+  const vehiculos = fotograma ? vehiculosAnimados : posicionesObservadas;
   const noAsignados = ejecucion?.noAsignados || [];
   const almacenes = mapaDatos?.almacenes || [];
   const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
   const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, instante]);
+
+  useEffect(() => {
+    if (!fotograma) {
+      anteriores.current = null;
+      setVehiculosAnimados(posicionesObservadas);
+      return undefined;
+    }
+    const origenes = anteriores.current;
+    if (!origenes) {
+      anteriores.current = posicionesObservadas;
+      setVehiculosAnimados(posicionesObservadas);
+      return undefined;
+    }
+    const porId = new Map(origenes.map(vehiculo => [vehiculo.id, vehiculo]));
+    const trayectos = posicionesObservadas.map(vehiculo => {
+      const origen = porId.get(vehiculo.id)?.ubicacion;
+      return { vehiculo, origen,
+        camino: origen ? caminoEnGrilla(origen, vehiculo.ubicacion, bloqueados) : [] };
+    });
+    let cuadro;
+    const inicio = performance.now();
+    const animar = ahora => {
+      const progreso = Math.min(1, (ahora - inicio) / pasoMs);
+      const visibles = trayectos.map(({ vehiculo, origen, camino }) => ({
+        ...vehiculo,
+        ubicacion: origen ? posicionEnCamino(camino, origen, vehiculo.ubicacion, progreso)
+          : vehiculo.ubicacion
+      }));
+      anteriores.current = visibles;
+      setVehiculosAnimados(visibles);
+      if (progreso < 1) cuadro = requestAnimationFrame(animar);
+      else anteriores.current = posicionesObservadas;
+    };
+    cuadro = requestAnimationFrame(animar);
+    return () => cancelAnimationFrame(cuadro);
+  }, [fotograma, posicionesObservadas, bloqueados, pasoMs]);
   const trazos = useMemo(() => rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados]);
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map(parada => parada.destino));
+  const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
+    if (!vehiculo.ubicacion) return grupos;
+    const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(vehiculo);
+    return grupos;
+  }, new Map()).values()];
   const salidas = [...new Map(rutas.filter(ruta => ruta.origen)
     .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
   const llegadas = rutas.filter(ruta => ruta.paradas.length > 0).map(ruta => ({
@@ -92,6 +142,16 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
 
   return <div className="mapa-wrap">
     <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Retícula 70 × 50 km · nodos 0–70 y 0–50</span></div>
+    {fotogramas.length > 0 && <div className="mapa-reproductor">
+      <button type="button" onClick={alReproducir}>{reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}</button>
+      <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)} value={indiceFotograma}
+        onChange={evento => alCambiarFotograma(Number(evento.target.value))}
+        aria-label="Seleccionar instante de la reproducción" />
+      <span>Reproducción visual {indiceFotograma + 1}/{fotogramas.length} · {fecha(fotograma?.reloj)}{finalizada && reproduciendo ? ' · cálculo terminado' : ''}</span>
+      <label>Velocidad <select value={pasoMs} onChange={evento => alCambiarPaso(Number(evento.target.value))}>
+        <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
+      </select></label>
+    </div>}
     <svg className="mapa" viewBox="0 0 700 500" role="img" aria-label="Mapa esquemático de rutas, pedidos y vehículos">
       <rect width="700" height="500" fill="#f4f8f8" />
       {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2="500" className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
@@ -120,13 +180,18 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
           : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
         <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
       </g>)}
-      {vehiculos.map(vehiculo => <svg key={vehiculo.id}
-        x={x(vehiculo.ubicacion?.x) - 13} y={y(vehiculo.ubicacion?.y) - 13}
+      {gruposVehiculos.map(grupo => grupo.length === 1 ? <svg key={grupo[0].id}
+        x={x(grupo[0].ubicacion.x) - 13} y={y(grupo[0].ubicacion.y) - 13}
         width="26" height="26" viewBox="0 0 32 32">
-        <title>{`${vehiculo.id} · ${vehiculo.tipo} · ${vehiculo.estado}`}</title>
+        <title>{`${grupo[0].id} · ${grupo[0].tipo} · ${grupo[0].estado}`}</title>
         <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
-        <DibujoVehiculo tipo={vehiculo.tipo} />
-      </svg>)}
+        <DibujoVehiculo tipo={grupo[0].tipo} />
+      </svg> : <g key={`grupo-${grupo[0].ubicacion.x}-${grupo[0].ubicacion.y}`}
+        className="grupo-vehiculos"
+        transform={`translate(${x(grupo[0].ubicacion.x)},${y(grupo[0].ubicacion.y)})`}>
+        <title>{`${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y}): ${grupo.map(v => v.id).join(', ')}`}</title>
+        <circle r="14" /><text textAnchor="middle" y="4">{grupo.length}</text>
+      </g>)}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
         transform={`translate(${x(punto.x)},${y(punto.y)})`}>
         <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
@@ -147,7 +212,7 @@ function MapaOperacion({ ejecucion, rutaSeleccionada, mapaDatos, instante }) {
       <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
       <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {almacen.tipo === 'CENTRAL' ? 'abastecimiento principal' : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>
     </div>)}</div><small>La flota parte de la central; los almacenes intermedios apoyan la reposición y se reabastecen diariamente. El stock mostrado es inicial, no inventario en vivo.</small></div>
-    <p className="mapa-aviso">Cada tramo visual usa solo movimientos norte, sur, este u oeste y evita los bloqueos activos en el reloj mostrado. No es un registro GPS ni una entrega confirmada. Al terminar, el trazo se atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
+    <p className="mapa-aviso">Las posiciones de las unidades proceden de los saltos ya ejecutados por el simulador; el movimiento entre dos muestras es una transición esquemática en cuatro direcciones, no telemetría GPS. Las rutas dibujadas son el plan más reciente de la API, no necesariamente el plan histórico del instante reproducido. Las métricas superiores también muestran el estado más reciente. Al terminar, el trazo se atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
   </div>;
 }
 
@@ -217,6 +282,10 @@ export default function App() {
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
+  const [fotogramas, setFotogramas] = useState([]);
+  const [indiceFotograma, setIndiceFotograma] = useState(0);
+  const [reproduciendo, setReproduciendo] = useState(true);
+  const [pasoMs, setPasoMs] = useState(450);
   const [seccion, setSeccion] = useState('operacion');
 
   useEffect(() => {
@@ -274,6 +343,53 @@ export default function App() {
     } catch { setAviso('Sin conexión en vivo; la vista se actualiza periódicamente.'); }
     return () => { activo = false; clearInterval(intervalo); socket?.close(); };
   }, [id]);
+
+  useEffect(() => {
+    setFotogramas([]);
+    setIndiceFotograma(0);
+    setReproduciendo(true);
+    if (!id) return undefined;
+    let activo = true;
+    let siguiente = 0;
+    let consultando = false;
+    let completo = false;
+    const cargar = async () => {
+      if (!activo || consultando || completo) return;
+      consultando = true;
+      try {
+        const pagina = await api.fotogramas(id, siguiente);
+        if (!activo) return;
+        if (pagina.primero > siguiente) {
+          setFotogramas(pagina.fotogramas);
+          setIndiceFotograma(0);
+        } else if (pagina.fotogramas.length) {
+          setFotogramas(actual => [...actual, ...pagina.fotogramas]);
+        }
+        siguiente = pagina.siguiente;
+        completo = pagina.completo && pagina.fotogramas.length < 100;
+      } catch (error) {
+        if (error.status === 404) completo = true;
+        if (activo) setAviso(error.status === 404
+          ? 'El backend aún no ofrece reproducción; se muestra la última instantánea.'
+          : 'Reproducción temporalmente no disponible; se muestra la última instantánea.');
+      } finally { consultando = false; }
+    };
+    cargar();
+    const intervalo = setInterval(cargar, 900);
+    return () => { activo = false; clearInterval(intervalo); };
+  }, [id]);
+
+  useEffect(() => {
+    if (!reproduciendo || fotogramas.length < 2) return undefined;
+    const intervalo = setInterval(() => setIndiceFotograma(actual =>
+      Math.min(actual + 1, fotogramas.length - 1)), pasoMs);
+    return () => clearInterval(intervalo);
+  }, [reproduciendo, fotogramas.length, pasoMs]);
+
+  useEffect(() => {
+    if (ejecucion && esFinal(ejecucion.estado) && fotogramas.length > 0
+        && indiceFotograma >= fotogramas.length - 1) setReproduciendo(false);
+  }, [ejecucion?.estado, fotogramas.length, indiceFotograma]);
 
   const vehiculosActivos = useMemo(() => ejecucion?.vehiculos?.length ?? null, [ejecucion]);
   const planificados = useMemo(() => (ejecucion?.rutas || []).reduce((total, ruta) => total + ruta.paradas.length, 0), [ejecucion]);
@@ -348,8 +464,15 @@ export default function App() {
           {aviso && <p className="aviso-conexion" role="status">{aviso}</p>}
           <p className="nota-formulario">La ejecución es asincrónica. Puedes abrir el mismo enlace en otro dispositivo para consultar su estado.</p>
         </form>
-        <MapaOperacion ejecucion={ejecucion} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
-          instante={ejecucion?.reloj || (dia ? `${dia}T${hora}:00` : null)} /></div>
+        <MapaOperacion key={id || 'sin-ejecucion'} ejecucion={ejecucion}
+          rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos} fotogramas={fotogramas}
+          indiceFotograma={indiceFotograma} reproduciendo={reproduciendo} pasoMs={pasoMs}
+          alCambiarFotograma={indice => { setReproduciendo(false); setIndiceFotograma(indice); }}
+          alReproducir={() => {
+            if (!reproduciendo && indiceFotograma >= fotogramas.length - 1) setIndiceFotograma(0);
+            setReproduciendo(!reproduciendo);
+          }} alCambiarPaso={setPasoMs}
+          instante={fotogramas[indiceFotograma]?.reloj || ejecucion?.reloj || (dia ? `${dia}T${hora}:00` : null)} /></div>
         <div className="metricas">
           <TarjetaMetrica etiqueta="Pedidos entregados" valor={numero(ejecucion?.avance?.pedidosEntregados)} nota="Entrega efectiva acumulada" />
           <TarjetaMetrica etiqueta="Productos entregados" valor={numero(ejecucion?.avance?.productosEntregados)} nota="Unidades acumuladas" />

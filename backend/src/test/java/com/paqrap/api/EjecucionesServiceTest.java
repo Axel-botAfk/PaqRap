@@ -12,10 +12,13 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class EjecucionesServiceTest {
@@ -38,6 +41,25 @@ class EjecucionesServiceTest {
         assertEquals(LocalDateTime.of(2026, 9, 6, 0, 0), fin.reloj());
         assertNotNull(fin.resumen());
         assertEquals(1, fin.resumen().pedidosRecibidos());
+        var historial = new ArrayList<ApiModels.FotogramaVista>();
+        long desde = 0;
+        ApiModels.FotogramasVista pagina;
+        do {
+            pagina = servicio.fotogramas(id, desde);
+            historial.addAll(pagina.fotogramas());
+            desde = pagina.siguiente();
+        } while (pagina.fotogramas().size() == 100);
+        assertThrows(ApiException.class, () -> servicio.fotogramas(id, -1));
+        assertTrue(pagina.completo());
+        assertTrue(historial.size() >= 2);
+        assertEquals(0, historial.get(0).indice());
+        assertEquals(fin.reloj(), historial.get(historial.size() - 1).reloj());
+        assertEquals(fin.vehiculos(), historial.get(historial.size() - 1).vehiculos());
+        assertTrue(historial.stream().anyMatch(f -> f.vehiculos().stream()
+                .anyMatch(v -> !v.ubicacion().equals(
+                        historial.get(0).vehiculos().stream()
+                                .filter(inicial -> inicial.id().equals(v.id()))
+                                .findFirst().orElseThrow().ubicacion()))));
     }
 
     @Test
@@ -50,6 +72,20 @@ class EjecucionesServiceTest {
         assertEquals(Estado.TERMINADA, fin.estado());
         assertNotNull(fin.resumen());
         assertEquals(false, fin.resumen().huboColapso());
+    }
+
+    @Test
+    void operacionDiariaRegistraPosicionesEjecutadas() throws Exception {
+        prepararDatosMinimos();
+        servicio = crearServicio();
+        UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L)).id();
+        var fin = esperar(id);
+        assertEquals(Estado.TERMINADA, fin.estado());
+        assertEquals(LocalDateTime.of(2026, 9, 2, 0, 0), fin.reloj());
+        var pagina = servicio.fotogramas(id, 0);
+        assertTrue(pagina.fotogramas().size() > 1);
+        assertEquals(0, pagina.fotogramas().get(0).indice());
     }
 
     private void prepararDatosMinimos() throws Exception {

@@ -156,6 +156,7 @@ public final class Simulador {
     private final boolean detenerAlColapsar;
     private PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
     private PlanAverias averias = PlanAverias.vacio();
+    private final List<Averia> averiasRegistradasEnVivo = new ArrayList<>();
     private boolean permiteEntregasParciales = true;
 
     /** Hasta dónde ya se revisaron las averías; evita aplicar dos veces la misma. */
@@ -262,6 +263,11 @@ public final class Simulador {
     public Simulador conAverias(PlanAverias plan) {
         this.averias = Objects.requireNonNull(plan);
         return this;
+    }
+
+    /** Recibe una avería durante la corrida; se aplica en el siguiente corte del reloj. */
+    public synchronized void registrarAveriaEnVivo(Averia averia) {
+        averiasRegistradasEnVivo.add(Objects.requireNonNull(averia));
     }
 
     /**
@@ -402,6 +408,7 @@ public final class Simulador {
                         disponiblesEn(reloj, unidades)
                 );
 
+                observador.alIniciarPlanificacion(reloj);
                 long antes = System.currentTimeMillis();
                 Solucion plan = planificador.planificar(estado, parametros);
                 long ta = System.currentTimeMillis() - antes;
@@ -457,6 +464,7 @@ public final class Simulador {
             colaAlCierreDelDia.put(corte.toLocalDate(), pendientes.size());
             reloj = corte;
             observador.alAvanzar(reloj, List.copyOf(unidades.values()));
+            observador.alActualizarInventario(reloj, almacenesEn(reloj, inventario));
             esperarElSalto(arranqueDelSalto);
 
             if (detenerAlColapsar && !vencidos.isEmpty()) {
@@ -775,7 +783,16 @@ public final class Simulador {
             Map<String, Averia> averiadas,
             List<Averia> ocurridas
     ) {
-        for (Averia averia : averias.entre(ultimoCorteAplicado, reloj)) {
+        List<Averia> nuevas = new ArrayList<>(averias.entre(ultimoCorteAplicado, reloj));
+        synchronized (this) {
+            for (Averia averia : List.copyOf(averiasRegistradasEnVivo)) {
+                if (!averia.instante().isAfter(reloj)) {
+                    nuevas.add(averia);
+                    averiasRegistradasEnVivo.remove(averia);
+                }
+            }
+        }
+        for (Averia averia : nuevas) {
             Vehiculo unidad = unidades.get(averia.unidadId());
             if (unidad == null || averiadas.containsKey(averia.unidadId())) {
                 continue;
@@ -891,6 +908,14 @@ public final class Simulador {
         // Una avería deja a la operación con una unidad menos y con su carga sin repartir: no
         // tiene sentido esperar al latido para enterarse.
         LocalDateTime proximaAveria = averias.proximaDespuesDe(reloj);
+        synchronized (this) {
+            for (Averia registrada : averiasRegistradasEnVivo) {
+                if (registrada.instante().isAfter(reloj)
+                        && (proximaAveria == null || registrada.instante().isBefore(proximaAveria))) {
+                    proximaAveria = registrada.instante();
+                }
+            }
+        }
         if (proximaAveria != null && proximaAveria.isBefore(corte)) {
             corte = proximaAveria;
         }

@@ -35,6 +35,10 @@ resultados **todavía no** se persisten.
 | `POST /api/ejecuciones` | Inicia una corrida; devuelve 202 e identificador. |
 | `GET /api/ejecuciones/{id}` | Estado e instantanea mas reciente. |
 | `GET /api/ejecuciones/{id}/fotogramas?desde=N` | Posiciones ejecutadas al cierre de cada salto, en páginas de hasta 100 fotogramas. |
+| `GET /api/ejecuciones/{id}/planes?desde=N` | Versiones históricas del plan, paginadas, para sincronizar rutas con el reloj reproducido. |
+| `GET /api/ejecuciones/{id}/inventario` | Existencias actuales de los almacenes al reloj publicado. |
+| `GET /api/ejecuciones/{id}/averias` | Averías registradas y su estado. |
+| `POST /api/ejecuciones/{id}/averias` | Registra una avería durante una corrida activa. |
 | `POST /api/ejecuciones/{id}/cancelar` | Cancela la corrida. |
 | `WS /ws/ejecuciones/{id}` | Instantanea inicial y eventos posteriores. |
 
@@ -46,13 +50,23 @@ Ejemplo de cuerpo para operacion diaria:
 
 Para cinco dias usar `PERIODO_5_DIAS`; para colapso usar `COLAPSO` y,
 opcionalmente, `horizonteDias` entre 1 y 60. El segundo algoritmo se llama
-`TABU`. El `inicio` debe caer en un periodo con archivos disponibles; no se
+`TABU`. Para demostrar una avería
+en vivo, `pausaMs` opcional de 0 a 500 ralentiza cada salto; la GUI usa 100 ms
+en modo interactivo. Omitirlo en mediciones. El cuerpo de avería es
+`{"unidadId":"TA01","tipo":"TIPO_3"}`. El stock de `/datos/mapa` es inicial;
+`/ejecuciones/{id}/inventario` es dinámico y el central devuelve
+`ilimitado=true`, `disponible=null`.
+
+El `inicio` debe caer en un periodo con archivos disponibles; no se
 admiten nombres de archivo enviados por el cliente. Los eventos son objetos
 `{"tipo":"PROGRESO","ejecucion":{...}}`; `INSTANTANEA`, `INICIADA`,
-`PLAN_SIN_ASIGNACIONES`, `COLAPSO`, `TERMINADA`, `FALLIDA` y `CANCELADA` son
+`CALCULANDO_RUTAS`, `PLAN_SIN_ASIGNACIONES`, `COLAPSO`, `TERMINADA`, `FALLIDA` y `CANCELADA` son
 otros tipos posibles. Ante desconexion del WebSocket, consultar el mismo ID
 por REST. Las `rutas` son el plan vigente, no entregas ya realizadas; la
 cantidad entregada se toma de `avance` o `resumen`.
+Durante una replanificación, `calculandoRutas=true` y `rutas=[]` evitan
+presentar el plan anterior como si fuera el nuevo. Al publicarse el plan,
+el indicador vuelve a `false`.
 
 Los fotogramas registran las posiciones de las unidades **después** de avanzar
 el reloj, sin ralentizar el motor ni falsear las mediciones de tiempo. La
@@ -63,10 +77,14 @@ puede descartar los más antiguos. El último fotograma alimenta las posiciones
 de vehículos de la respuesta final. Como las ejecuciones, este historial se
 pierde al reiniciar el backend.
 
+Cada replanificación guarda además un `PlanVista` con `reloj` y todas las
+rutas y paradas simultáneas de ese instante. `/planes` se pagina igual que
+`/fotogramas` y conserva hasta 2048 versiones por ejecución. El plan sirve
+para mostrar lo previsto en ese momento; no equivale a un historial GPS ni
+certifica la entrega de cada pedido.
+
 Las coordenadas son celdas de la grilla del modelo, no latitud/longitud. La
-GUI debe distinguir pedido planificado, pendiente y entregado, y acompanar
-todo color de semaforo con texto. El HTML v6 es un prototipo visual estatico;
-aun falta conectar sus controles y vistas a este contrato.
+GUI React consume este contrato; el HTML v6 permanece como referencia visual.
 
 ## Seguridad y limites
 
@@ -75,9 +93,8 @@ aun falta conectar sus controles y vistas a este contrato.
 - Se validan formato de fecha, enums, horizonte, UUID y periodo. Los errores
   de API no devuelven trazas ni rutas del servidor.
 - El servidor ejecuta una simulacion por vez y admite dos en cola; las instantaneas
-  expiran tras dos horas. No hay SQL en esta entrega: la proteccion frente a
-  inyeccion SQL es no construir consultas; si se agrega BD, usar parametros
-  enlazados, nunca concatenacion de valores de entrada.
+  expiran tras dos horas. El perfil MySQL usa consultas parametrizadas y un
+  usuario de solo lectura; no construye SQL con entrada HTTP concatenada.
 - El despliegue publico requiere autenticacion/autorizacion o restriccion de
   acceso, ademas de limite por cliente. Actualmente quien conoce un UUID
   puede leer o cancelar su corrida; no usar este backend como servicio publico

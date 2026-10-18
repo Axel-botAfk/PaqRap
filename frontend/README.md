@@ -30,6 +30,11 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 - El catálogo procede de los TXT del curso o de MySQL, según el perfil del backend.
 - El mapa distingue los tres almacenes y los nodos bloqueados vigentes a la hora simulada.
 - El usuario selecciona periodo, fecha/hora, escenario y algoritmo.
+- Puede activar modo interactivo para registrar una avería de una unidad
+  durante la corrida. Ese modo añade pausas y no sirve para medir rendimiento.
+- Los intermedios muestran inventario actualizado y el central se indica como
+  ilimitado. Durante la reproducción histórica, el stock sigue siendo el
+  último publicado; no existe historial de stock por fotograma.
 - `POST /api/ejecuciones` inicia una corrida asincrónica; WebSocket actualiza
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado
   si la conexión en vivo se interrumpe.
@@ -37,18 +42,21 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
   Los reproduce a ritmo visible aunque el cálculo haya terminado en segundos;
   incluye pausa, selección de instante y tres velocidades. Cuando varias
   unidades comparten nodo se muestra un contador para evitar iconos superpuestos.
+- Consulta el historial paginado de planes: al mover el reloj muestra las
+  rutas que estaban vigentes entonces, incluidas las simultáneas. Cada ruta
+  une todas sus paradas en orden y las numera; un aro señala la última.
 - El ID de ejecución queda en `?ejecucion=...`; abrir ese enlace en otro
   dispositivo muestra la misma corrida mientras permanezca en memoria.
-- Rutas y paradas representan planificación, no entregas consumadas. Las
+- Rutas y paradas históricas representan planificación, no entregas consumadas. Las
   entregas efectivas se toman de `avance` y `resumen`.
-- No hay alta de pedidos, selección desde una base de datos ni historial de
-  incidencias. Esos paneles muestran estados vacíos hasta tener datos.
+- No hay alta de pedidos ni historial persistente de incidencias. Los pedidos
+  vienen de la fuente configurada y las averías se pierden al reiniciar.
 - La grilla dibuja segmentos esquemáticos entre puntos. No afirma reproducir
   el recorrido de calles ni la posición en tiempo real de un repartidor. Los
   fotogramas sí contienen posiciones muestreadas del simulador, pero los nodos
   entre dos muestras son una transición visual, no telemetría. Durante la
-  reproducción, las rutas y métricas de otros paneles siguen mostrando la
-  instantánea más reciente de la API, no el plan histórico de ese fotograma.
+  reproducción, las rutas muestran el plan histórico del instante; las
+  métricas superiores y el inventario siguen siendo los últimos publicados.
 
 La beta debe permanecer bajo acceso controlado mientras el backend no tenga
 autenticación ni límites por usuario. Nunca colocar claves en `src/` ni en

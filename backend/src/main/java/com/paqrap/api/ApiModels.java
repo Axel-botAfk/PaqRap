@@ -1,6 +1,8 @@
 package com.paqrap.api;
 
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotBlank;
+import com.paqrap.modelo.TipoAveria;
 
 import java.time.LocalDateTime;
 import java.time.LocalDate;
@@ -20,8 +22,21 @@ public final class ApiModels {
             @NotNull Algoritmo algoritmo,
             @NotNull LocalDateTime inicio,
             Integer horizonteDias,
-            Long semilla
-    ) { }
+            Long semilla,
+            Integer pausaMs
+    ) {
+        public CrearEjecucionRequest(Escenario escenario, Algoritmo algoritmo,
+                LocalDateTime inicio, Integer horizonteDias, Long semilla) {
+            this(escenario, algoritmo, inicio, horizonteDias, semilla, null);
+        }
+    }
+
+    public record RegistrarAveriaRequest(@NotBlank String unidadId, @NotNull TipoAveria tipo) { }
+    public record AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,
+                             String estado) { }
+    public record StockAlmacenVista(String id, String tipo, Coordenada ubicacion,
+                                   Integer disponible, boolean ilimitado) { }
+    public record InventarioVista(LocalDateTime reloj, List<StockAlmacenVista> almacenes) { }
 
     public record Coordenada(int x, int y) { }
 
@@ -42,6 +57,11 @@ public final class ApiModels {
 
     public record FotogramasVista(long primero, long siguiente, boolean completo,
                                  List<FotogramaVista> fotogramas) { }
+
+    /** Plan que estuvo vigente desde este instante hasta la siguiente replanificación. */
+    public record PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas) { }
+    public record PlanesVista(long primero, long siguiente, boolean completo,
+                             List<PlanVista> planes) { }
 
     public record RutaVista(
             String id, String vehiculoId, String tipoVehiculo, String almacenId,
@@ -68,8 +88,17 @@ public final class ApiModels {
             LocalDateTime inicio, LocalDateTime reloj, LocalDateTime actualizado,
             AvanceVista avance, List<VehiculoVista> vehiculos, List<RutaVista> rutas,
             List<PedidoVista> noAsignados, ResumenVista resumen,
-            String codigoError, String mensajeError
-    ) { }
+            String codigoError, String mensajeError, boolean calculandoRutas
+    ) {
+        public EjecucionVista(UUID id, Estado estado, Escenario escenario, Algoritmo algoritmo,
+                LocalDateTime inicio, LocalDateTime reloj, LocalDateTime actualizado,
+                AvanceVista avance, List<VehiculoVista> vehiculos, List<RutaVista> rutas,
+                List<PedidoVista> noAsignados, ResumenVista resumen,
+                String codigoError, String mensajeError) {
+            this(id, estado, escenario, algoritmo, inicio, reloj, actualizado, avance,
+                    vehiculos, rutas, noAsignados, resumen, codigoError, mensajeError, false);
+        }
+    }
 
     public record EventoVista(String tipo, EjecucionVista ejecucion) { }
     public record ErrorVista(String codigo, String mensaje) { }

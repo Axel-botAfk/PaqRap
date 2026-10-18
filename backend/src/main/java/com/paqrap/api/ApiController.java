@@ -3,8 +3,12 @@ package com.paqrap.api;
 import com.paqrap.api.ApiModels.CrearEjecucionRequest;
 import com.paqrap.api.ApiModels.EjecucionVista;
 import com.paqrap.api.ApiModels.FotogramasVista;
+import com.paqrap.api.ApiModels.PlanesVista;
 import com.paqrap.api.ApiModels.PeriodoVista;
 import com.paqrap.api.ApiModels.MapaDatosVista;
+import com.paqrap.api.ApiModels.RegistrarAveriaRequest;
+import com.paqrap.api.ApiModels.AveriaVista;
+import com.paqrap.api.ApiModels.InventarioVista;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +64,25 @@ class ApiController {
         return ejecuciones.fotogramas(id, desde);
     }
 
+    @GetMapping("/ejecuciones/{id}/planes")
+    PlanesVista planes(@PathVariable UUID id,
+                      @RequestParam(defaultValue = "0") long desde) {
+        return ejecuciones.planes(id, desde);
+    }
+
     @PostMapping("/ejecuciones/{id}/cancelar")
     EjecucionVista cancelar(@PathVariable UUID id) { return ejecuciones.cancelar(id); }
+
+    @GetMapping("/ejecuciones/{id}/inventario")
+    InventarioVista inventario(@PathVariable UUID id) { return ejecuciones.inventario(id); }
+
+    @GetMapping("/ejecuciones/{id}/averias")
+    List<AveriaVista> averias(@PathVariable UUID id) { return ejecuciones.averias(id); }
+
+    @PostMapping("/ejecuciones/{id}/averias")
+    ResponseEntity<AveriaVista> registrarAveria(@PathVariable UUID id,
+            @Valid @RequestBody RegistrarAveriaRequest solicitud) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ejecuciones.registrarAveria(id, solicitud));
+    }
 }

@@ -98,8 +98,9 @@ a un historial GPS ni reproduce los tiempos de paso exactos del motor de Java.
 Al finalizar la ejecución se atenúa; al pasar el cursor o enfocar con Tab se
 resalta. La salida de una ruta se marca con `S`, su última llegada con `F` y
 las demás paradas con puntos de alto contraste. Los almacenes se muestran con
-su ubicación y stock **inicial**; esta
-beta todavía no expone el inventario dinámico de cada almacén.
+su ubicación y stock **actual** de la corrida consultado a
+`/api/ejecuciones/{id}/inventario`. Antes de iniciar se usa el stock inicial;
+el central se identifica como ilimitado. No hay historial por fotograma.
 
 Pruebas del trazador y compilación del frontend: `cd frontend; npm test; npm run build`.
 Verificación realizada el 06/10/2026 contra el MySQL local: `/api/salud`

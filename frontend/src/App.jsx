@@ -118,14 +118,15 @@ function IconoLeyenda({ tipo, texto }) {
 
 function MapaOperacion({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos, inventario, instante, fotogramas,
   indiceFotograma, alCambiarFotograma, reproduciendo, alReproducir, pasoMs, alCambiarPaso,
-  enVivo = false, trayectosEnVivo = null, alVolverEnVivo = null }) {
+  enVivo = false, trayectosEnVivo = null, alVolverEnVivo = null, noAsignadosDelInstante = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const fotograma = fotogramas[indiceFotograma];
   const posicionesObservadas = fotograma?.vehiculos ?? ejecucion?.vehiculos ?? LISTA_VACIA;
   const [vehiculosAnimados, setVehiculosAnimados] = useState(posicionesObservadas);
   const anteriores = useRef(null);
   const vehiculosObservados = fotograma ? vehiculosAnimados : posicionesObservadas;
-  const noAsignados = ejecucion?.noAsignados || [];
+  // Los sin asignar del plan vigente en el instante mostrado; sin historial, los más recientes.
+  const noAsignados = noAsignadosDelInstante || ejecucion?.noAsignados || LISTA_VACIA;
   const almacenes = mapaDatos?.almacenes || [];
   const stockPorId = new Map((inventario?.almacenes || []).map(a => [a.id, a]));
   const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
@@ -721,6 +722,7 @@ export default function App() {
           indiceFotograma={indiceFotograma} reproduciendo={reproduciendo} pasoMs={pasoMs}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
+          noAsignadosDelInstante={planReproducido?.noAsignados || null}
           alCambiarFotograma={indice => { setEnVivo(false); setReproduciendo(false); setIndiceFotograma(indice); }}
           alReproducir={() => {
             if (!reproduciendo && indiceFotograma >= fotogramas.length - 1) setIndiceFotograma(0);

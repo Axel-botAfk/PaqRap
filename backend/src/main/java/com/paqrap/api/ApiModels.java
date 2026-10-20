@@ -84,12 +84,19 @@ public final class ApiModels {
 
     /**
      * Plan que estuvo vigente desde este instante hasta la siguiente replanificación, con lo que
-     * cada unidad alcanzó a recorrer de él antes del corte {@code hasta}.
+     * cada unidad alcanzó a recorrer de él antes del corte {@code hasta} y los pedidos que dejó
+     * sin asignar.
      */
     public record PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas,
-                            LocalDateTime hasta, List<TrayectoVista> trayectos) {
+                            LocalDateTime hasta, List<TrayectoVista> trayectos,
+                            List<PedidoVista> noAsignados) {
         public PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas) {
-            this(indice, reloj, rutas, null, List.of());
+            this(indice, reloj, rutas, null, List.of(), List.of());
+        }
+
+        public PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas,
+                         LocalDateTime hasta, List<TrayectoVista> trayectos) {
+            this(indice, reloj, rutas, hasta, trayectos, List.of());
         }
     }
     public record PlanesVista(long primero, long siguiente, boolean completo,

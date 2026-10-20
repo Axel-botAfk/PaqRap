@@ -247,6 +247,9 @@ class EjecucionesServiceTest {
                 "la corrida se corta en el colapso");
         assertTrue(servicio.eventosOperacion(id, 0).eventos().stream()
                 .anyMatch(e -> e.tipo().equals("COLAPSO") && "P-00001".equals(e.pedidoId())));
+        // El historial guarda los sin asignar de cada plan, no solo los del último estado.
+        assertTrue(servicio.planes(id, 0).planes().stream().anyMatch(plan ->
+                plan.noAsignados().stream().anyMatch(p -> p.id().equals("P-00001"))));
     }
 
     /** Cada recorrido avanza en el tiempo y termina donde el fotograma deja a la unidad. */

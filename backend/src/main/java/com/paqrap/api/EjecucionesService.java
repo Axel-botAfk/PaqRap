@@ -379,7 +379,7 @@ final class EjecucionesService {
                         List<VehiculoVista> posiciones = vehiculos.stream().map(Vistas::vehiculo).toList();
                         if (ventana.relojPlan != null) {
                             ventana.planes.add(new PlanVista(-1, ventana.relojPlan, ventana.rutas,
-                                    reloj, ventana.trayectosIteracion));
+                                    reloj, ventana.trayectosIteracion, ventana.noAsignados));
                             ventana.relojPlan = null;
                         } else if (!ventana.huboPlan) {
                             // Sin pedidos en cola no hubo plan: nada queda vigente.
@@ -503,7 +503,7 @@ final class EjecucionesService {
             }
             for (PlanVista plan : ventana.planes) {
                 ejecucion.planes.addLast(new PlanVista(ejecucion.siguientePlan++, plan.reloj(),
-                        plan.rutas(), plan.hasta(), plan.trayectos()));
+                        plan.rutas(), plan.hasta(), plan.trayectos(), plan.noAsignados()));
                 if (ejecucion.planes.size() > MAX_PLANES) ejecucion.planes.removeFirst();
             }
             if (ventana.inventario != null) ejecucion.inventario = ventana.inventario;

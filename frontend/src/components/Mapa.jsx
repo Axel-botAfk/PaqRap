@@ -41,7 +41,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [filtros, setFiltros] = useState(false);
   const [flota, setFlota] = useState('');
   const [estadoPedido, setEstadoPedido] = useState('');
-  const [pieAbierto, setPieAbierto] = useState(true);
+  // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
+  const [pieAbierto, setPieAbierto] = useState(false);
   const svgRef = useRef(null);
   const arrastre = useRef(null);
 

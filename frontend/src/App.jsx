@@ -1,11 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
-import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosDeRuta, planVigenteEn,
-  prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from './mapa.js';
-import { aIso, aMs, crearRelojAnclado, desfaseConServidor } from './reloj.js';
+import { planVigenteEn, estadosDePedido } from './mapa.js';
+import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo } from './reloj.js';
+import { fecha, fechaConSegundos, numero, duracion } from './formato.js';
+import BarraSuperior from './components/BarraSuperior.jsx';
+import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
+import Riel from './components/Riel.jsx';
+import Mapa from './components/Mapa.jsx';
+import RielCorrida from './pages/RielCorrida.jsx';
+import HojaPedidos from './pages/HojaPedidos.jsx';
+import HojaAverias from './pages/HojaAverias.jsx';
 
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
 const ID_VALIDO = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
+const LISTA_VACIA = [];
+const TITULOS = Object.fromEntries(VISTAS);
+const ES_MAPA = vista => vista === 'operacion' || vista === 'simulacion';
 
 function leerEjecucionGuardada() {
   try { return localStorage.getItem(CLAVE_EJECUCION); } catch { return null; }
@@ -15,351 +25,8 @@ function guardarEjecucion(id) {
   try { id ? localStorage.setItem(CLAVE_EJECUCION, id) : localStorage.removeItem(CLAVE_EJECUCION); } catch { /* sin almacenamiento */ }
 }
 
-const LISTA_VACIA = [];
-function colorDeRuta(ruta) {
-  const clave = ruta.vehiculoId || ruta.id;
-  const numeroVehiculo = Number(clave.match(/\d+$/)?.[0]);
-  const familia = [...clave.replace(/\d+$/, '')]
-    .reduce((total, letra) => total * 31 + letra.charCodeAt(0), 0);
-  const codigo = Number.isFinite(numeroVehiculo) && numeroVehiculo > 0
-    ? numeroVehiculo + familia * 37 : familia;
-  return `hsl(${Math.round((codigo * 137.508) % 360)} 64% 39%)`;
-}
-
-const ESCENARIOS = [
-  { id: 'OPERACION_DIARIA', nombre: 'Operación día a día', ayuda: 'Un día al ritmo elegido; 1× es tiempo real.' },
-  { id: 'PERIODO_5_DIAS', nombre: 'Simulación de 5 días', ayuda: 'Cinco jornadas en 30 a 60 minutos reales.' },
-  { id: 'COLAPSO', nombre: 'Colapso logístico', ayuda: 'Avanza hasta el primer pedido vencido.' }
-];
-
-const ETIQUETAS = {
-  PENDIENTE: 'En espera', EN_CURSO: 'En ejecución', PAUSADA: 'En pausa', TERMINADA: 'Terminada',
-  COLAPSADA: 'Colapso detectado', FALLIDA: 'Fallida', CANCELADA: 'Cancelada'
-};
-
-const FORMATO_FECHA = new Intl.DateTimeFormat('es-PE', {
-  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
-});
-
-function fecha(valor) {
-  if (!valor) return '—';
-  const fechaLocal = new Date(valor);
-  return Number.isNaN(fechaLocal.getTime()) ? valor : FORMATO_FECHA.format(fechaLocal);
-}
-
-function numero(valor) {
-  return typeof valor === 'number' ? new Intl.NumberFormat('es-PE').format(valor) : '—';
-}
-
-function decimal(valor, unidad = '') {
-  return typeof valor === 'number'
-    ? `${new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 }).format(valor)}${unidad}`
-    : '—';
-}
-
-function minutos(valor) {
-  if (typeof valor !== 'number') return '—';
-  return valor >= 60 ? decimal(valor / 60, ' h') : decimal(valor, ' min');
-}
-
-function textoRitmo(ritmo) {
-  return `${minutos(ritmo.minutosPorVentana)} simulados cada ${decimal(ritmo.saMs / 1000, ' s')}`;
-}
-
-function ritmoConfigurado(escenario, duracionObjetivo, velocidad) {
-  if (escenario === 'PERIODO_5_DIAS') {
-    const duracion = Number(duracionObjetivo) || 40;
-    return `Ritmo: ${minutos(7200 / (duracion * 3))} simulados cada 20 s; los 5 días duran unos ${duracion} min reales.`;
-  }
-  if (escenario === 'OPERACION_DIARIA') {
-    const v = Number(velocidad) || 60;
-    return v === 1 ? 'Ritmo: tiempo real (el día dura 24 h).'
-      : `Ritmo: ${minutos(v / 3)} simulados cada 20 s; el día dura unos ${minutos(1440 / v)} reales.`;
-  }
-  return 'Ritmo: 2 h simuladas cada 10 s; se detiene en el primer pedido vencido.';
-}
-
-function TarjetaMetrica({ etiqueta, valor, nota, alerta = false }) {
-  return <div className={`metrica ${alerta ? 'metrica-alerta' : ''}`}>
-    <span>{etiqueta}</span><strong>{valor}</strong><small>{nota}</small>
-  </div>;
-}
-
-function DibujoVehiculo({ tipo }) {
-  switch (tipo) {
-    case 'AUTO':
-      return <g fill="none" stroke="#24659b" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M5 21V14h3l3-5h10l4 5h2v7H5Z" fill="#dcecf8" />
-        <path d="M11 14h12M16 9v5" /><circle cx="10" cy="22" r="2.3" fill="#24659b" /><circle cx="23" cy="22" r="2.3" fill="#24659b" />
-      </g>;
-    case 'MOTO':
-      return <g fill="none" stroke="#21805a" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="8" cy="23" r="3.5" /><circle cx="25" cy="23" r="3.5" />
-        <path d="m8 23 5-7h6l5 7M12 16l-2-3h5m7 1 2-3h3M17 16l-2 7h10" />
-      </g>;
-    case 'BICICLETA':
-      return <g fill="none" stroke="#b27a16" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="7" cy="23" r="4" /><circle cx="25" cy="23" r="4" />
-        <path d="m7 23 7-10 5 10H7l7-10m5 10 6-10m-12 0h5m5 0h4m-13-3 2-1" />
-      </g>;
-    case 'CAMION':
-      return <g fill="none" stroke="#754d98" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M3 10h17v12H3zM20 14h5l4 5v3h-9z" fill="#ede5f5" />
-        <circle cx="9" cy="23" r="2.2" fill="#754d98" /><circle cx="24" cy="23" r="2.2" fill="#754d98" />
-      </g>;
-    default:
-      return <g fill="none" stroke="#0b3644" strokeWidth="2.4"><rect x="8" y="8" width="16" height="16" rx="3" /><path d="M16 11v7m0 3v1" /></g>;
-  }
-}
-
-function IconoLeyenda({ tipo, texto }) {
-  return <span className="leyenda-vehiculo"><svg viewBox="0 0 32 32" aria-hidden="true"><DibujoVehiculo tipo={tipo} /></svg>{texto}</span>;
-}
-
-function MapaOperacion({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos, inventario, instante, fotogramas,
-  indiceFotograma, alCambiarFotograma, reproduciendo, alReproducir, pasoMs, alCambiarPaso,
-  enVivo = false, trayectosEnVivo = null, alVolverEnVivo = null, noAsignadosDelInstante = null }) {
-  const [rutaEnFoco, setRutaEnFoco] = useState(null);
-  const fotograma = fotogramas[indiceFotograma];
-  const posicionesObservadas = fotograma?.vehiculos ?? ejecucion?.vehiculos ?? LISTA_VACIA;
-  const [vehiculosAnimados, setVehiculosAnimados] = useState(posicionesObservadas);
-  const anteriores = useRef(null);
-  const vehiculosObservados = fotograma ? vehiculosAnimados : posicionesObservadas;
-  // Los sin asignar del plan vigente en el instante mostrado; sin historial, los más recientes.
-  const noAsignados = noAsignadosDelInstante || ejecucion?.noAsignados || LISTA_VACIA;
-  const almacenes = mapaDatos?.almacenes || [];
-  const stockPorId = new Map((inventario?.almacenes || []).map(a => [a.id, a]));
-  const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
-  const claveBloqueos = bloqueosActivos.map(b => `${b.inicio}/${b.fin}`).join('|');
-  const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, claveBloqueos]);
-  // En vivo cada unidad sigue los hitos que el simulador informó para la ventana; las que no
-  // tienen recorrido se quedaron quietas y se muestran donde las deja el corte.
-  const trayectosPreparados = useMemo(() => trayectosEnVivo
-    ? prepararTrayectos(trayectosEnVivo, aMs, bloqueados) : null, [trayectosEnVivo, bloqueados]);
-  const instanteMs = instante ? aMs(instante) : NaN;
-  const vehiculos = trayectosPreparados ? posicionesObservadas.map(vehiculo => {
-    const ubicacion = posicionEnTrayecto(trayectosPreparados.get(vehiculo.id), instanteMs);
-    return ubicacion ? { ...vehiculo, ubicacion } : vehiculo;
-  }) : vehiculosObservados;
-
-  useEffect(() => {
-    if (!fotograma) {
-      anteriores.current = null;
-      setVehiculosAnimados(posicionesObservadas);
-      return undefined;
-    }
-    const origenes = anteriores.current;
-    if (!origenes) {
-      anteriores.current = posicionesObservadas;
-      setVehiculosAnimados(posicionesObservadas);
-      return undefined;
-    }
-    const porId = new Map(origenes.map(vehiculo => [vehiculo.id, vehiculo]));
-    const trayectos = posicionesObservadas.map(vehiculo => {
-      const origen = porId.get(vehiculo.id)?.ubicacion;
-      return { vehiculo, origen,
-        camino: origen ? caminoEnGrilla(origen, vehiculo.ubicacion, bloqueados) : [] };
-    });
-    let cuadro;
-    const inicio = performance.now();
-    const animar = ahora => {
-      const progreso = Math.min(1, (ahora - inicio) / pasoMs);
-      const visibles = trayectos.map(({ vehiculo, origen, camino }) => ({
-        ...vehiculo,
-        ubicacion: origen ? posicionEnCamino(camino, origen, vehiculo.ubicacion, progreso)
-          : vehiculo.ubicacion
-      }));
-      anteriores.current = visibles;
-      setVehiculosAnimados(visibles);
-      if (progreso < 1) cuadro = requestAnimationFrame(animar);
-      else anteriores.current = posicionesObservadas;
-    };
-    cuadro = requestAnimationFrame(animar);
-    return () => cancelAnimationFrame(cuadro);
-  }, [fotograma, posicionesObservadas, bloqueados, pasoMs]);
-  const trazos = useMemo(() => trayectosPreparados
-    ? trazosConRecorrido(rutas, trayectosPreparados, bloqueados)
-    : rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados, trayectosPreparados]);
-  const finalizada = ejecucion && esFinal(ejecucion.estado);
-  const puntos = rutas.flatMap(ruta => ruta.paradas.map((parada, indice) => ({
-    ruta, parada, orden: indice + 1, ultima: indice === ruta.paradas.length - 1
-  })));
-  const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
-    if (!vehiculo.ubicacion) return grupos;
-    const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
-    if (!grupos.has(clave)) grupos.set(clave, []);
-    grupos.get(clave).push(vehiculo);
-    return grupos;
-  }, new Map()).values()];
-  const salidas = [...new Map(rutas.filter(ruta => ruta.origen)
-    .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
-  const vacio = rutas.length === 0 && vehiculos.length === 0 && noAsignados.length === 0 && !mapaDatos;
-  const x = valor => Math.max(0, Math.min(700, (valor ?? 0) * 10));
-  const y = valor => Math.max(0, Math.min(500, (ALTO - (valor ?? 0)) * 10));
-
-  return <div className="mapa-wrap">
-    <div className="mapa-cabecera"><b>Visualizador de la operación</b><span>Retícula 70 × 50 km · nodos 0–70 y 0–50</span></div>
-    {(fotogramas.length > 0 || enVivo) && <div className="mapa-reproductor">
-      {enVivo
-        ? <button type="button" disabled={fotogramas.length < 2} onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
-        : <button type="button" onClick={alReproducir}>{reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}</button>}
-      <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)} value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
-        onChange={evento => alCambiarFotograma(Number(evento.target.value))}
-        aria-label="Seleccionar instante de la reproducción" />
-      {enVivo
-        ? <span>{ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · {fecha(instante)} · ventana {ejecucion?.ritmo?.ventana ?? 0} de {ejecucion?.ritmo?.ventanas ?? '—'} · {ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}</span>
-        : <span>Reproducción visual {indiceFotograma + 1}/{fotogramas.length} · {fecha(fotograma?.reloj)}{finalizada && reproduciendo ? ' · cálculo terminado' : ''}</span>}
-      {!enVivo && alVolverEnVivo && <button type="button" onClick={alVolverEnVivo}>En vivo</button>}
-      {!enVivo && <label>Velocidad <select value={pasoMs} onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-        <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
-      </select></label>}
-    </div>}
-    <svg className="mapa" viewBox="0 0 700 500" role="img" aria-label="Mapa esquemático de rutas, pedidos y vehículos">
-      <rect width="700" height="500" fill="#f4f8f8" />
-      {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2="500" className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
-      {Array.from({ length: ALTO + 1 }, (_, i) => <line key={`h${i}`} x1="0" x2="700" y1={i * 10} y2={i * 10} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
-      {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
-        <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
-          fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
-      {trazos.flatMap(({ ruta, tramos }, indice) => tramos.map((tramo, n) => {
-        const coordenadas = tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
-        const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
-        return <g key={`${ruta.id}-${indice}-${n}`} style={{ '--ruta-color': colorDeRuta(ruta) }} className={`trazo-ruta ${finalizada && !reproduciendo && indiceFotograma >= fotogramas.length - 1 ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
-          <polyline className="trazo-visible" points={coordenadas} fill="none" />
-          <polyline className="trazo-interaccion" points={coordenadas} fill="none"
-            tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
-            onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
-            onFocus={() => setRutaEnFoco(ruta.id)} onBlur={() => setRutaEnFoco(null)}>
-            <title>{`${ruta.id} · ${ruta.vehiculoId} · ${ruta.paradas.length} parada(s)`}</title>
-          </polyline>
-        </g>;
-      }))}
-      {puntos.map(({ ruta, parada, orden, ultima }, indice) => <g key={`p${ruta.id}-${indice}`}
-        className={`mapa-parada-orden ${ultima ? 'mapa-parada-final' : ''}`}
-        transform={`translate(${x(parada.destino.x)},${y(parada.destino.y)})`}
-        style={{ '--ruta-color': colorDeRuta(ruta) }}
-        onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}>
-        <title>{`${ruta.vehiculoId} · parada ${orden} de ${ruta.paradas.length} · pedido ${parada.id}${ultima ? ' · última parada' : ''}`}</title>
-        {ultima && <circle className="aro-final" r="13" />}
-        <circle r="9" /><text textAnchor="middle" y="4">{orden}</text>
-      </g>)}
-      {noAsignados.map((pedido, indice) => <circle key={`n${indice}`} cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r="5" fill="#c64d39" stroke="white" strokeWidth="1.5" />)}
-      {almacenes.map(almacen => <g key={almacen.id} transform={`translate(${x(almacen.ubicacion.x)},${y(almacen.ubicacion.y)})`}>
-        <title>{`${almacen.id} · ${almacen.tipo} · ${stockPorId.get(almacen.id)?.ilimitado ? 'stock ilimitado' : stockPorId.has(almacen.id) ? `stock actual ${stockPorId.get(almacen.id).disponible}` : `stock inicial ${almacen.stockInicial}`}`}</title>
-        {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
-          : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
-        <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
-      </g>)}
-      {gruposVehiculos.map(grupo => grupo.length === 1 ? <svg key={grupo[0].id}
-        x={x(grupo[0].ubicacion.x) - 13} y={y(grupo[0].ubicacion.y) - 13}
-        width="26" height="26" viewBox="0 0 32 32">
-        <title>{`${grupo[0].id} · ${grupo[0].tipo} · ${grupo[0].estado}`}</title>
-        <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
-        <DibujoVehiculo tipo={grupo[0].tipo} />
-      </svg> : <g key={`grupo-${grupo[0].ubicacion.x}-${grupo[0].ubicacion.y}`}
-        className="grupo-vehiculos"
-        transform={`translate(${x(grupo[0].ubicacion.x)},${y(grupo[0].ubicacion.y)})`}>
-        <title>{`${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y}): ${grupo.map(v => v.id).join(', ')}`}</title>
-        {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
-        <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
-          <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
-          <DibujoVehiculo tipo={grupo[0].tipo} />
-        </svg>
-        <circle className="grupo-contador" cx="12" cy="-11" r="8" />
-        <text x="12" y="-7.5" textAnchor="middle">{grupo.length}</text>
-      </g>)}
-      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
-        transform={`translate(${x(punto.x)},${y(punto.y)})`}>
-        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
-        <path d="M0 -10 V-17" /><circle cx="0" cy="-21" r="10" />
-        <text x="0" y="-17" textAnchor="middle">S</text>
-      </g>)}
-    </svg>
-    {calculandoRutas && <div className="mapa-vacio mapa-calculando" role="status" aria-live="polite">
-      <span className="indicador-calculo" aria-hidden="true" />
-      <b>{ejecucion?.estado === 'PENDIENTE' ? 'Preparando la corrida…' : 'Calculando rutas…'}</b>
-      <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
-    </div>}
-    {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-salida" /> S: salida</span><span><i className="punto punto-llegada" /> Números: orden de entrega (aro: última)</span><span><i className="punto punto-ruta" /> Rutas simultáneas por color</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /><span><i className="punto punto-vehiculo" /> Ícono con número: varias unidades en el mismo nodo</span></div>
-    <div className="almacenes-contexto"><b>Almacenes del caso</b><div className="almacenes-tarjetas">{almacenes.map(almacen => <div key={almacen.id} className="almacen-tarjeta">
-      <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
-      <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {stockPorId.get(almacen.id)?.ilimitado ? 'stock ilimitado' : stockPorId.has(almacen.id) ? `stock actual: ${numero(stockPorId.get(almacen.id).disponible)} productos` : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>
-    </div>)}</div><small>{inventario ? `Inventario de la corrida a las ${fecha(inventario.reloj)}; durante la reproducción histórica se muestra el stock más reciente, no el de cada fotograma.` : 'Sin corrida: se muestra el stock inicial.'}</small></div>
-    <p className="mapa-aviso">En vivo, el reloj avanza con el tiempo real según el ritmo del escenario y cada unidad recorre los hitos que informó el simulador (salida, almacén, entregas y corte); entre hitos el trazo por la retícula es esquemático, no GPS. En el historial las posiciones proceden de los saltos del simulador. Se muestra el plan vigente para el instante reproducido: varias rutas simultáneas y todas sus paradas numeradas. Son entregas previstas, no prueba de entrega efectiva. Las métricas superiores muestran el estado más reciente. Al terminar, el trazo se atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
-  </div>;
-}
-
-function ListaRutas({ rutas, seleccion, alSeleccionar, calculandoRutas }) {
-  return <section className="panel">
-    <div className="panel-titulo"><div><h2>Rutas del instante</h2><p>Incluye las rutas simultáneas y sus paradas en orden.</p></div><span className="contador">{rutas.length}</span></div>
-    {calculandoRutas ? <p className="vacio" role="status">Calculando rutas…</p>
-      : rutas.length === 0 ? <p className="vacio">No hay rutas planificadas para este instante.</p> :
-      <div className="lista-rutas">{rutas.map((ruta, indice) => <button key={`${ruta.id}-${indice}`}
-        type="button" className={`ruta ${seleccion === ruta.id ? 'ruta-activa' : ''}`}
-        onClick={() => alSeleccionar(seleccion === ruta.id ? null : ruta.id)}>
-        <span><b>{ruta.id}</b><small>{ruta.vehiculoId} · {ruta.paradas.length} parada(s)</small></span>
-        <span className="ruta-distancia">{decimal(ruta.distanciaKm, ' km')}</span>
-      </button>)}</div>}
-  </section>;
-}
-
-function TablaPedidos({ ejecucion }) {
-  const filas = [
-    ...(ejecucion?.rutas || []).flatMap(ruta => ruta.paradas.map(pedido => ({ ...pedido, ruta: ruta.id }))),
-    ...(ejecucion?.noAsignados || []).map(pedido => ({ ...pedido, ruta: '—' }))
-  ];
-  return <section className="panel">
-    <div className="panel-titulo"><div><h2>Pedidos del plan vigente</h2><p>Los entregados se contabilizan en el avance, no en esta lista.</p></div><span className="contador">{filas.length}</span></div>
-    {filas.length === 0 ? <p className="vacio">No hay pedidos planificados o sin asignar en la instantánea actual.</p> :
-      <div className="tabla-wrap"><table><thead><tr><th>Pedido</th><th>Destino</th><th>Cantidad</th><th>Ruta</th><th>Estado</th><th>Plazo</th></tr></thead>
-        <tbody>{filas.slice(0, 100).map((pedido, indice) => <tr key={`${pedido.id}-${indice}`}>
-          <td>{pedido.id}</td><td>{pedido.destino?.x}, {pedido.destino?.y}</td><td>{numero(pedido.cantidad)}</td>
-          <td>{pedido.ruta}</td><td><span className={`estado-pedido ${pedido.estado === 'NO_ASIGNADO' ? 'no-asignado' : ''}`}>{pedido.estado === 'NO_ASIGNADO' ? 'Sin asignar' : 'Planificado'}</span></td>
-          <td>{fecha(pedido.fechaLimite)}</td></tr>)}</tbody></table>
-        {filas.length > 100 && <p className="tabla-nota">Se muestran los primeros 100 de {numero(filas.length)} registros de esta instantánea.</p>}</div>}
-  </section>;
-}
-
-const ETIQUETAS_EVENTO = { REPLANIFICACION: 'Replanificación', AVERIA_APLICADA: 'Unidad fuera de servicio', COLAPSO: 'Colapso' };
-
-function PanelIncidencias({ ejecucion, averias, eventosOperacion }) {
-  const sinAsignar = ejecucion?.noAsignados || [];
-  const colapso = ejecucion?.resumen?.huboColapso;
-  const fallo = ejecucion?.estado === 'FALLIDA';
-  const hechos = eventosOperacion.filter(e => ETIQUETAS_EVENTO[e.tipo]).slice(-30).reverse();
-  const hayAlertas = sinAsignar.length > 0 || colapso || fallo || averias.length > 0 || hechos.length > 0;
-  return <section className="panel">
-    <div className="panel-titulo"><div><h2>Alertas observadas</h2><p>Hechos informados por la corrida activa; viven en memoria del servidor.</p></div><span className="contador">{sinAsignar.length + averias.length + hechos.length + (colapso ? 1 : 0) + (fallo ? 1 : 0)}</span></div>
-    {!hayAlertas && <p className="vacio">Sin alertas observadas en la instantánea actual.</p>}
-    {colapso && <div className="alerta-lista"><b>Colapso logístico</b><span>Primer incumplimiento: {fecha(ejecucion.resumen.instanteColapso)}. Pedido: {ejecucion.resumen.pedidoQueColapso || 'no disponible'}.</span></div>}
-    {fallo && <div className="alerta-lista"><b>Ejecución fallida</b><span>{ejecucion.mensajeError || 'La simulación no pudo completarse.'}</span></div>}
-    {averias.map(a => <div className="alerta-lista" key={`${a.unidadId}-${a.instante}`}><b>Avería {a.tipo} · {a.unidadId}</b><span>{a.estado} · registrada a las {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s).</span></div>)}
-    {hechos.map(e => <div className="alerta-lista" key={`e${e.indice}`}><b>{ETIQUETAS_EVENTO[e.tipo]}{e.pedidoId ? ` · ${e.pedidoId}` : e.vehiculoId ? ` · ${e.vehiculoId}` : ''}</b><span>{fecha(e.reloj)} · {e.detalle}</span></div>)}
-    {sinAsignar.slice(0, 20).map((pedido, indice) => <div className="alerta-lista" key={`${pedido.id}-${indice}`}><b>{pedido.id} · sin asignar</b><span>{pedido.motivo || 'Sin motivo específico disponible'} · plazo {fecha(pedido.fechaLimite)}</span></div>)}
-    {sinAsignar.length > 20 && <p className="tabla-nota">Hay {numero(sinAsignar.length - 20)} pedidos adicionales sin asignar.</p>}
-  </section>;
-}
-
-function PanelColapso({ ejecucion }) {
-  const colapso = ejecucion?.colapso;
-  if (!colapso) return null;
-  const pedido = colapso.pedido;
-  return <section className="panel resumen">
-    <div className="panel-titulo"><div><h2>Colapso logístico</h2><p>Primer pedido que venció sin entregarse; la corrida se detuvo en ese corte.</p></div></div>
-    <div className="alerta-lista"><b>Pedido {pedido?.id || 'no disponible'}</b>{pedido && <span>Destino ({pedido.destino?.x}, {pedido.destino?.y}) · {numero(pedido.cantidad)} productos · registrado {fecha(pedido.fechaRegistro)} · plazo {fecha(pedido.fechaLimite)}</span>}</div>
-    <dl><div><dt>Instante del colapso</dt><dd>{fecha(colapso.instante)}</dd></div>
-      <div><dt>Ventana</dt><dd>{numero(colapso.ventana)}</dd></div>
-      <div><dt>Tiempo real transcurrido</dt><dd>{minutos(colapso.milisegundosReales / 60000)}</dd></div>
-      <div><dt>Pedidos entregados</dt><dd>{numero(colapso.pedidosEntregados)}</dd></div>
-      <div><dt>Pedidos vencidos</dt><dd>{numero(colapso.pedidosVencidos)}</dd></div>
-      <div><dt>Pedidos en cola</dt><dd>{numero(colapso.pedidosEnCola)}</dd></div>
-      <div><dt>Vehículos disponibles / averiados</dt><dd>{numero(colapso.vehiculosDisponibles)} / {numero(colapso.vehiculosAveriados)}</dd></div>
-      <div><dt>Replanificaciones por averías</dt><dd>{numero(colapso.replanificaciones)}</dd></div></dl>
-  </section>;
-}
-
 export default function App() {
+  const [vista, setVista] = useState('operacion');
   const [escenario, setEscenario] = useState('OPERACION_DIARIA');
   const [algoritmo, setAlgoritmo] = useState('GRASP');
   const [periodos, setPeriodos] = useState([]);
@@ -395,7 +62,9 @@ export default function App() {
   const [averias, setAverias] = useState([]);
   const [unidadAveriada, setUnidadAveriada] = useState('');
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
-  const [seccion, setSeccion] = useState('operacion');
+  const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
+  // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
+  const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
 
   useEffect(() => {
     let activo = true;
@@ -421,19 +90,21 @@ export default function App() {
     let socket;
     let intervalo;
     let restaurado = false;
-    const actualizar = vista => {
+    const actualizar = datos => {
       if (!activo) return;
-      if (vista.ritmo) desfase.current = desfaseConServidor(vista.ritmo, Date.now());
-      setEjecucion(vista);
-      if (!restaurado && vista.inicio) {
+      if (datos.ritmo) desfase.current = desfaseConServidor(datos.ritmo, Date.now());
+      setEjecucion(datos);
+      if (!restaurado && datos.inicio) {
         restaurado = true;
-        setPeriodo(vista.inicio.slice(0, 4) + vista.inicio.slice(5, 7));
-        setDia(vista.inicio.slice(0, 10));
-        setHora(vista.inicio.slice(11, 16));
-        setEscenario(vista.escenario);
-        setAlgoritmo(vista.algoritmo);
+        setPeriodo(datos.inicio.slice(0, 4) + datos.inicio.slice(5, 7));
+        setDia(datos.inicio.slice(0, 10));
+        setHora(datos.inicio.slice(11, 16));
+        setEscenario(datos.escenario);
+        // La corrida recuperada manda: su escenario decide en qué vista de mapa se retoma.
+        setVista(datos.escenario === 'OPERACION_DIARIA' ? 'operacion' : 'simulacion');
+        setAlgoritmo(datos.algoritmo);
       }
-      if (esFinal(vista.estado) && intervalo) clearInterval(intervalo);
+      if (esFinal(datos.estado) && intervalo) clearInterval(intervalo);
     };
     const consultar = () => api.consultar(id).then(actualizar)
       .catch(e => {
@@ -549,9 +220,9 @@ export default function App() {
         }
         siguiente = pagina.siguiente;
         completo = pagina.completo && pagina.fotogramas.length < 100;
-      } catch (error) {
-        if (error.status === 404) completo = true;
-        if (activo) setAviso(error.status === 404
+      } catch (fallo) {
+        if (fallo.status === 404) completo = true;
+        if (activo) setAviso(fallo.status === 404
           ? 'El backend aún no ofrece reproducción; se muestra la última instantánea.'
           : 'Reproducción temporalmente no disponible; se muestra la última instantánea.');
       } finally { consultando = false; }
@@ -605,9 +276,7 @@ export default function App() {
         && indiceFotograma >= fotogramas.length - 1) setReproduciendo(false);
   }, [ejecucion?.estado, fotogramas.length, indiceFotograma]);
 
-  const vehiculosActivos = useMemo(() => ejecucion?.vehiculos?.length ?? null, [ejecucion]);
   const flotaParaAveria = fotogramas[0]?.vehiculos || ejecucion?.vehiculos || LISTA_VACIA;
-  const planificados = useMemo(() => (ejecucion?.rutas || []).reduce((total, ruta) => total + ruta.paradas.length, 0), [ejecucion]);
   const instanteVivo = Number.isFinite(instanteVivoMs) ? aIso(instanteVivoMs) : null;
   const instanteReproducido = modoVivo ? instanteVivo || ejecucion.reloj
     : fotogramas[indiceFotograma]?.reloj || ejecucion?.reloj || null;
@@ -618,6 +287,29 @@ export default function App() {
   const calculandoRutas = !!ejecucion && (ejecucion.estado === 'PENDIENTE'
     || (ejecucion.estado === 'EN_CURSO' && ejecucion.calculandoRutas && enInstanteActual));
   const rutasVisibles = calculandoRutas ? LISTA_VACIA : rutasReproducidas;
+
+  // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
+  const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
+    [planes, instanteReproducido]);
+  const enRuta = useMemo(() => {
+    let total = 0;
+    for (const estado of estadosPedido.values()) if (estado === 'EN_RUTA') total += 1;
+    return total;
+  }, [estadosPedido]);
+
+  // Tiempo real de la corrida: ventanas ya publicadas más lo reproducido de la actual.
+  const ritmo = ejecucion?.ritmo;
+  const transcurridoMs = ritmo
+    ? Math.max(0, ritmo.ventana - 1) * ritmo.saMs + transcurridoObjetivo(ritmo, ahora, desfase.current)
+    : null;
+  const progreso = ritmo?.ventanas ? Math.min(1, ritmo.ventana / ritmo.ventanas) : 0;
+
+  function cambiarVista(destino) {
+    setVista(destino);
+    if (destino === 'operacion') setEscenario('OPERACION_DIARIA');
+    else if (destino === 'simulacion' && escenario === 'OPERACION_DIARIA') setEscenario('PERIODO_5_DIAS');
+    if (esPantallaAngosta()) setMenuAbierto(false);
+  }
 
   function cambiarPeriodo(valor) {
     setPeriodo(valor);
@@ -648,7 +340,6 @@ export default function App() {
       setRutaSeleccionada(null);
       guardarEjecucion(nueva.id);
       setId(nueva.id);
-      setSeccion('operacion');
       history.replaceState(null, '', `?ejecucion=${encodeURIComponent(nueva.id)}`);
     } catch (e) { setError(e.message); }
     finally { setOcupado(false); }
@@ -666,9 +357,9 @@ export default function App() {
     if (!id || !ejecucion) return;
     setOcupado(true);
     try {
-      const vista = ejecucion.estado === 'PAUSADA' ? await api.reanudar(id) : await api.pausar(id);
-      if (vista.ritmo) desfase.current = desfaseConServidor(vista.ritmo, Date.now());
-      setEjecucion(vista);
+      const datos = ejecucion.estado === 'PAUSADA' ? await api.reanudar(id) : await api.pausar(id);
+      if (datos.ritmo) desfase.current = desfaseConServidor(datos.ritmo, Date.now());
+      setEjecucion(datos);
     } catch (e) { setError(e.message); }
     finally { setOcupado(false); }
   }
@@ -685,49 +376,64 @@ export default function App() {
     finally { setOcupado(false); }
   }
 
-  return <div className="aplicacion">
-    <aside className="barra-lateral">
-      <div className="marca"><span className="marca-simbolo">P</span><div><b>PaqRap</b><small>Sistema de Entrega Rápida</small></div></div>
-      <div className="beta-pill">BETA · DATOS DEL CURSO</div>
-      <nav aria-label="Secciones principales" className="navegacion">
-        {[['operacion', 'Operación'], ['pedidos', 'Pedidos'], ['incidencias', 'Alertas']].map(([clave, titulo]) =>
-          <button key={clave} type="button" className={seccion === clave ? 'activo' : ''} onClick={() => setSeccion(clave)}>{titulo}</button>)}
-      </nav>
-      <div className="barra-pie"><strong>{fuente === 'MYSQL' ? 'Datos en MySQL' : 'Datos desde archivos'}</strong><span>Las corridas viven en memoria del servidor: al recargar se retoma la corrida, pero si el servidor se reinicia hay que iniciar otra.</span></div>
-    </aside>
+  // El denominador es el total de pedidos del periodo cargado (todo el mes), no los del
+  // horizonte de la corrida: la API no publica ese total mientras la corrida está en curso.
+  const pedidosDelPeriodo = detalle?.pedidos;
+  const avanceDePedidos = pedidosDelPeriodo
+    ? `${numero(ejecucion?.avance?.pedidosEntregados ?? 0)} / ${numero(pedidosDelPeriodo)}`
+    : numero(ejecucion?.avance?.pedidosEntregados);
+  const notaDenominador = pedidosDelPeriodo
+    ? `Entregados sobre el total de pedidos del periodo ${periodo} (${numero(pedidosDelPeriodo)} del mes completo), no sobre los del horizonte de esta corrida: la API no publica ese total en vivo.`
+    : 'Pedidos entregados acumulados.';
 
-    <main className="contenido">
-      <header className="cabecera"><div><span className="sobrelinea">PAQRAP / VISUALIZADOR</span><h1>{seccion === 'operacion' ? 'Operación y replanificación' : seccion === 'pedidos' ? 'Pedidos del plan' : 'Alertas del escenario'}</h1></div><div className="cabecera-estado"><span className={`estado-ejecucion ${ejecucion?.estado || ''}`}>{ejecucion ? ETIQUETAS[ejecucion.estado] : 'Sin ejecución'}</span><small>{ejecucion ? `Reloj: ${fecha(modoVivo ? instanteReproducido : ejecucion.reloj)}` : 'Esperando configuración'}</small></div></header>
+  const chips = vista === 'operacion' ? [
+    { etiqueta: 'PEDIDOS', valor: avanceDePedidos, titulo: notaDenominador },
+    { etiqueta: 'EN RUTA', valor: numero(enRuta), titulo: 'Deducido de los hitos del simulador.' },
+    { etiqueta: 'VEHÍCULOS', valor: numero(ejecucion?.vehiculos?.length ?? null) },
+    { etiqueta: 'SIN ASIGNAR', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—',
+      alerta: !!ejecucion?.noAsignados?.length }
+  ] : [];
 
-      {error && <div role="alert" className="mensaje-error"><b>Atención</b><span>{error}</span><button type="button" onClick={() => setError('')} aria-label="Cerrar mensaje">×</button></div>}
+  const meta = vista === 'simulacion' ? [
+    { etiqueta: 'Fecha y hora de simulación', valor: fechaConSegundos(instanteReproducido) },
+    { etiqueta: 'Duración', valor: duracion(transcurridoMs) },
+    { etiqueta: 'Vehículos', valor: numero(ejecucion?.vehiculos?.length ?? null) },
+    { etiqueta: 'Pedidos', valor: avanceDePedidos, titulo: notaDenominador },
+    { etiqueta: 'En ruta', valor: numero(enRuta) },
+    { etiqueta: 'Sin asignar', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—' }
+  ] : vista === 'operacion' ? [
+    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) },
+    { etiqueta: 'Algoritmo', valor: algoritmo }
+  ] : [];
 
-      {seccion === 'operacion' && <>
-        <div className="encabezado-seccion"><div><span className="sobrelinea">ESCENARIOS</span><h2>Configura una corrida</h2></div><p>Los resultados provienen del planificador y del simulador Java, no del prototipo estático.</p></div>
-        <div className="escenarios">{ESCENARIOS.map(opcion => <button type="button" key={opcion.id} className={`escenario ${escenario === opcion.id ? 'escenario-activo' : ''}`} onClick={() => setEscenario(opcion.id)}><span>{opcion.nombre}</span><small>{opcion.ayuda}</small></button>)}</div>
-        <div className="cuerpo-operacion"><div className="config-col"><form className="panel configuracion" onSubmit={iniciar}>
-          <div className="panel-titulo"><div><h2>Datos y configuración</h2><p>Selecciona un periodo existente y la fecha de inicio.</p></div></div>
-          <label>Periodo de datos<select value={periodo} onChange={e => cambiarPeriodo(e.target.value)} required><option value="">Seleccionar periodo</option>{periodos.map(valor => <option key={valor} value={valor}>{valor.slice(0, 4)}-{valor.slice(4)}</option>)}</select></label>
-          {detalle && <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento</p>}
-          <div className="fila-campos"><label>Fecha inicial<input name="dia" type="date" value={dia} onChange={e => setDia(e.target.value)} required /></label><label>Hora inicial<input name="hora" type="time" value={hora} onChange={e => setHora(e.target.value)} required /></label></div>
-          <label>Algoritmo<select value={algoritmo} onChange={e => setAlgoritmo(e.target.value)}><option value="GRASP">GRASP</option><option value="TABU">Vecino Más Cercano + Búsqueda Tabú</option></select></label>
-          {escenario === 'COLAPSO' && <label>Horizonte máximo (días)<input type="number" min="1" max="60" value={horizonte} onChange={e => setHorizonte(e.target.value)} required /></label>}
-          {escenario === 'PERIODO_5_DIAS' && <label>Duración objetivo (min reales)<input type="number" min="30" max="60" value={duracionObjetivo} onChange={e => setDuracionObjetivo(e.target.value)} required /></label>}
-          {escenario === 'OPERACION_DIARIA' && <label>Velocidad<select value={velocidad} onChange={e => setVelocidad(Number(e.target.value))}><option value="1">1× · tiempo real</option><option value="10">10×</option><option value="60">60×</option><option value="240">240×</option></select></label>}
-          <p className="nota-formulario">{ritmoConfigurado(escenario, duracionObjetivo, velocidad)}</p>
-          <div className="acciones"><button className="boton-primario" type="submit" disabled={ocupado || !periodos.length || corriendo}>{ocupado ? 'Procesando…' : 'Iniciar escenario'}</button><button className="boton-secundario" type="button" disabled={ocupado || !corriendo} onClick={pausarOReanudar}>{ejecucion?.estado === 'PAUSADA' ? 'Reanudar' : 'Pausar'}</button><button className="boton-secundario" type="button" disabled={ocupado || !ejecucion || esFinal(ejecucion.estado)} onClick={cancelar}>Detener</button></div>
-          {aviso && <p className="aviso-conexion" role="status">{aviso}</p>}
-          <p className="nota-formulario">La ejecución es asincrónica. Puedes abrir el mismo enlace en otro dispositivo para consultar su estado.</p>
-        </form>
-        <form className="panel configuracion" onSubmit={registrarAveria}>
-          <div className="panel-titulo"><div><h2>Avería de una unidad</h2><p>Retira temporalmente el vehículo y replantea los pedidos afectados.</p></div></div>
-          <label>Vehículo<select value={unidadAveriada} onChange={e => setUnidadAveriada(e.target.value)} required><option value="">Seleccionar vehículo</option>{flotaParaAveria.map(v => <option key={v.id} value={v.id}>{v.id} · {v.tipo}</option>)}</select></label>
-          <label>Tipo<select value={tipoAveria} onChange={e => setTipoAveria(e.target.value)}><option value="TIPO_1">Tipo 1 · reparación en sitio</option><option value="TIPO_2">Tipo 2 · vuelve al central</option><option value="TIPO_3">Tipo 3 · mantenimiento prolongado</option></select></label>
-          <button className="boton-secundario" type="submit" disabled={ocupado || !unidadAveriada || !corriendo}>Registrar avería</button>
-          {averias.length > 0 && <ul className="averias-lista">{averias.map(a => <li key={`${a.unidadId}-${a.instante}`}>{a.unidadId} · {a.tipo} · {a.estado} · {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s)</li>)}</ul>}
-        </form></div>
-        <MapaOperacion key={id || 'sin-ejecucion'} ejecucion={ejecucion} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
-          rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos} inventario={inventario} fotogramas={fotogramas}
-          indiceFotograma={indiceFotograma} reproduciendo={reproduciendo} pasoMs={pasoMs}
+  const configuracion = {
+    escenario, setEscenario, algoritmo, setAlgoritmo, periodo, periodos, detalle,
+    dia, setDia, hora, setHora, horizonte, setHorizonte, duracionObjetivo, setDuracionObjetivo,
+    velocidad, setVelocidad, unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
+    flota: flotaParaAveria, alCambiarPeriodo: cambiarPeriodo, alIniciar: iniciar,
+    alPausar: pausarOReanudar, alDetener: cancelar, alRegistrarAveria: registrarAveria
+  };
+
+  const enMapa = ES_MAPA(vista);
+
+  return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
+    <BarraSuperior titulo={TITULOS[vista]} menuAbierto={menuAbierto} ejecucion={ejecucion}
+      alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta} />
+
+    <BarraLateral vista={vista} alCambiar={cambiarVista} fuente={fuente} />
+    {menuAbierto && <div className="scrim" onClick={() => setMenuAbierto(false)} />}
+
+    {error && <div role="alert" className="mensaje-error">
+      <b>Atención</b><span>{error}</span>
+      <button type="button" onClick={() => setError('')} aria-label="Cerrar mensaje">×</button>
+    </div>}
+
+    {enMapa && <>
+      <section className="mapsec">
+        <Mapa key={id || 'sin-ejecucion'} ejecucion={ejecucion} rutas={rutasVisibles}
+          calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
+          inventario={inventario} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
+          reproduciendo={reproduciendo} pasoMs={pasoMs} estadosPedido={estadosPedido}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
           noAsignadosDelInstante={planReproducido?.noAsignados || null}
@@ -736,20 +442,28 @@ export default function App() {
             if (!reproduciendo && indiceFotograma >= fotogramas.length - 1) setIndiceFotograma(0);
             setReproduciendo(!reproduciendo);
           }} alCambiarPaso={setPasoMs}
-          instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} /></div>
-        <div className="metricas">
-          <TarjetaMetrica etiqueta="Pedidos entregados" valor={numero(ejecucion?.avance?.pedidosEntregados)} nota="Entrega efectiva acumulada" />
-          <TarjetaMetrica etiqueta="Productos entregados" valor={numero(ejecucion?.avance?.productosEntregados)} nota="Unidades acumuladas" />
-          <TarjetaMetrica etiqueta="Vehículos" valor={numero(vehiculosActivos)} nota="Presentes en la instantánea" />
-          <TarjetaMetrica etiqueta="Paradas planificadas" valor={ejecucion ? numero(planificados) : '—'} nota="No equivalen a entregas" />
-          <TarjetaMetrica etiqueta="Pedidos sin asignar" valor={ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—'} nota="Última planificación" alerta={!!ejecucion?.noAsignados?.length} />
-        </div>
-        {ejecucion?.colapso && <PanelColapso ejecucion={ejecucion} />}
-        <div className="dos-columnas"><ListaRutas rutas={rutasVisibles} seleccion={rutaSeleccionada} alSeleccionar={setRutaSeleccionada} calculandoRutas={calculandoRutas} /><section className="panel resumen"><div className="panel-titulo"><div><h2>Resumen de la corrida</h2><p>Disponible al terminar o detectar colapso.</p></div></div>{!ejecucion?.resumen ? <p className="vacio">Todavía no hay un resumen final.</p> : <dl><div><dt>Pedidos recibidos</dt><dd>{numero(ejecucion.resumen.pedidosRecibidos)}</dd></div><div><dt>Pedidos completos / en plazo</dt><dd>{numero(ejecucion.resumen.pedidosOriginalesCompletos)} / {numero(ejecucion.resumen.pedidosOriginalesEnPlazo)}</dd></div><div><dt>Pedidos pendientes</dt><dd>{numero(ejecucion.resumen.pedidosPendientes)}</dd></div><div><dt>Distancia total</dt><dd>{decimal(ejecucion.resumen.distanciaTotalKm, ' km')}</dd></div><div><dt>Costo total</dt><dd>S/ {decimal(ejecucion.resumen.costoTotal)}</dd></div><div><dt>Fin de simulación</dt><dd>{fecha(ejecucion.resumen.fin)}</dd></div>{ejecucion.ritmo && <div><dt>Ventanas · ritmo</dt><dd>{numero(ejecucion.ritmo.ventana)} · {textoRitmo(ejecucion.ritmo)}</dd></div>}</dl>}</section></div>
-      </>}
-      {seccion === 'pedidos' && <><div className="encabezado-seccion"><div><span className="sobrelinea">ESTADO ACTUAL</span><h2>Pedidos visibles</h2></div><p>No se pueden registrar pedidos desde esta beta; se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}.</p></div><TablaPedidos ejecucion={ejecucion} /></>}
-      {seccion === 'incidencias' && <><div className="encabezado-seccion"><div><span className="sobrelinea">MONITOREO</span><h2>Alertas y excepciones</h2></div><p>Se muestran únicamente hechos informados por la corrida activa.</p></div><PanelIncidencias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} /></>}
-      <footer className="pie">PaqRap · Beta académica. No usar para decisiones logísticas reales.</footer>
-    </main>
+          instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} />
+      </section>
+
+      <Riel titulo={vista === 'simulacion' ? 'Simulación' : 'Operación'} abierto={rielAbierto}
+        alAlternar={() => setRielAbierto(!rielAbierto)}>
+        <RielCorrida vista={vista} cfg={configuracion} ejecucion={ejecucion} corriendo={corriendo}
+          ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
+          rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={setRutaSeleccionada}
+          inventario={inventario} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
+          progreso={progreso} />
+      </Riel>
+    </>}
+
+    {vista === 'pedidos' && <div className="sheet">
+      <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} fuente={fuente} />
+    </div>}
+    {vista === 'averias' && <div className="sheet">
+      <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />
+    </div>}
   </div>;
+}
+
+function esPantallaAngosta() {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
 }

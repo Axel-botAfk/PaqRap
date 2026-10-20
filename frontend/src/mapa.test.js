@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { caminoEnGrilla, nodosBloqueados, posicionVisual, tramosDeRuta, planVigenteEn } from './mapa.js';
+import { caminoEnGrilla, nodosBloqueados, posicionVisual, tramosDeRuta, planVigenteEn,
+  estadosDePedido } from './mapa.js';
+import { aMs } from './reloj.js';
 
 test('cada paso de la ruta es horizontal o vertical y de una arista', () => {
   const camino = caminoEnGrilla({ x: 1, y: 1 }, { x: 4, y: 3 });
@@ -70,4 +72,83 @@ test('una ruta de dos pedidos traza origen a pedido 1 y luego pedido 1 a pedido 
   assert.deepEqual(tramos[0].at(-1), ruta.paradas[0].destino);
   assert.deepEqual(tramos[1][0], ruta.paradas[0].destino);
   assert.deepEqual(tramos[1].at(-1), ruta.paradas[1].destino);
+});
+
+// La API no publica «en ruta» ni «entregado»; se deducen de los hitos de los trayectos.
+const PLANES_CON_HITOS = [
+  { indice: 0, reloj: '2029-01-15T08:00:00', trayectos: [
+    { vehiculoId: 'AUTO-1', pasos: [
+      { hito: 'SALIDA', instante: '2029-01-15T08:00:00', pedidoId: null },
+      { hito: 'ENTREGA', instante: '2029-01-15T08:20:00', pedidoId: 'p1' },
+      { hito: 'ENTREGA', instante: '2029-01-15T08:40:00', pedidoId: 'p2' }
+    ] },
+    { vehiculoId: 'MOTO-2', pasos: [
+      { hito: 'SALIDA', instante: '2029-01-15T08:30:00', pedidoId: null },
+      { hito: 'ENTREGA', instante: '2029-01-15T08:50:00', pedidoId: 'p3' }
+    ] }
+  ] }
+];
+
+test('un pedido queda entregado cuando su hito de entrega ya pasó', () => {
+  const estados = estadosDePedido(PLANES_CON_HITOS, aMs('2029-01-15T08:25:00'), aMs);
+  assert.equal(estados.get('p1'), 'ENTREGADO');
+  assert.equal(estados.get('p2'), 'EN_RUTA');
+});
+
+test('un pedido está en ruta solo después de que su unidad salió', () => {
+  const antes = estadosDePedido(PLANES_CON_HITOS, aMs('2029-01-15T08:10:00'), aMs);
+  assert.equal(antes.get('p3'), undefined, 'MOTO-2 aún no sale: p3 sigue planificado');
+  const despues = estadosDePedido(PLANES_CON_HITOS, aMs('2029-01-15T08:35:00'), aMs);
+  assert.equal(despues.get('p3'), 'EN_RUTA');
+});
+
+test('una entrega de un plan anterior no vuelve a «en ruta» en uno posterior', () => {
+  const planes = [...PLANES_CON_HITOS, { indice: 1, reloj: '2029-01-15T08:30:00', trayectos: [
+    { vehiculoId: 'AUTO-1', pasos: [
+      { hito: 'SALIDA', instante: '2029-01-15T08:30:00', pedidoId: null },
+      { hito: 'ENTREGA', instante: '2029-01-15T09:10:00', pedidoId: 'p1' }
+    ] }
+  ] }];
+  assert.equal(estadosDePedido(planes, aMs('2029-01-15T08:45:00'), aMs).get('p1'), 'ENTREGADO');
+});
+
+test('sin instante válido no inventa estados', () => {
+  assert.equal(estadosDePedido(PLANES_CON_HITOS, NaN, aMs).size, 0);
+  assert.equal(estadosDePedido(null, aMs('2029-01-15T08:25:00'), aMs).size, 0);
+});
+
+// Caso real de la ventana 1: la unidad sale, carga en el almacén y el corte llega antes de
+// su primera entrega, así que el trayecto no informa ningún hito ENTREGA.
+test('las paradas de una unidad que ya salió cuentan como en ruta aunque el corte llegue antes', () => {
+  const planes = [{ indice: 0, reloj: '2026-09-01T08:00:00',
+    rutas: [{ id: 'C-TA02', vehiculoId: 'TA02', paradas: [{ id: 'P-00002' }, { id: 'P-00008' }] }],
+    trayectos: [{ vehiculoId: 'TA02', pasos: [
+      { hito: 'SALIDA', instante: '2026-09-01T08:00:00', pedidoId: null },
+      { hito: 'ALMACEN', instante: '2026-09-01T08:00:00', pedidoId: null },
+      { hito: 'CORTE', instante: '2026-09-01T08:15:00', pedidoId: null }
+    ] }] }];
+  const estados = estadosDePedido(planes, aMs('2026-09-01T08:09:00'), aMs);
+  assert.equal(estados.get('P-00002'), 'EN_RUTA');
+  assert.equal(estados.get('P-00008'), 'EN_RUTA');
+});
+
+test('antes de que la unidad salga sus paradas siguen planificadas', () => {
+  const planes = [{ indice: 0, reloj: '2026-09-01T08:00:00',
+    rutas: [{ id: 'C-TA02', vehiculoId: 'TA02', paradas: [{ id: 'P-00002' }] }],
+    trayectos: [{ vehiculoId: 'TA02', pasos: [
+      { hito: 'SALIDA', instante: '2026-09-01T08:30:00', pedidoId: null }] }] }];
+  assert.equal(estadosDePedido(planes, aMs('2026-09-01T08:09:00'), aMs).get('P-00002'), undefined);
+});
+
+test('una entrega ya ocurrida gana sobre las paradas en ruta de la misma ruta', () => {
+  const planes = [{ indice: 0, reloj: '2026-09-01T08:00:00',
+    rutas: [{ id: 'C-TA03', vehiculoId: 'TA03', paradas: [{ id: 'P-00031' }, { id: 'P-00040' }] }],
+    trayectos: [{ vehiculoId: 'TA03', pasos: [
+      { hito: 'SALIDA', instante: '2026-09-01T08:15:00', pedidoId: null },
+      { hito: 'ENTREGA', instante: '2026-09-01T08:30:00', pedidoId: 'P-00031' },
+      { hito: 'FIN_ENTREGA', instante: '2026-09-01T09:30:00', pedidoId: 'P-00031' }
+    ] }] }];
+  const estados = estadosDePedido(planes, aMs('2026-09-01T08:45:00'), aMs);
+  assert.equal(estados.get('P-00031'), 'ENTREGADO');
+  assert.equal(estados.get('P-00040'), 'EN_RUTA');
 });

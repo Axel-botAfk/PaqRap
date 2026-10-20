@@ -260,7 +260,13 @@ function MapaOperacion({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, ma
         className="grupo-vehiculos"
         transform={`translate(${x(grupo[0].ubicacion.x)},${y(grupo[0].ubicacion.y)})`}>
         <title>{`${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y}): ${grupo.map(v => v.id).join(', ')}`}</title>
-        <circle r="14" /><text textAnchor="middle" y="4">{grupo.length}</text>
+        {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
+        <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
+          <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+          <DibujoVehiculo tipo={grupo[0].tipo} />
+        </svg>
+        <circle className="grupo-contador" cx="12" cy="-11" r="8" />
+        <text x="12" y="-7.5" textAnchor="middle">{grupo.length}</text>
       </g>)}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
         transform={`translate(${x(punto.x)},${y(punto.y)})`}>
@@ -275,7 +281,7 @@ function MapaOperacion({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, ma
       <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
     </div>}
     {vacio && <div className="mapa-vacio"><b>Sin operación cargada</b><span>Selecciona un periodo, configura una corrida e iníciala para ver el mapa.</span></div>}
-    <div className="leyenda"><span><i className="punto punto-salida" /> S: salida</span><span><i className="punto punto-llegada" /> Números: orden de entrega (aro: última)</span><span><i className="punto punto-ruta" /> Rutas simultáneas por color</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /></div>
+    <div className="leyenda"><span><i className="punto punto-salida" /> S: salida</span><span><i className="punto punto-llegada" /> Números: orden de entrega (aro: última)</span><span><i className="punto punto-ruta" /> Rutas simultáneas por color</span><span><i className="punto punto-alerta" /> Sin asignar</span><span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span><span><i className="punto punto-central" /> Central</span><span><i className="punto punto-intermedio" /> Intermedio</span><IconoLeyenda tipo="AUTO" texto="Auto" /><IconoLeyenda tipo="MOTO" texto="Moto" /><IconoLeyenda tipo="BICICLETA" texto="Bicicleta" /><span><i className="punto punto-vehiculo" /> Ícono con número: varias unidades en el mismo nodo</span></div>
     <div className="almacenes-contexto"><b>Almacenes del caso</b><div className="almacenes-tarjetas">{almacenes.map(almacen => <div key={almacen.id} className="almacen-tarjeta">
       <strong>{almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'} · {almacen.id}</strong>
       <span>Nodo ({almacen.ubicacion.x}, {almacen.ubicacion.y}) · {stockPorId.get(almacen.id)?.ilimitado ? 'stock ilimitado' : stockPorId.has(almacen.id) ? `stock actual: ${numero(stockPorId.get(almacen.id).disponible)} productos` : `stock inicial: ${numero(almacen.stockInicial)} productos`}</span>

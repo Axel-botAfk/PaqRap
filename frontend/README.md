@@ -109,9 +109,15 @@ Dos datos del prototipo no existen en el contrato actual. Están resueltos en el
 `PedidoVista.estado` solo toma dos valores en todo el backend: `"PLANIFICADO"`
 (`Vistas.ruta`) y `"NO_ASIGNADO"` (`EjecucionesService`). El filtro del mapa, la columna
 «Situación» de Pedidos y el contador «En ruta» usan `estadosDePedido()` (`src/mapa.js`), que
-recorre los `trayectos` de todos los planes conocidos: un pedido está entregado cuando su
-hito `ENTREGA` o `FIN_ENTREGA` ya ocurrió en el instante reproducido, y en ruta cuando su
-unidad ya pasó por `SALIDA` y todavía no lo entrega.
+recorre todos los planes conocidos y cruza dos fuentes:
+
+- **Entregado** cuando el hito `ENTREGA` o `FIN_ENTREGA` del pedido ya ocurrió en el instante
+  reproducido.
+- **En ruta** cuando la unidad ya pasó por `SALIDA` y el pedido sigue pendiente. Aquí no basta
+  con mirar los hitos: los `trayectos` solo llegan hasta el `CORTE` de su ventana, así que una
+  unidad que sale a las 08:00 con entregas a las 09:30 informa `SALIDA`, `ALMACEN` y `CORTE` y
+  ninguna `ENTREGA`. Por eso también cuentan las paradas de la ruta de una unidad que ya salió,
+  aunque su trayecto no las alcance.
 
 Es una deducción fiel a los hitos, pero depende de que el historial de planes esté completo en
 el cliente. Si el backend llega a publicar el estado real por pedido, conviene usarlo y dejar

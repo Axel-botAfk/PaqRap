@@ -158,24 +158,39 @@ export function posicionEnTrayecto(preparado, instanteMs) {
  * Estado de cada pedido en el instante reproducido, deducido de los hitos del simulador.
  *
  * La API solo distingue PLANIFICADO y NO_ASIGNADO: «en ruta» y «entregado» no existen en
- * PedidoVista, así que se derivan aquí recorriendo los trayectos de todos los planes
- * conocidos. Un pedido está entregado cuando su hito de entrega ya ocurrió, y en ruta cuando
- * su unidad ya salió y todavía no lo entrega. Los que no aparecen siguen planificados.
+ * PedidoVista, así que se derivan aquí recorriendo todos los planes conocidos.
+ *
+ * Entregado: su hito ENTREGA (o FIN_ENTREGA) ya ocurrió. En ruta: su unidad ya pasó por
+ * SALIDA y el pedido sigue pendiente. Hacen falta las dos fuentes del plan, porque los
+ * trayectos solo cubren hasta el corte de su ventana: una unidad que sale a las 08:00 con
+ * entregas a las 09:30 informa SALIDA, ALMACEN y CORTE y ninguna ENTREGA, y sus paradas
+ * seguirían leyéndose como planificadas aunque ya vayan a bordo. Por eso las paradas de la
+ * ruta de una unidad que ya salió cuentan como en ruta aunque su trayecto no las alcance.
  */
 export function estadosDePedido(planes, instanteMs, aMs) {
   const estados = new Map();
   if (!Number.isFinite(instanteMs)) return estados;
   for (const plan of planes || []) {
+    const salidas = new Map();
     for (const trayecto of plan.trayectos || []) {
-      let salidaMs = Infinity;
       for (const paso of trayecto.pasos || []) {
         const ms = aMs(paso.instante);
-        if (paso.hito === 'SALIDA' && ms < salidaMs) salidaMs = ms;
+        if (paso.hito === 'SALIDA' && !salidas.has(trayecto.vehiculoId)) {
+          salidas.set(trayecto.vehiculoId, ms);
+        }
         if (!paso.pedidoId || (paso.hito !== 'ENTREGA' && paso.hito !== 'FIN_ENTREGA')) continue;
+        const salida = salidas.get(trayecto.vehiculoId);
         if (ms <= instanteMs) estados.set(paso.pedidoId, 'ENTREGADO');
-        else if (salidaMs <= instanteMs && !estados.has(paso.pedidoId)) {
+        else if (salida !== undefined && salida <= instanteMs && !estados.has(paso.pedidoId)) {
           estados.set(paso.pedidoId, 'EN_RUTA');
         }
+      }
+    }
+    for (const ruta of plan.rutas || []) {
+      const salida = salidas.get(ruta.vehiculoId);
+      if (salida === undefined || salida > instanteMs) continue;
+      for (const parada of ruta.paradas || []) {
+        if (!estados.has(parada.id)) estados.set(parada.id, 'EN_RUTA');
       }
     }
   }

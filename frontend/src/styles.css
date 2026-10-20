@@ -417,7 +417,7 @@ dd { margin: 0; text-align: right; font-weight: 800; }
 .card-cuerpo { padding: 14px 16px; }
 .card-pie { padding: 10px 16px; border-top: 1px solid var(--line); display: grid; gap: 5px; font-size: 11px; color: var(--suave); line-height: 1.5; }
 
-.tabla-wrap { overflow: auto; max-height: calc(100vh - var(--hdr) - 300px); }
+.tabla-wrap { overflow: auto; max-height: calc(100vh - var(--hdr) - 250px); }
 table { width: 100%; border-collapse: collapse; }
 th { text-align: left; font: 800 9.5px Archivo; letter-spacing: .1em; color: var(--suave); padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--ground); position: sticky; top: 0; z-index: 1; white-space: nowrap; }
 td { padding: 9px 12px; border-bottom: 1px solid var(--line); font-size: 12.5px; }

@@ -93,3 +93,34 @@ export function posicionEnCamino(camino, origen, destino, progreso) {
     Math.floor(Math.max(0, Math.min(1, progreso)) * (camino.length - 1)));
   return camino[paso];
 }
+
+// Recorridos de la ventana (hitos con hora, informados por el simulador) listos para
+// interpolar: el camino de cada tramo se calcula una vez, no en cada cuadro.
+export function prepararTrayectos(trayectos, aMs, bloqueados = new Set()) {
+  return new Map((trayectos || []).map(trayecto => {
+    const pasos = trayecto.pasos.map(paso => ({ ...paso, ms: aMs(paso.instante) }));
+    const tramos = [];
+    for (let i = 1; i < pasos.length; i++) {
+      const origen = pasos[i - 1];
+      const destino = pasos[i];
+      tramos.push({ origen, destino,
+        camino: caminoEnGrilla(origen.ubicacion, destino.ubicacion, bloqueados) });
+    }
+    return [trayecto.vehiculoId, { pasos, tramos }];
+  }));
+}
+
+/** Dónde está la unidad en el instante dado según sus hitos; null si no tiene recorrido. */
+export function posicionEnTrayecto(preparado, instanteMs) {
+  if (!preparado?.pasos.length) return null;
+  const { pasos, tramos } = preparado;
+  if (!(instanteMs > pasos[0].ms)) return pasos[0].ubicacion;
+  for (const { origen, destino, camino } of tramos) {
+    if (instanteMs < destino.ms) {
+      const duracion = destino.ms - origen.ms;
+      const progreso = duracion > 0 ? (instanteMs - origen.ms) / duracion : 1;
+      return posicionEnCamino(camino, origen.ubicacion, destino.ubicacion, progreso);
+    }
+  }
+  return pasos[pasos.length - 1].ubicacion;
+}

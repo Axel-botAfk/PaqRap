@@ -1,10 +1,10 @@
 # Frontend beta de PaqRap
 
-Interfaz React/Vite para los tres escenarios del simulador. Sigue el enfoque
-visual del prototipo v6, pero no incorpora sus pedidos, rutas o incidencias
-ficticias. Las vistas comienzan vacías y se llenan solo con respuestas del
-backend Java. No es una copia pixel a pixel ni sustituye la revisión de GUI
-del equipo.
+Interfaz React/Vite para los escenarios del simulador, con el armazón del prototipo v6: el
+mapa ocupa la pantalla y todo lo demás flota encima y se pliega. No incorpora los pedidos,
+rutas ni incidencias ficticias del prototipo: las vistas comienzan vacías y se llenan solo con
+respuestas del backend Java. No es una copia pixel a pixel ni sustituye la revisión de GUI del
+equipo.
 
 ## Uso local
 
@@ -25,6 +25,35 @@ npm run build
 Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 `deploy/BETA_ENTREGA.md` antes de instalarlo en la VM del curso.
 
+## Cómo está armado
+
+```
+src/
+├── App.jsx                   armazón, estado de la corrida y carga de datos
+├── formato.js                fechas, números, ritmo y color por ruta
+├── mapa.js / reloj.js        geometría de la retícula y reloj anclado (sin React)
+├── components/               barra superior, menú, riel, acordeón, mapa
+├── pages/                    riel de la corrida y las hojas de pedidos y averías
+└── services/api.js           REST y WebSocket
+```
+
+Cuatro vistas, como el prototipo: **Pedidos** y **Averías de la flota** son hojas que se
+superponen al mapa; **Operación diaria** y **Simulación** son vistas de mapa y comparten el
+riel derecho (`pages/RielCorrida.jsx`). La vista decide el escenario: operación diaria fija
+`OPERACION_DIARIA` y simulación deja elegir entre `PERIODO_5_DIAS` y `COLAPSO`. Al recuperar
+una corrida existente manda su escenario y la vista se ajusta a él.
+
+Se pliegan el menú lateral (el *burger*), el riel entero (deja una pestaña para reabrirlo),
+cada bloque del riel y la leyenda del mapa. En pantallas de 900 px o menos el menú y el riel
+se superponen al mapa en vez de quitarle ancho, y ambos arrancan cerrados.
+
+El mapa tiene zoom (`+`, `−`, `TODO` y la rueda), paneo con arrastre y un panel de filtros por
+tipo de unidad y por situación del pedido. Los símbolos conservan su tamaño en pantalla al
+acercar: lo que crece es la ciudad, no los iconos.
+
+La tipografía Archivo se carga desde Google Fonts en `index.html`, con `system-ui` de
+respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla desde `dist/`.
+
 ## Comportamiento
 
 - El catálogo procede de los TXT del curso o de MySQL, según el perfil del backend.
@@ -38,12 +67,13 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
   los hitos de su recorrido que informa el simulador.
 - Pausar, Reanudar y Detener cambian el estado en el servidor. Las averías se
   registran durante la corrida (también en pausa); sus pedidos se replanifican
-  y aparecen en Alertas.
+  y aparecen en Averías de la flota.
 - Al recargar, la corrida se retoma desde `?ejecucion=...` o desde el
   navegador. Si el servidor se reinició, se avisa y hay que iniciar otra.
 - Los intermedios muestran inventario actualizado y el central se indica como
-  ilimitado. Durante la reproducción histórica, el stock sigue siendo el
-  último publicado; no existe historial de stock por fotograma.
+  ilimitado. El llenado de la barra se mide contra el `stockInicial` del caso, porque la API
+  no publica capacidad. Durante la reproducción histórica el stock sigue siendo el último
+  publicado; no existe historial de stock por fotograma.
 - `POST /api/ejecuciones` inicia una corrida asincrónica; WebSocket actualiza
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado
   si la conexión en vivo se interrumpe.
@@ -59,13 +89,51 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 - Rutas y paradas históricas representan planificación, no entregas consumadas. Las
   entregas efectivas se toman de `avance` y `resumen`.
 - No hay alta de pedidos ni historial persistente de incidencias. Los pedidos
-  vienen de la fuente configurada y las averías se pierden al reiniciar.
+  vienen de la fuente configurada y las averías se pierden al reiniciar. La vista Pedidos
+  del prototipo incluye alta, carga masiva y seguimiento por cliente: nada de eso tiene
+  endpoint, así que aquí solo está la tabla de lo que publica el backend.
 - La grilla dibuja segmentos esquemáticos entre puntos. No afirma reproducir
   el recorrido de calles ni la posición en tiempo real de un repartidor. Los
   fotogramas sí contienen posiciones muestreadas del simulador, pero los nodos
   entre dos muestras son una transición visual, no telemetría. Durante la
   reproducción, las rutas muestran el plan histórico del instante; las
   métricas superiores y el inventario siguen siendo los últimos publicados.
+
+## Lo que esta interfaz deduce porque la API no lo publica
+
+Dos datos del prototipo no existen en el contrato actual. Están resueltos en el cliente, pero
+**conviene rehacerlos en el backend** cuando haya oportunidad.
+
+### 1. Situación del pedido: «en ruta» y «entregado»
+
+`PedidoVista.estado` solo toma dos valores en todo el backend: `"PLANIFICADO"`
+(`Vistas.ruta`) y `"NO_ASIGNADO"` (`EjecucionesService`). El filtro del mapa, la columna
+«Situación» de Pedidos y el contador «En ruta» usan `estadosDePedido()` (`src/mapa.js`), que
+recorre los `trayectos` de todos los planes conocidos: un pedido está entregado cuando su
+hito `ENTREGA` o `FIN_ENTREGA` ya ocurrió en el instante reproducido, y en ruta cuando su
+unidad ya pasó por `SALIDA` y todavía no lo entrega.
+
+Es una deducción fiel a los hitos, pero depende de que el historial de planes esté completo en
+el cliente. Si el backend llega a publicar el estado real por pedido, conviene usarlo y dejar
+`estadosDePedido()` solo como respaldo.
+
+### 2. Denominador del contador de pedidos — **pendiente de actualizar**
+
+El chip `PEDIDOS 109 / 6 240` y el `Pedidos` de la barra de simulación muestran
+`avance.pedidosEntregados` sobre **el total de pedidos del periodo cargado**
+(`/api/datos/periodos/{aaaamm}` → `pedidos`), es decir el mes completo.
+
+**Ese denominador no es el correcto**: lo que corresponde es el total de pedidos del horizonte
+de la corrida, no el del mes. Se usa este porque `ResumenVista.productosRecibidos` /
+`pedidosRecibidos` es lo único parecido que existe y el servidor solo llena `resumen` al
+terminar la corrida (`EjecucionesService`, estado final); en `EN_CURSO` llega `null`, que es
+justo cuando se mira el contador.
+
+Arreglo pendiente, del lado del backend: añadir `pedidosRecibidos` (y, si se quiere el conteo
+en paquetes del prototipo, `productosRecibidos`) a `AvanceVista`, que sí se publica en cada
+ventana. Es un campo en el record y una línea en `Vistas.avance`. Cuando exista, cambiar en
+`src/App.jsx` el `pedidosDelPeriodo` por ese valor y borrar el `title` que hoy avisa del
+desajuste.
 
 La beta debe permanecer bajo acceso controlado mientras el backend no tenga
 autenticación ni límites por usuario. Nunca colocar claves en `src/` ni en

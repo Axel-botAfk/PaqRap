@@ -1,0 +1,369 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosDeRuta,
+  prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from '../mapa.js';
+import { aMs } from '../reloj.js';
+import { esFinal } from '../services/api.js';
+import { fecha, numero, colorDeRuta, textoRitmo } from '../formato.js';
+import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
+
+const LISTA_VACIA = [];
+
+// La retícula de 70 × 50 km se dibuja a 10 unidades por km.
+const LIENZO_ANCHO = ANCHO * 10;
+const LIENZO_ALTO = ALTO * 10;
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 8;
+const VISTA_INICIAL = { cx: LIENZO_ANCHO / 2, cy: LIENZO_ALTO / 2, z: 1 };
+
+const TIPOS_FLOTA = [['AUTO', 'Auto'], ['MOTO', 'Moto'], ['BICICLETA', 'Bicicleta'], ['CAMION', 'Camión']];
+const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
+  ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
+
+const limitar = (valor, minimo, maximo) => Math.max(minimo, Math.min(maximo, valor));
+
+/** Encuadre centrado en (cx, cy) con el zoom z, siempre dentro de la retícula. */
+function encuadre({ cx, cy, z }) {
+  const ancho = LIENZO_ANCHO / z;
+  const alto = LIENZO_ALTO / z;
+  const centroX = limitar(cx, ancho / 2, LIENZO_ANCHO - ancho / 2);
+  const centroY = limitar(cy, alto / 2, LIENZO_ALTO - alto / 2);
+  return { ancho, alto, cx: centroX, cy: centroY,
+    x: centroX - ancho / 2, y: centroY - alto / 2 };
+}
+
+export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos,
+  inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
+  alReproducir, pasoMs, alCambiarPaso, enVivo = false, trayectosEnVivo = null,
+  alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null }) {
+  const [rutaEnFoco, setRutaEnFoco] = useState(null);
+  const [vista, setVista] = useState(VISTA_INICIAL);
+  const [arrastrando, setArrastrando] = useState(false);
+  const [filtros, setFiltros] = useState(false);
+  const [flota, setFlota] = useState('');
+  const [estadoPedido, setEstadoPedido] = useState('');
+  const [pieAbierto, setPieAbierto] = useState(true);
+  const svgRef = useRef(null);
+  const arrastre = useRef(null);
+
+  const marco = encuadre(vista);
+
+  // Píxeles de pantalla por unidad del lienzo. Con preserveAspectRatio por omisión el
+  // contenido se centra y sobra margen en el lado largo, así que manda el lado que ajusta.
+  function escalaEnPantalla() {
+    const caja = svgRef.current?.getBoundingClientRect();
+    if (!caja?.width) return null;
+    return { caja, px: Math.min(caja.width / marco.ancho, caja.height / marco.alto) };
+  }
+
+  function acercar(factor, hacia = null) {
+    setVista(actual => {
+      const previo = encuadre(actual);
+      const z = limitar(actual.z * factor, ZOOM_MIN, ZOOM_MAX);
+      if (z === actual.z) return actual;
+      if (!hacia) return { ...actual, z };
+      // El punto bajo el cursor se queda donde está: el resto se abre a su alrededor.
+      const proporcion = actual.z / z;
+      return { z,
+        cx: hacia.x - (hacia.x - previo.cx) * proporcion,
+        cy: hacia.y - (hacia.y - previo.cy) * proporcion };
+    });
+  }
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return undefined;
+    // La rueda se escucha a mano: React la registra como pasiva y no dejaría frenar el scroll.
+    const rodar = evento => {
+      evento.preventDefault();
+      const medida = escalaEnPantalla();
+      if (!medida) return;
+      const { caja, px } = medida;
+      const hacia = {
+        x: marco.cx + (evento.clientX - (caja.left + caja.width / 2)) / px,
+        y: marco.cy + (evento.clientY - (caja.top + caja.height / 2)) / px
+      };
+      acercar(evento.deltaY < 0 ? 1.2 : 1 / 1.2, hacia);
+    };
+    svg.addEventListener('wheel', rodar, { passive: false });
+    return () => svg.removeEventListener('wheel', rodar);
+  }, [marco.cx, marco.cy, marco.ancho, marco.alto]);
+
+  function empezarArrastre(evento) {
+    const medida = escalaEnPantalla();
+    if (!medida) return;
+    arrastre.current = { clientX: evento.clientX, clientY: evento.clientY,
+      cx: marco.cx, cy: marco.cy, px: medida.px };
+    setArrastrando(true);
+    evento.currentTarget.setPointerCapture?.(evento.pointerId);
+  }
+
+  function mover(evento) {
+    const inicio = arrastre.current;
+    if (!inicio) return;
+    setVista(actual => ({ ...actual,
+      cx: inicio.cx - (evento.clientX - inicio.clientX) / inicio.px,
+      cy: inicio.cy - (evento.clientY - inicio.clientY) / inicio.px }));
+  }
+
+  function soltar(evento) {
+    arrastre.current = null;
+    setArrastrando(false);
+    evento.currentTarget.releasePointerCapture?.(evento.pointerId);
+  }
+
+  const fotograma = fotogramas[indiceFotograma];
+  const posicionesObservadas = fotograma?.vehiculos ?? ejecucion?.vehiculos ?? LISTA_VACIA;
+  const [vehiculosAnimados, setVehiculosAnimados] = useState(posicionesObservadas);
+  const anteriores = useRef(null);
+  const vehiculosObservados = fotograma ? vehiculosAnimados : posicionesObservadas;
+  // Los sin asignar del plan vigente en el instante mostrado; sin historial, los más recientes.
+  const noAsignados = noAsignadosDelInstante || ejecucion?.noAsignados || LISTA_VACIA;
+  const almacenes = mapaDatos?.almacenes || [];
+  const stockPorId = new Map((inventario?.almacenes || []).map(a => [a.id, a]));
+  const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
+  const claveBloqueos = bloqueosActivos.map(b => `${b.inicio}/${b.fin}`).join('|');
+  const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, claveBloqueos]);
+  // En vivo cada unidad sigue los hitos que el simulador informó para la ventana; las que no
+  // tienen recorrido se quedaron quietas y se muestran donde las deja el corte.
+  const trayectosPreparados = useMemo(() => trayectosEnVivo
+    ? prepararTrayectos(trayectosEnVivo, aMs, bloqueados) : null, [trayectosEnVivo, bloqueados]);
+  const instanteMs = instante ? aMs(instante) : NaN;
+  const vehiculosTodos = trayectosPreparados ? posicionesObservadas.map(vehiculo => {
+    const ubicacion = posicionEnTrayecto(trayectosPreparados.get(vehiculo.id), instanteMs);
+    return ubicacion ? { ...vehiculo, ubicacion } : vehiculo;
+  }) : vehiculosObservados;
+
+  useEffect(() => {
+    if (!fotograma) {
+      anteriores.current = null;
+      setVehiculosAnimados(posicionesObservadas);
+      return undefined;
+    }
+    const origenes = anteriores.current;
+    if (!origenes) {
+      anteriores.current = posicionesObservadas;
+      setVehiculosAnimados(posicionesObservadas);
+      return undefined;
+    }
+    const porId = new Map(origenes.map(vehiculo => [vehiculo.id, vehiculo]));
+    const trayectos = posicionesObservadas.map(vehiculo => {
+      const origen = porId.get(vehiculo.id)?.ubicacion;
+      return { vehiculo, origen,
+        camino: origen ? caminoEnGrilla(origen, vehiculo.ubicacion, bloqueados) : [] };
+    });
+    let cuadro;
+    const inicio = performance.now();
+    const animar = ahora => {
+      const progreso = Math.min(1, (ahora - inicio) / pasoMs);
+      const visibles = trayectos.map(({ vehiculo, origen, camino }) => ({
+        ...vehiculo,
+        ubicacion: origen ? posicionEnCamino(camino, origen, vehiculo.ubicacion, progreso)
+          : vehiculo.ubicacion
+      }));
+      anteriores.current = visibles;
+      setVehiculosAnimados(visibles);
+      if (progreso < 1) cuadro = requestAnimationFrame(animar);
+      else anteriores.current = posicionesObservadas;
+    };
+    cuadro = requestAnimationFrame(animar);
+    return () => cancelAnimationFrame(cuadro);
+  }, [fotograma, posicionesObservadas, bloqueados, pasoMs]);
+
+  const trazosTodos = useMemo(() => trayectosPreparados
+    ? trazosConRecorrido(rutas, trayectosPreparados, bloqueados)
+    : rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados, trayectosPreparados]);
+
+  // ── filtros del mapa ───────────────────────────────────────────────────────────────
+  const estadoDe = pedido => estadosPedido?.get(pedido.id) || 'PLANIFICADO';
+  const enFlota = tipo => !flota || tipo === flota;
+  const enEstado = valor => !estadoPedido || valor === estadoPedido;
+
+  const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo));
+  const trazos = estadoPedido === 'NO_ASIGNADO' ? LISTA_VACIA
+    : trazosTodos.filter(({ ruta }) => enFlota(ruta.tipoVehiculo));
+  const puntos = rutas.filter(ruta => enFlota(ruta.tipoVehiculo))
+    .flatMap(ruta => ruta.paradas.map((parada, indice) => ({
+      ruta, parada, estado: estadoDe(parada), orden: indice + 1,
+      ultima: indice === ruta.paradas.length - 1
+    })))
+    .filter(punto => enEstado(punto.estado));
+  const sinAsignar = enEstado('NO_ASIGNADO') && !flota ? noAsignados : LISTA_VACIA;
+  const hayFiltro = !!flota || !!estadoPedido;
+
+  const finalizada = ejecucion && esFinal(ejecucion.estado);
+  const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
+    if (!vehiculo.ubicacion) return grupos;
+    const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(vehiculo);
+    return grupos;
+  }, new Map()).values()];
+  const salidas = [...new Map(rutas.filter(ruta => ruta.origen && enFlota(ruta.tipoVehiculo))
+    .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
+  const vacio = rutas.length === 0 && vehiculosTodos.length === 0 && noAsignados.length === 0 && !mapaDatos;
+
+  const x = valor => limitar((valor ?? 0) * 10, 0, LIENZO_ANCHO);
+  const y = valor => limitar((ALTO - (valor ?? 0)) * 10, 0, LIENZO_ALTO);
+  // Los símbolos conservan su tamaño en pantalla: al acercar crece la ciudad, no los iconos.
+  const escala = 1 / vista.z;
+  const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
+
+  return <div className="mapa-lienzo">
+    <svg ref={svgRef} className={`mapa ${arrastrando ? 'mapa-arrastrando' : ''}`}
+      viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
+      role="img" aria-label="Mapa de rutas, pedidos y vehículos sobre la retícula de la ciudad"
+      onPointerDown={empezarArrastre} onPointerMove={mover}
+      onPointerUp={soltar} onPointerCancel={soltar}>
+      <rect x="0" y="0" width={LIENZO_ANCHO} height={LIENZO_ALTO} fill="#f2eeed" />
+      {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2={LIENZO_ALTO} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
+      {Array.from({ length: ALTO + 1 }, (_, i) => <line key={`h${i}`} x1="0" x2={LIENZO_ANCHO} y1={i * 10} y2={i * 10} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
+      {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
+        <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
+          fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
+      {trazos.flatMap(({ ruta, tramos }, indice) => tramos.map((tramo, n) => {
+        const coordenadas = tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
+        const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
+        return <g key={`${ruta.id}-${indice}-${n}`} style={{ '--ruta-color': colorDeRuta(ruta) }} className={`trazo-ruta ${finalizada && !reproduciendo && indiceFotograma >= fotogramas.length - 1 ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
+          <polyline className="trazo-visible" points={coordenadas} fill="none" />
+          <polyline className="trazo-interaccion" points={coordenadas} fill="none"
+            tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
+            onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
+            onFocus={() => setRutaEnFoco(ruta.id)} onBlur={() => setRutaEnFoco(null)}>
+            <title>{`${ruta.id} · ${ruta.vehiculoId} · ${ruta.paradas.length} parada(s)`}</title>
+          </polyline>
+        </g>;
+      }))}
+      {puntos.map(({ ruta, parada, estado, orden, ultima }, indice) => <g key={`p${ruta.id}-${indice}`}
+        className={`mapa-parada-orden parada-${estado.toLowerCase()} ${ultima ? 'mapa-parada-final' : ''}`}
+        transform={fijo(parada.destino.x, parada.destino.y)}
+        style={{ '--ruta-color': colorDeRuta(ruta) }}
+        onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}>
+        <title>{`${ruta.vehiculoId} · parada ${orden} de ${ruta.paradas.length} · pedido ${parada.id} · ${ETIQUETA_ESTADO[estado]}${ultima ? ' · última parada' : ''}`}</title>
+        {ultima && <circle className="aro-final" r="13" />}
+        {estado === 'ENTREGADO' && <circle className="aro-entregado" r="12.5" />}
+        <circle r="9" /><text textAnchor="middle" y="4">{orden}</text>
+      </g>)}
+      {sinAsignar.map((pedido, indice) => <circle key={`n${indice}`} className="mapa-sin-asignar"
+        cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r={5 * escala} strokeWidth={1.5 * escala}>
+        <title>{`${pedido.id} · sin asignar`}</title>
+      </circle>)}
+      {almacenes.map(almacen => <g key={almacen.id} transform={fijo(almacen.ubicacion.x, almacen.ubicacion.y)}>
+        <title>{`${almacen.id} · ${almacen.tipo} · ${stockPorId.get(almacen.id)?.ilimitado ? 'stock ilimitado' : stockPorId.has(almacen.id) ? `stock actual ${stockPorId.get(almacen.id).disponible}` : `stock inicial ${almacen.stockInicial}`}`}</title>
+        {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
+          : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
+        <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
+      </g>)}
+      {gruposVehiculos.map(grupo => <g key={grupo[0].id} className={grupo.length > 1 ? 'grupo-vehiculos' : ''}
+        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}>
+        <title>{grupo.length === 1
+          ? `${grupo[0].id} · ${grupo[0].tipo} · ${grupo[0].estado}`
+          : `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y}): ${grupo.map(v => v.id).join(', ')}`}</title>
+        {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
+        <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
+          <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+          <DibujoVehiculo tipo={grupo[0].tipo} />
+        </svg>
+        {grupo.length > 1 && <>
+          <circle className="grupo-contador" cx="12" cy="-11" r="8" />
+          <text x="12" y="-7.5" textAnchor="middle">{grupo.length}</text>
+        </>}
+      </g>)}
+      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
+        transform={fijo(punto.x, punto.y)}>
+        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
+        <path d="M0 -10 V-17" /><circle cx="0" cy="-21" r="10" />
+        <text x="0" y="-17" textAnchor="middle">S</text>
+      </g>)}
+    </svg>
+
+    <div className="mapa-herramientas">
+      <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
+      <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
+      <button type="button" className="ancho" onClick={() => setVista(VISTA_INICIAL)} title="Ver toda la ciudad">TODO</button>
+      <button type="button" className={`ancho ${filtros || hayFiltro ? 'activo' : ''}`}
+        aria-expanded={filtros} onClick={() => setFiltros(!filtros)}>FILTROS{hayFiltro ? ' ·' : ''}</button>
+    </div>
+
+    {filtros && <div className="mapa-filtros">
+      <div><span className="filtro-titulo">Flota</span><div className="filtro-opciones">
+        <button type="button" className={flota === '' ? 'activo' : ''} onClick={() => setFlota('')}>Todas</button>
+        {TIPOS_FLOTA.map(([valor, texto]) => <button key={valor} type="button"
+          className={flota === valor ? 'activo' : ''} onClick={() => setFlota(valor)}>{texto}</button>)}
+      </div></div>
+      <div><span className="filtro-titulo">Pedidos</span><div className="filtro-opciones">
+        <button type="button" className={estadoPedido === '' ? 'activo' : ''} onClick={() => setEstadoPedido('')}>Todos</button>
+        {ESTADOS_PEDIDO.map(([valor, texto]) => <button key={valor} type="button"
+          className={estadoPedido === valor ? 'activo' : ''} onClick={() => setEstadoPedido(valor)}>{texto}</button>)}
+      </div></div>
+      <div className="filtro-pie">
+        <span>{numero(vehiculos.length)} unidad(es) · {numero(puntos.length + sinAsignar.length)} pedido(s) a la vista</span>
+        <button type="button" disabled={!hayFiltro} onClick={() => { setFlota(''); setEstadoPedido(''); }}>Limpiar filtros</button>
+      </div>
+      <p className="filtro-nota">«En ruta» y «entregado» se deducen de los hitos que informa el
+        simulador; la API solo publica planificado y sin asignar.</p>
+    </div>}
+
+    <div className="mapa-abajo">
+    {(fotogramas.length > 0 || enVivo) && <div className="mapa-reproductor">
+      {enVivo
+        ? <button type="button" disabled={fotogramas.length < 2} onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
+        : <button type="button" onClick={alReproducir}>{reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}</button>}
+      <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)} value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
+        onChange={evento => alCambiarFotograma(Number(evento.target.value))}
+        aria-label="Seleccionar instante de la reproducción" />
+      {enVivo
+        ? <span>{ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · {fecha(instante)} · ventana {ejecucion?.ritmo?.ventana ?? 0} de {ejecucion?.ritmo?.ventanas ?? '—'} · {ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}</span>
+        : <span>Reproducción {indiceFotograma + 1}/{fotogramas.length} · {fecha(fotograma?.reloj)}{finalizada && reproduciendo ? ' · cálculo terminado' : ''}</span>}
+      {!enVivo && alVolverEnVivo && <button type="button" onClick={alVolverEnVivo}>En vivo</button>}
+      {!enVivo && <label>Velocidad <select value={pasoMs} onChange={evento => alCambiarPaso(Number(evento.target.value))}>
+        <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
+      </select></label>}
+    </div>}
+
+    <div className={`mapa-pie ${pieAbierto ? '' : 'mapa-pie-cerrado'}`}>
+      <button type="button" className="mapa-pie-tirador" aria-expanded={pieAbierto}
+        onClick={() => setPieAbierto(!pieAbierto)}>
+        Leyenda <i aria-hidden="true" />
+      </button>
+      {pieAbierto && <div className="mapa-pie-cuerpo">
+        <div className="leyenda">
+          <span><i className="punto punto-salida" /> S: salida</span>
+          <span><i className="punto punto-llegada" /> Números: orden de entrega (aro: última)</span>
+          <span><i className="punto punto-ruta" /> Rutas simultáneas por color</span>
+          <span><i className="punto punto-alerta" /> Sin asignar</span>
+          <span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span>
+          <span><i className="punto punto-central" /> Central</span>
+          <span><i className="punto punto-intermedio" /> Intermedio</span>
+          <IconoLeyenda tipo="AUTO" texto="Auto" />
+          <IconoLeyenda tipo="MOTO" texto="Moto" />
+          <IconoLeyenda tipo="BICICLETA" texto="Bicicleta" />
+          <span><i className="punto punto-vehiculo" /> Ícono con número: varias unidades en el mismo nodo</span>
+        </div>
+        <details className="mapa-aviso">
+          <summary>Cómo leer el mapa</summary>
+          <p>En vivo el reloj avanza con el tiempo real según el ritmo del escenario y cada unidad
+            recorre los hitos que informó el simulador (salida, almacén, entregas y corte); entre
+            hitos el trazo por la retícula es esquemático, no GPS. En el historial las posiciones
+            proceden de los saltos del simulador. Se muestra el plan vigente para el instante
+            reproducido, con sus rutas simultáneas y todas sus paradas numeradas. Son entregas
+            previstas, no prueba de entrega efectiva. El inventario y las métricas superiores
+            corresponden al estado más reciente, no al de cada fotograma. Al terminar, el trazo se
+            atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
+        </details>
+      </div>}
+    </div>
+    </div>
+
+    {calculandoRutas && <div className="mapa-cartel mapa-calculando" role="status" aria-live="polite">
+      <span className="indicador-calculo" aria-hidden="true" />
+      <b>{ejecucion?.estado === 'PENDIENTE' ? 'Preparando la corrida…' : 'Calculando rutas…'}</b>
+      <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
+    </div>}
+    {vacio && <div className="mapa-cartel"><b>Sin operación cargada</b>
+      <span>Elige un periodo en el panel de la derecha e inicia una corrida para ver el mapa.</span></div>}
+  </div>;
+}
+
+const ETIQUETA_ESTADO = {
+  PLANIFICADO: 'planificado', EN_RUTA: 'en ruta', ENTREGADO: 'entregado', NO_ASIGNADO: 'sin asignar'
+};

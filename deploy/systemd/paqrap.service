@@ -6,9 +6,13 @@ After=network.target
 User=paqrap
 WorkingDirectory=/opt/paqrap
 Environment=PAQRAP_DATA_DIR=/opt/paqrap/datos/reales
-ExecStart=/usr/bin/java -Xmx1g -jar /opt/paqrap/paqrap.jar --server.port=8081 --server.address=127.0.0.1
+Environment=PAQRAP_PORT=8081
+Environment=PAQRAP_BIND_ADDRESS=127.0.0.1
+ExecStart=/usr/bin/java -Xmx1g -jar /opt/paqrap/paqrap.jar
 Restart=on-failure
 SuccessExitStatus=143
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

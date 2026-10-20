@@ -1,9 +1,12 @@
 package com.paqrap.simulacion;
 
 import com.paqrap.modelo.Solucion;
+import com.paqrap.modelo.Almacen;
+import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.EstadoOperacion;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Enganche para mirar la corrida mientras ocurre.
@@ -23,6 +26,9 @@ import java.time.LocalDateTime;
 @FunctionalInterface
 public interface Observador {
 
+    /** El motor está por calcular un plan nuevo; el anterior ya no debe presentarse como vigente. */
+    default void alIniciarPlanificacion(LocalDateTime reloj) { }
+
     void alPlanificar(
             LocalDateTime reloj,
             EstadoOperacion estado,
@@ -30,4 +36,10 @@ public interface Observador {
             MedicionDePlanificacion medicion,
             AvanceDeLaOperacion avance
     );
+
+    /** Posiciones ya ejecutadas al cierre de cada salto; no son rutas futuras. */
+    default void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) { }
+
+    /** Inventario disponible después del salto, no el stock inicial del mapa. */
+    default void alActualizarInventario(LocalDateTime reloj, List<Almacen> almacenes) { }
 }

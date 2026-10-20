@@ -6,8 +6,20 @@ import com.paqrap.api.ApiModels.EjecucionVista;
 import com.paqrap.api.ApiModels.Escenario;
 import com.paqrap.api.ApiModels.Estado;
 import com.paqrap.api.ApiModels.EventoVista;
+import com.paqrap.api.ApiModels.FotogramaVista;
+import com.paqrap.api.ApiModels.FotogramasVista;
+import com.paqrap.api.ApiModels.PlanVista;
+import com.paqrap.api.ApiModels.PlanesVista;
+import com.paqrap.api.ApiModels.RutaVista;
+import com.paqrap.api.ApiModels.RegistrarAveriaRequest;
+import com.paqrap.api.ApiModels.AveriaVista;
+import com.paqrap.api.ApiModels.InventarioVista;
+import com.paqrap.modelo.Almacen;
+import com.paqrap.modelo.Averia;
 import com.paqrap.modelo.Solucion;
+import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.Evaluador;
+import com.paqrap.planificador.EstadoOperacion;
 import com.paqrap.planificador.Parametros;
 import com.paqrap.planificador.Planificador;
 import com.paqrap.planificador.grasp.Grasp;
@@ -16,12 +28,17 @@ import com.paqrap.planificador.ruteo.MapaBloqueos;
 import com.paqrap.planificador.tabu.BusquedaTabu;
 import com.paqrap.simulacion.ResumenSimulacion;
 import com.paqrap.simulacion.Simulador;
+import com.paqrap.simulacion.Observador;
+import com.paqrap.simulacion.MedicionDePlanificacion;
+import com.paqrap.simulacion.AvanceDeLaOperacion;
 import jakarta.annotation.PreDestroy;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -37,6 +54,9 @@ import java.util.concurrent.TimeUnit;
 @Service
 final class EjecucionesService {
     private static final int MAX_REGISTROS = 32;
+    private static final int MAX_FOTOGRAMAS = 2048;
+    private static final int MAX_PLANES = 2048;
+    private static final int PAGINA_FOTOGRAMAS = 100;
     private final DatosFuente datos;
     private final EventosWebSocket eventos;
     private final ConcurrentMap<UUID, Ejecucion> ejecuciones = new ConcurrentHashMap<>();
@@ -60,6 +80,10 @@ final class EjecucionesService {
                     "Escenario, algoritmo e inicio son obligatorios.");
         }
         int dias = dias(request);
+        if (request.pausaMs() != null && (request.pausaMs() < 0 || request.pausaMs() > 500)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "PAUSA_INVALIDA",
+                    "La pausa de demostración debe estar entre 0 y 500 ms.");
+        }
         DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias);
         limpiarAntiguas();
         if (ejecuciones.size() >= MAX_REGISTROS) {
@@ -71,6 +95,8 @@ final class EjecucionesService {
         Ejecucion ejecucion = new Ejecucion(new EjecucionVista(id, Estado.PENDIENTE,
                 request.escenario(), request.algoritmo(), request.inicio(), request.inicio(),
                 LocalDateTime.now(), null, List.of(), List.of(), List.of(), null, null, null));
+        ejecucion.inventario = new InventarioVista(request.inicio(),
+                datos.almacenes().stream().map(Vistas::stock).toList());
         ejecuciones.put(id, ejecucion);
         try {
             ejecucion.tarea = executor.submit(() -> correr(ejecucion, request, dias, entrada));
@@ -89,6 +115,102 @@ final class EjecucionesService {
                     "No existe una ejecución con ese identificador.");
         }
         return ejecucion.vista;
+    }
+
+    InventarioVista inventario(UUID id) {
+        Ejecucion ejecucion = obtener(id);
+        return ejecucion.inventario;
+    }
+
+    List<AveriaVista> averias(UUID id) {
+        Ejecucion ejecucion = obtener(id);
+        synchronized (ejecucion) { return List.copyOf(ejecucion.averias); }
+    }
+
+    AveriaVista registrarAveria(UUID id, RegistrarAveriaRequest solicitud) {
+        Ejecucion ejecucion = obtener(id);
+        synchronized (ejecucion) {
+            if (ejecucion.vista.estado() != Estado.EN_CURSO || ejecucion.simulador == null) {
+                throw new ApiException(HttpStatus.CONFLICT, "EJECUCION_NO_ACTIVA",
+                        "Solo se admiten averías durante una ejecución activa.");
+            }
+            String unidadId = solicitud.unidadId().trim();
+            if (datos.flota().stream().noneMatch(v -> v.getId().equals(unidadId))) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "UNIDAD_DESCONOCIDA",
+                        "La unidad no pertenece a la flota de la corrida.");
+            }
+            if (ejecucion.averias.stream().anyMatch(a -> a.unidadId().equals(unidadId))) {
+                throw new ApiException(HttpStatus.CONFLICT, "AVERIA_DUPLICADA",
+                        "Ya se registró una avería para esta unidad en la corrida.");
+            }
+            LocalDateTime reloj = ejecucion.inventario.reloj();
+            Averia averia = new Averia(unidadId, reloj, solicitud.tipo());
+            ejecucion.simulador.registrarAveriaEnVivo(averia);
+            AveriaVista vista = new AveriaVista(unidadId, solicitud.tipo(), reloj, "REGISTRADA");
+            ejecucion.averias.add(vista);
+            return vista;
+        }
+    }
+
+    private Ejecucion obtener(UUID id) {
+        Ejecucion ejecucion = ejecuciones.get(id);
+        if (ejecucion == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "EJECUCION_NO_ENCONTRADA",
+                    "No existe una ejecución con ese identificador.");
+        }
+        return ejecucion;
+    }
+
+    FotogramasVista fotogramas(UUID id, long desde) {
+        Ejecucion ejecucion = ejecuciones.get(id);
+        if (ejecucion == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "EJECUCION_NO_ENCONTRADA",
+                    "No existe una ejecución con ese identificador.");
+        }
+        if (desde < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INDICE_INVALIDO",
+                    "El índice inicial no puede ser negativo.");
+        }
+        synchronized (ejecucion) {
+            long primero = ejecucion.fotogramas.isEmpty() ? ejecucion.siguienteIndice
+                    : ejecucion.fotogramas.peekFirst().indice();
+            long inicio = Math.max(desde, primero);
+            List<FotogramaVista> pagina = new ArrayList<>();
+            for (FotogramaVista fotograma : ejecucion.fotogramas) {
+                if (fotograma.indice() >= inicio && pagina.size() < PAGINA_FOTOGRAMAS) {
+                    pagina.add(fotograma);
+                }
+            }
+            long siguiente = pagina.isEmpty() ? inicio : pagina.get(pagina.size() - 1).indice() + 1;
+            Estado estado = ejecucion.vista.estado();
+            boolean completo = estado == Estado.TERMINADA || estado == Estado.COLAPSADA
+                    || estado == Estado.FALLIDA || estado == Estado.CANCELADA;
+            return new FotogramasVista(primero, siguiente, completo, List.copyOf(pagina));
+        }
+    }
+
+    PlanesVista planes(UUID id, long desde) {
+        Ejecucion ejecucion = obtener(id);
+        if (desde < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INDICE_INVALIDO",
+                    "El índice inicial no puede ser negativo.");
+        }
+        synchronized (ejecucion) {
+            long primero = ejecucion.planes.isEmpty() ? ejecucion.siguientePlan
+                    : ejecucion.planes.peekFirst().indice();
+            long inicio = Math.max(desde, primero);
+            List<PlanVista> pagina = new ArrayList<>();
+            for (PlanVista plan : ejecucion.planes) {
+                if (plan.indice() >= inicio && pagina.size() < PAGINA_FOTOGRAMAS) {
+                    pagina.add(plan);
+                }
+            }
+            long siguiente = pagina.isEmpty() ? inicio : pagina.get(pagina.size() - 1).indice() + 1;
+            Estado estado = ejecucion.vista.estado();
+            boolean completo = estado == Estado.TERMINADA || estado == Estado.COLAPSADA
+                    || estado == Estado.FALLIDA || estado == Estado.CANCELADA;
+            return new PlanesVista(primero, siguiente, completo, List.copyOf(pagina));
+        }
     }
 
     EjecucionVista cancelar(UUID id) {
@@ -112,9 +234,6 @@ final class EjecucionesService {
                         DatosFuente.DatosEntrada entrada) {
         try {
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
-            actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.EN_CURSO, null, null),
-                    "INICIADA");
-
             MapaBloqueos mapa = new MapaBloqueos(entrada.bloqueos());
             EnrutadorBloqueos ruteo = new EnrutadorBloqueos(mapa);
             Evaluador evaluador = new Evaluador(ruteo);
@@ -129,41 +248,118 @@ final class EjecucionesService {
                     .iteracionesSinMejora(25)
                     .construir();
 
+            List<Vehiculo> flota = datos.flota();
+            registrarFotograma(ejecucion, request.inicio(), flota);
             Simulador simulador = new Simulador(planificador, ruteo,
                     datos.almacenes(), parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
                     .conIntervaloMinimo(Duration.ofMinutes(15))
-                    .observadoPor((reloj, estado, plan, medicion, avance) -> {
+                    .observadoPor(new Observador() {
+                    @Override
+                    public void alIniciarPlanificacion(LocalDateTime reloj) {
                         if (Thread.currentThread().isInterrupted()
                                 || ejecucion.vista.estado() == Estado.CANCELADA) {
                             throw new CancellationException("Ejecución cancelada");
                         }
                         EjecucionVista anterior = ejecucion.vista;
-                        Solucion copia = plan;
+                        actualizar(ejecucion, new EjecucionVista(anterior.id(), Estado.EN_CURSO,
+                                anterior.escenario(), anterior.algoritmo(), anterior.inicio(),
+                                reloj, LocalDateTime.now(), anterior.avance(),
+                                anterior.vehiculos(), List.of(), List.of(), null, null, null,
+                                true), "CALCULANDO_RUTAS");
+                    }
+
+                    @Override
+                    public void alPlanificar(LocalDateTime reloj, EstadoOperacion estado,
+                                            Solucion plan, MedicionDePlanificacion medicion,
+                                            AvanceDeLaOperacion avance) {
+                        if (Thread.currentThread().isInterrupted()
+                                || ejecucion.vista.estado() == Estado.CANCELADA) {
+                            throw new CancellationException("Ejecución cancelada");
+                        }
+                        EjecucionVista anterior = ejecucion.vista;
+                        List<RutaVista> rutasDelPlan = plan.getRutas().stream()
+                                .map(Vistas::ruta).toList();
+                        registrarPlan(ejecucion, reloj, rutasDelPlan);
                         EjecucionVista siguiente = new EjecucionVista(anterior.id(),
                                 Estado.EN_CURSO, anterior.escenario(), anterior.algoritmo(),
                                 anterior.inicio(), reloj, LocalDateTime.now(),
                                 Vistas.avance(avance, medicion),
                                 estado.getVehiculos().stream().map(Vistas::vehiculo).toList(),
-                                copia.getRutas().stream().map(Vistas::ruta).toList(),
-                                Vistas.pedidos(copia.getPedidosNoAsignados(), "NO_ASIGNADO",
+                                rutasDelPlan,
+                                Vistas.pedidos(plan.getPedidosNoAsignados(), "NO_ASIGNADO",
                                         "SIN_RUTA_FACTIBLE"),
                                 null, null, null);
-                        actualizar(ejecucion, siguiente, copia.getRutas().isEmpty()
-                                && !copia.getPedidosNoAsignados().isEmpty()
+                        actualizar(ejecucion, siguiente, plan.getRutas().isEmpty()
+                                && !plan.getPedidosNoAsignados().isEmpty()
                                         ? "PLAN_SIN_ASIGNACIONES" : "PROGRESO");
+                    }
+
+                    @Override
+                    public void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) {
+                        registrarFotograma(ejecucion, reloj, vehiculos);
+                        EjecucionVista anterior = ejecucion.vista;
+                        actualizar(ejecucion, new EjecucionVista(anterior.id(), Estado.EN_CURSO,
+                                anterior.escenario(), anterior.algoritmo(), anterior.inicio(),
+                                reloj, LocalDateTime.now(), anterior.avance(),
+                                vehiculos.stream().map(Vistas::vehiculo).toList(),
+                                anterior.rutas(), anterior.noAsignados(), null, null, null),
+                                "AVANCE");
+                        synchronized (ejecucion) {
+                            for (int i = 0; i < ejecucion.averias.size(); i++) {
+                                AveriaVista averia = ejecucion.averias.get(i);
+                                if (vehiculos.stream().anyMatch(v -> v.getId().equals(averia.unidadId())
+                                        && v.getEstado().name().equals("AVERIADO"))) {
+                                    ejecucion.averias.set(i, new AveriaVista(averia.unidadId(),
+                                            averia.tipo(), averia.instante(), "APLICADA"));
+                                }
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void alActualizarInventario(LocalDateTime reloj, List<Almacen> almacenes) {
+                        ejecucion.inventario = new InventarioVista(reloj,
+                                almacenes.stream().map(Vistas::stock).toList());
+                        if (request.pausaMs() != null && request.pausaMs() > 0) {
+                            try { Thread.sleep(request.pausaMs()); }
+                            catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw new CancellationException("Ejecución interrumpida");
+                            }
+                        }
+                    }
                     });
 
+            ejecucion.simulador = simulador;
+            actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.EN_CURSO, null, null),
+                    "INICIADA");
+
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
-                    Duration.ofDays(dias), entrada.ventas(), datos.flota());
+                    Duration.ofDays(dias), entrada.ventas(), flota);
+            synchronized (ejecucion) {
+                for (int i = 0; i < ejecucion.averias.size(); i++) {
+                    AveriaVista averia = ejecucion.averias.get(i);
+                    boolean aplicada = resumen.averiasOcurridas().stream().anyMatch(a ->
+                            a.unidadId().equals(averia.unidadId())
+                                    && a.instante().equals(averia.instante()));
+                    ejecucion.averias.set(i, new AveriaVista(averia.unidadId(), averia.tipo(),
+                            averia.instante(), aplicada ? "APLICADA" : "NO_APLICADA"));
+                }
+            }
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             EjecucionVista anterior = ejecucion.vista;
             Estado finalEstado = resumen.huboColapso() ? Estado.COLAPSADA : Estado.TERMINADA;
+            List<ApiModels.VehiculoVista> posicionesFinales;
+            synchronized (ejecucion) {
+                FotogramaVista ultimo = ejecucion.fotogramas.peekLast();
+                posicionesFinales = ultimo == null ? anterior.vehiculos() : ultimo.vehiculos();
+            }
             EjecucionVista finalVista = new EjecucionVista(anterior.id(), finalEstado,
                     anterior.escenario(), anterior.algoritmo(), anterior.inicio(), resumen.fin(),
-                    LocalDateTime.now(), anterior.avance(), anterior.vehiculos(),
+                    LocalDateTime.now(), anterior.avance(), posicionesFinales,
                     anterior.rutas(), anterior.noAsignados(), Vistas.resumen(resumen), null, null);
             actualizar(ejecucion, finalVista, resumen.huboColapso() ? "COLAPSO" : "TERMINADA");
         } catch (CancellationException e) {
@@ -182,6 +378,29 @@ final class EjecucionesService {
             ejecucion.vista = vista;
         }
         eventos.publicar(new EventoVista(tipo, vista));
+    }
+
+    private static void registrarFotograma(Ejecucion ejecucion, LocalDateTime reloj,
+                                           List<Vehiculo> vehiculos) {
+        List<ApiModels.VehiculoVista> posiciones = vehiculos.stream().map(Vistas::vehiculo).toList();
+        synchronized (ejecucion) {
+            if (ejecucion.vista.estado() == Estado.CANCELADA) return;
+            ejecucion.fotogramas.addLast(new FotogramaVista(
+                    ejecucion.siguienteIndice++, reloj, posiciones));
+            if (ejecucion.fotogramas.size() > MAX_FOTOGRAMAS) {
+                ejecucion.fotogramas.removeFirst();
+            }
+        }
+    }
+
+    private static void registrarPlan(Ejecucion ejecucion, LocalDateTime reloj,
+                                     List<RutaVista> rutas) {
+        synchronized (ejecucion) {
+            if (ejecucion.vista.estado() == Estado.CANCELADA) return;
+            ejecucion.planes.addLast(new PlanVista(ejecucion.siguientePlan++, reloj,
+                    List.copyOf(rutas)));
+            if (ejecucion.planes.size() > MAX_PLANES) ejecucion.planes.removeFirst();
+        }
     }
 
     private static EjecucionVista cambiarEstado(EjecucionVista anterior, Estado estado,
@@ -221,6 +440,13 @@ final class EjecucionesService {
     private static final class Ejecucion {
         volatile EjecucionVista vista;
         volatile Future<?> tarea;
+        volatile Simulador simulador;
+        volatile InventarioVista inventario;
+        final List<AveriaVista> averias = new ArrayList<>();
+        final ArrayDeque<FotogramaVista> fotogramas = new ArrayDeque<>();
+        final ArrayDeque<PlanVista> planes = new ArrayDeque<>();
+        long siguienteIndice;
+        long siguientePlan;
         Ejecucion(EjecucionVista vista) { this.vista = vista; }
     }
 }

@@ -8,6 +8,7 @@ import com.paqrap.api.ApiModels.PedidoVista;
 import com.paqrap.api.ApiModels.ResumenVista;
 import com.paqrap.api.ApiModels.RutaVista;
 import com.paqrap.api.ApiModels.VehiculoVista;
+import com.paqrap.api.ApiModels.StockAlmacenVista;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Almacen;
 import com.paqrap.modelo.Bloqueo;
@@ -31,6 +32,13 @@ final class Vistas {
     static AlmacenVista almacen(Almacen almacen) {
         return new AlmacenVista(almacen.getId(), almacen.getTipo().name(),
                 coordenada(almacen.getUbicacion()), almacen.getStockInicial());
+    }
+
+    static StockAlmacenVista stock(Almacen almacen) {
+        return new StockAlmacenVista(almacen.getId(), almacen.getTipo().name(),
+                coordenada(almacen.getUbicacion()),
+                almacen.esInventarioInfinito() ? null : almacen.getStockInicial(),
+                almacen.esInventarioInfinito());
     }
 
     static BloqueoVista bloqueo(Bloqueo bloqueo) {

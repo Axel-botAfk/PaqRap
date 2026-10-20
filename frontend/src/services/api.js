@@ -16,7 +16,9 @@ async function solicitud(ruta, opciones = {}) {
     throw new Error('El servidor devolvió una respuesta no válida.');
   }
   if (!respuesta.ok) {
-    throw new Error(cuerpo.mensaje || `Error HTTP ${respuesta.status}`);
+    const error = new Error(cuerpo.mensaje || `Error HTTP ${respuesta.status}`);
+    error.status = respuesta.status;
+    throw error;
   }
   return cuerpo;
 }
@@ -32,6 +34,15 @@ export const api = {
     body: JSON.stringify(datos)
   }),
   consultar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}`),
+  inventario: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/inventario`),
+  averias: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/averias`),
+  registrarAveria: (id, datos) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/averias`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos)
+  }),
+  fotogramas: (id, desde = 0) => solicitud(
+    `/api/ejecuciones/${encodeURIComponent(id)}/fotogramas?desde=${encodeURIComponent(desde)}`),
+  planes: (id, desde = 0) => solicitud(
+    `/api/ejecuciones/${encodeURIComponent(id)}/planes?desde=${encodeURIComponent(desde)}`),
   cancelar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/cancelar`, {
     method: 'POST'
   })

@@ -56,4 +56,25 @@ class ApiControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("SOLICITUD_INVALIDA"));
     }
+
+    @Test
+    void rechazaPausaFueraDeClaseValida() throws Exception {
+        mvc.perform(post("/api/ejecuciones")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"escenario\":\"OPERACION_DIARIA\",\"algoritmo\":\"GRASP\",\"inicio\":\"2026-09-01T00:00:00\",\"pausaMs\":501}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("PAUSA_INVALIDA"));
+    }
+
+    @Test
+    void rechazaAveriaSinTipoYConsultaInexistente() throws Exception {
+        mvc.perform(post("/api/ejecuciones/00000000-0000-0000-0000-000000000001/averias")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"unidadId\":\"V1\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/ejecuciones/00000000-0000-0000-0000-000000000001/inventario"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("/api/ejecuciones/00000000-0000-0000-0000-000000000001/planes"))
+                .andExpect(status().isNotFound());
+    }
 }

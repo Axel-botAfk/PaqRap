@@ -144,15 +144,18 @@ public final class ApiModels {
     }
 
     /**
-     * Ritmo de la corrida: cada {@code saMs} reales se publica una ventana de
-     * {@code minutosPorVentana} simulados. Con {@code publicadoMs} y {@code servidorAhoraMs} el
+     * Ritmo de la corrida: cada {@code saMs} reales se publica una ventana de unos
+     * {@code minutosPorVentana} simulados. La ventana visible va de {@code relojDesde} a
+     * {@code relojHasta}, se reproduce en {@code duracionVentanaMs} y {@code k} es su
+     * proporción real (simulado / real). Con {@code publicadoMs} y {@code servidorAhoraMs} el
      * visualizador ancla su reloj al tiempo real sin depender de cuántos cuadros dibuja.
      */
     public record RitmoVista(
             long saMs, double minutosPorVentana, double k, Integer duracionObjetivoMin,
             Integer velocidad, int ventana, int ventanas, LocalDateTime relojDesde,
             LocalDateTime relojHasta, long publicadoMs, Long transcurridoAlPausarMs,
-            long servidorAhoraMs, int ventanasRebasadas, long duracionEstimadaMs
+            long servidorAhoraMs, int ventanasRebasadas, long duracionEstimadaMs,
+            long duracionVentanaMs
     ) { }
 
     /** Detalle del primer incumplimiento, con la foto de la operación en ese momento. */

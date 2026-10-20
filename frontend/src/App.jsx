@@ -602,8 +602,8 @@ export default function App() {
   const instanteVivo = Number.isFinite(instanteVivoMs) ? aIso(instanteVivoMs) : null;
   const instanteReproducido = modoVivo ? instanteVivo || ejecucion.reloj
     : fotogramas[indiceFotograma]?.reloj || ejecucion?.reloj || null;
-  const planReproducido = modoVivo ? null : planVigenteEn(planes, instanteReproducido);
-  const rutasReproducidas = modoVivo ? ejecucion.rutas || LISTA_VACIA
+  const planReproducido = planVigenteEn(planes, instanteReproducido);
+  const rutasReproducidas = modoVivo ? planReproducido?.rutas || ejecucion.rutas || LISTA_VACIA
     : planReproducido?.rutas || (!fotogramas.length ? ejecucion?.rutas : null) || LISTA_VACIA;
   const enInstanteActual = modoVivo || !fotogramas.length || indiceFotograma >= fotogramas.length - 1;
   const calculandoRutas = !!ejecucion && (ejecucion.estado === 'PENDIENTE'

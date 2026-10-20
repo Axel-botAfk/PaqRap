@@ -3,6 +3,9 @@ package com.paqrap.api;
 /**
  * Marca el pulso de la simulación: una ventana publicada cada {@code Sa} reales.
  *
+ * Una publicación puede abarcar varios saltos cuando una sola iteración del simulador cruza
+ * más de un límite de la grilla (por ejemplo, a tiempo real): entonces se espera n × Sa.
+ *
  * Cada ventana se publica en cuanto está calculada y luego se espera su turno antes de calcular
  * la siguiente. Mientras tanto el visualizador la reproduce y quien registre una avería la ve
  * entrar en el cálculo inmediato, no dos ventanas después.
@@ -30,6 +33,7 @@ final class Marcapasos {
     private long publicadoMs = -1;
     private long finDeEsperaMs = -1;
     private long ultimoCalculoMs;
+    private long duracionMs;
     private long pausadaDesdeMs = -1;
     private int rebasadas;
     private volatile boolean pausada;
@@ -38,16 +42,23 @@ final class Marcapasos {
         if (saMs <= 0) throw new IllegalArgumentException("Sa debe ser positivo.");
         this.reloj = reloj;
         this.saMs = saMs;
+        this.duracionMs = saMs;
     }
 
     /** La ventana recién calculada sale ahora; devuelve el ancla del reloj del visualizador. */
     synchronized long publicar() {
+        return publicar(1);
+    }
+
+    /** Publica una ventana que abarca {@code saltos} saltos y se verá durante saltos × Sa. */
+    synchronized long publicar(int saltos) {
         long ahora = reloj.ahoraMs();
         if (finDeEsperaMs >= 0) {
             ultimoCalculoMs = Math.max(0, ahora - finDeEsperaMs);
             if (ultimoCalculoMs > saMs) rebasadas++;
         }
         publicadoMs = ahora;
+        duracionMs = Math.max(1, saltos) * saMs;
         return publicadoMs;
     }
 
@@ -57,13 +68,13 @@ final class Marcapasos {
      * de medio salto, para que tras un cálculo lento la ventana publicada alcance a verse.
      */
     void esperarTurno() throws InterruptedException {
-        esperarHasta(() -> publicadoMs + saMs - Math.min(ultimoCalculoMs, saMs / 2));
+        esperarHasta(() -> publicadoMs + duracionMs - Math.min(ultimoCalculoMs, saMs / 2));
         synchronized (this) { finDeEsperaMs = reloj.ahoraMs(); }
     }
 
     /** Deja que la última ventana se vea entera antes de declarar el fin de la corrida. */
     void esperarCierre() throws InterruptedException {
-        esperarHasta(() -> publicadoMs + saMs);
+        esperarHasta(() -> publicadoMs + duracionMs);
     }
 
     synchronized boolean pausar() {
@@ -90,8 +101,11 @@ final class Marcapasos {
     /** Cuánto de la ventana visible se había reproducido al pausar; nulo si no está en pausa. */
     synchronized Long transcurridoAlPausarMs() {
         if (!pausada) return null;
-        return Math.max(0, Math.min(saMs, pausadaDesdeMs - publicadoMs));
+        return Math.max(0, Math.min(duracionMs, pausadaDesdeMs - publicadoMs));
     }
+
+    /** Cuánto dura en pantalla la ventana visible. */
+    synchronized long duracionMs() { return duracionMs; }
 
     synchronized int rebasadas() { return rebasadas; }
 

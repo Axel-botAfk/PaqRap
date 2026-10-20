@@ -8,6 +8,7 @@ import com.paqrap.api.ApiModels.Estado;
 import com.paqrap.api.ApiModels.RegistrarAveriaRequest;
 import com.paqrap.modelo.TipoAveria;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -142,6 +143,24 @@ class EjecucionesServiceTest {
     }
 
     @Test
+    void elRitmoDePantallaNoCambiaLasDecisionesConDatosReales() throws Exception {
+        Path reales = Path.of("..", "codigo", "paqrap", "datos", "reales");
+        Assumptions.assumeTrue(Files.isDirectory(reales), "sin datos reales del curso");
+        servicio = new EjecucionesService(new DatosService(reales.toString()),
+                new EventosWebSocket(new ObjectMapper()), reloj);
+        LocalDateTime inicio = LocalDateTime.of(2026, 9, 1, 0, 0);
+        var rapida = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, inicio, null, 7L, null, null, 240, null, null)).id());
+        var lenta = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, inicio, null, 7L, null, null, 10, null, null)).id());
+        assertEquals(18, rapida.ritmo().ventanas());
+        assertEquals(432, lenta.ritmo().ventanas());
+        assertEquals(rapida.estado(), lenta.estado());
+        assertEquals(rapida.resumen(), lenta.resumen());
+        assertEquals(rapida.vehiculos(), lenta.vehiculos());
+    }
+
+    @Test
     void pausaReanudaYDetieneConEstadosClaros() throws Exception {
         prepararDatosMinimos();
         servicio = crearServicio();
@@ -272,7 +291,7 @@ class EjecucionesServiceTest {
     }
 
     private ApiModels.EjecucionVista esperar(UUID id) throws Exception {
-        for (int intento = 0; intento < 3000; intento++) {
+        for (int intento = 0; intento < 9000; intento++) {
             var vista = servicio.consultar(id);
             if (vista.estado() == Estado.TERMINADA || vista.estado() == Estado.COLAPSADA
                     || vista.estado() == Estado.FALLIDA || vista.estado() == Estado.CANCELADA) {
@@ -280,7 +299,7 @@ class EjecucionesServiceTest {
             }
             Thread.sleep(20);
         }
-        fail("La simulacion minima no termino en 60 segundos");
+        fail("La simulacion no termino en 180 segundos");
         return null;
     }
 }

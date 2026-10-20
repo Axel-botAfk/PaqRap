@@ -53,6 +53,13 @@ test('una ventana nueva arranca desde su inicio', () => {
   assert.equal(reloj(nueva, 1_020_000), aMs('2026-09-01T03:00:00'));
 });
 
+test('una ventana que abarca varios saltos se reproduce en n × Sa', () => {
+  const reloj = crearRelojAnclado();
+  // Tiempo real: 30 min simulados en 30 min reales (90 saltos de 20 s), K = 1.
+  const larga = ritmo({ k: 1, duracionVentanaMs: 1_800_000, relojHasta: '2026-09-01T02:30:00' });
+  assert.equal(reloj(larga, 1_000_000 + 600_000), aMs('2026-09-01T02:10:00'));
+});
+
 test('en pausa el reloj se congela en lo reproducido', () => {
   const reloj = crearRelojAnclado();
   const pausada = ritmo({ transcurridoAlPausarMs: 5_000 });

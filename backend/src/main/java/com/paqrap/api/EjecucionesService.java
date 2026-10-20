@@ -70,8 +70,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * Una ejecucion es un trabajo acotado, no una peticion HTTP bloqueante.
  *
- * Avanza por ventanas al ritmo del {@link Marcapasos}: cada ventana se calcula, se publica
- * entera (plan, recorridos, posiciones e inventario) y se espera su turno antes de la siguiente.
+ * El simulador conserva su propia cadencia de replanificación (latido de 30 min, mínimo de 15
+ * y cortes por llegadas, bloqueos y averías), de modo que la velocidad de pantalla no cambia
+ * ninguna decisión. Lo que marca el {@link Marcapasos} es la publicación: las iteraciones se
+ * juntan hasta cruzar el siguiente límite de una grilla fija de Sc minutos simulados, la ventana
+ * se publica entera (planes, recorridos, posiciones e inventario) y se espera n × Sa antes de
+ * seguir, con n los límites cruzados. Así N límites duran N × Sa.
  */
 @Service
 final class EjecucionesService {
@@ -325,19 +329,16 @@ final class EjecucionesService {
                     .iteracionesSinMejora(25)
                     .construir();
 
-            // Cortes fijos de Sc: con intervalo e intervalo mínimo iguales, ni las llegadas ni
-            // los bloqueos adelantan el corte y cada ventana consume exactamente lo mismo.
-            Duration sc = ejecucion.ritmo.saltoDelConsumo();
             List<Vehiculo> flota = datos.flota();
             ejecucion.inicioRealMs = reloj.ahoraMs();
             registrarFotograma(ejecucion, request.inicio(),
                     flota.stream().map(Vistas::vehiculo).toList());
             Simulador simulador = new Simulador(planificador, ruteo,
-                    datos.almacenes(), parametros, sc,
+                    datos.almacenes(), parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
-                    .conIntervaloMinimo(sc)
+                    .conIntervaloMinimo(Duration.ofMinutes(15))
                     .observadoPor(new Observador() {
                     @Override
                     public void alIniciarPlanificacion(LocalDateTime reloj) {
@@ -355,28 +356,49 @@ final class EjecucionesService {
                         ventana.avance = Vistas.avance(avance, medicion);
                         ventana.noAsignados = Vistas.pedidos(plan.getPedidosNoAsignados(),
                                 "NO_ASIGNADO", "SIN_RUTA_FACTIBLE");
+                        ventana.trayectosIteracion = List.of();
+                        ventana.huboPlan = true;
                         detectarReplanificaciones(ejecucion, reloj, estado, plan);
                     }
 
                     @Override
                     public void alEjecutar(LocalDateTime desde, LocalDateTime hasta,
                                            List<Trayecto> trayectos) {
-                        ejecucion.ventanaEnCurso.trayectos =
-                                trayectos.stream().map(Vistas::trayecto).toList();
+                        Ventana ventana = ejecucion.ventanaEnCurso;
+                        ventana.trayectosIteracion = trayectos.stream().map(Vistas::trayecto).toList();
+                        for (TrayectoVista trayecto : ventana.trayectosIteracion) {
+                            ventana.trayectos.computeIfAbsent(trayecto.vehiculoId(),
+                                    clave -> new ArrayList<>()).addAll(trayecto.pasos());
+                        }
                     }
 
                     @Override
                     public void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) {
-                        ejecucion.ventanaEnCurso.hasta = reloj;
-                        ejecucion.ventanaEnCurso.vehiculos =
-                                vehiculos.stream().map(Vistas::vehiculo).toList();
+                        Ventana ventana = ejecucion.ventanaEnCurso;
+                        if (ventana.desde == null) ventana.desde = ejecucion.ventanaHasta;
+                        List<VehiculoVista> posiciones = vehiculos.stream().map(Vistas::vehiculo).toList();
+                        if (ventana.relojPlan != null) {
+                            ventana.planes.add(new PlanVista(-1, ventana.relojPlan, ventana.rutas,
+                                    reloj, ventana.trayectosIteracion));
+                            ventana.relojPlan = null;
+                        } else if (!ventana.huboPlan) {
+                            // Sin pedidos en cola no hubo plan: nada queda vigente.
+                            ventana.rutas = List.of();
+                            ventana.noAsignados = List.of();
+                        }
+                        ventana.huboPlan = false;
+                        ventana.fotogramas.add(new FotogramaVista(-1, reloj, posiciones));
+                        ventana.hasta = reloj;
+                        ventana.vehiculos = posiciones;
                     }
 
                     @Override
                     public void alActualizarInventario(LocalDateTime reloj, List<Almacen> almacenes) {
                         ejecucion.ventanaEnCurso.inventario = new InventarioVista(reloj,
                                 almacenes.stream().map(Vistas::stock).toList());
-                        publicarVentana(ejecucion);
+                        long limites = limitesHasta(ejecucion, reloj);
+                        if (limites <= ejecucion.limitesPublicados) return;
+                        publicarVentana(ejecucion, limites);
                         try {
                             if (request.pausaMs() != null && request.pausaMs() > 0) {
                                 Thread.sleep(request.pausaMs());
@@ -397,6 +419,16 @@ final class EjecucionesService {
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
                     Duration.ofDays(dias), entrada.ventas(), flota);
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
+            // Lo que quedó sin publicar: el colapso corta antes del siguiente límite, que cuenta
+            // como cruzado para que ese tramo también se vea.
+            LocalDateTime pendienteHasta = ejecucion.ventanaEnCurso.hasta;
+            if (pendienteHasta != null) {
+                long sc = ejecucion.ritmo.saltoDelConsumo().toMillis();
+                long simulado = Duration.between(ejecucion.inicio, pendienteHasta).toMillis();
+                long alcanzados = Math.min(ejecucion.ritmo.ventanas(ejecucion.horizonte),
+                        (simulado + sc - 1) / sc);
+                publicarVentana(ejecucion, Math.max(ejecucion.limitesPublicados + 1, alcanzados));
+            }
             synchronized (ejecucion) {
                 for (int i = 0; i < ejecucion.averias.size(); i++) {
                     AveriaVista averia = ejecucion.averias.get(i);
@@ -443,22 +475,35 @@ final class EjecucionesService {
         }
     }
 
-    /** Saca a la luz la ventana recién calculada: fotograma, plan con recorridos y estado. */
-    private void publicarVentana(Ejecucion ejecucion) {
+    /** Límites de la grilla de Sc alcanzados al llegar el reloj a {@code reloj}. */
+    private static long limitesHasta(Ejecucion ejecucion, LocalDateTime reloj) {
+        long total = ejecucion.ritmo.ventanas(ejecucion.horizonte);
+        if (!reloj.isBefore(ejecucion.inicio.plus(ejecucion.horizonte))) return total;
+        long sc = ejecucion.ritmo.saltoDelConsumo().toMillis();
+        return Math.min(total, Duration.between(ejecucion.inicio, reloj).toMillis() / sc);
+    }
+
+    /**
+     * Saca a la luz lo calculado hasta alcanzar el límite {@code limites}: fotogramas, planes con
+     * sus recorridos y el estado. Se verá durante tantos saltos como límites haya cruzado.
+     */
+    private void publicarVentana(Ejecucion ejecucion, long limites) {
         Ventana ventana = ejecucion.ventanaEnCurso;
         ejecucion.ventanaEnCurso = new Ventana();
         if (ventana.hasta == null || ventana.vehiculos == null) return;
         EjecucionVista siguiente;
         synchronized (ejecucion) {
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
-            ejecucion.marcapasos.publicar();
-            ejecucion.ventana++;
-            ejecucion.ventanaDesde = ejecucion.ventanaHasta;
+            ejecucion.marcapasos.publicar((int) Math.max(1, limites - ejecucion.limitesPublicados));
+            ejecucion.limitesPublicados = limites;
+            ejecucion.ventanaDesde = ventana.desde;
             ejecucion.ventanaHasta = ventana.hasta;
-            registrarFotograma(ejecucion, ventana.hasta, ventana.vehiculos);
-            if (ventana.rutas != null) {
-                ejecucion.planes.addLast(new PlanVista(ejecucion.siguientePlan++, ventana.relojPlan,
-                        ventana.rutas, ventana.hasta, ventana.trayectos));
+            for (FotogramaVista fotograma : ventana.fotogramas) {
+                registrarFotograma(ejecucion, fotograma.reloj(), fotograma.vehiculos());
+            }
+            for (PlanVista plan : ventana.planes) {
+                ejecucion.planes.addLast(new PlanVista(ejecucion.siguientePlan++, plan.reloj(),
+                        plan.rutas(), plan.hasta(), plan.trayectos()));
                 if (ejecucion.planes.size() > MAX_PLANES) ejecucion.planes.removeFirst();
             }
             if (ventana.inventario != null) ejecucion.inventario = ventana.inventario;
@@ -471,14 +516,15 @@ final class EjecucionesService {
                 }
             }
             EjecucionVista anterior = ejecucion.vista;
-            boolean hayPlan = ventana.rutas != null;
+            List<TrayectoVista> trayectos = ventana.trayectos.entrySet().stream()
+                    .map(e -> new TrayectoVista(e.getKey(), List.copyOf(e.getValue()))).toList();
             siguiente = new EjecucionVista(anterior.id(),
                     ejecucion.marcapasos.pausada() ? Estado.PAUSADA : Estado.EN_CURSO,
                     anterior.escenario(), anterior.algoritmo(), anterior.inicio(), ventana.hasta,
-                    LocalDateTime.now(), hayPlan ? ventana.avance : anterior.avance(),
-                    ventana.vehiculos, hayPlan ? ventana.rutas : List.of(),
-                    hayPlan ? ventana.noAsignados : List.of(), null, null, null, false,
-                    ritmoVista(ejecucion), hayPlan ? ventana.trayectos : List.of(), null);
+                    LocalDateTime.now(), ventana.avance != null ? ventana.avance : anterior.avance(),
+                    ventana.vehiculos, ventana.rutas == null ? anterior.rutas() : ventana.rutas,
+                    ventana.noAsignados == null ? anterior.noAsignados() : ventana.noAsignados,
+                    null, null, null, false, ritmoVista(ejecucion), trayectos, null);
         }
         actualizar(ejecucion, siguiente, siguiente.rutas().isEmpty()
                 && !siguiente.noAsignados().isEmpty() ? "PLAN_SIN_ASIGNACIONES" : "PROGRESO");
@@ -551,7 +597,7 @@ final class EjecucionesService {
         int disponibles = (int) vehiculos.stream()
                 .filter(v -> v.estado().equals(EstadoVehiculo.DISPONIBLE.name())).count();
         AvanceVista avance = ejecucion.vista.avance();
-        return new ColapsoVista(resumen.instanteDelColapso(), vista, ejecucion.ventana,
+        return new ColapsoVista(resumen.instanteDelColapso(), vista, (int) ejecucion.limitesPublicados,
                 reloj.ahoraMs() - ejecucion.inicioRealMs,
                 avance == null ? resumen.pedidosOriginalesCompletos() : avance.pedidosEntregados(),
                 resumen.vencidos().size(), resumen.pedidosPendientes(), disponibles, averiados,
@@ -600,14 +646,17 @@ final class EjecucionesService {
         RitmoEscenario ritmo = ejecucion.ritmo;
         Duration sc = ritmo.saltoDelConsumo();
         long publicado = ejecucion.marcapasos.publicadoMs();
-        return new RitmoVista(ritmo.saMs(), sc.toMillis() / 60_000.0,
-                (double) sc.toMillis() / ritmo.saMs(), ritmo.duracionObjetivoMin(),
-                ritmo.velocidad(), ejecucion.ventana, (int) ritmo.ventanas(ejecucion.horizonte),
-                ejecucion.ventanaDesde, ejecucion.ventanaHasta,
-                publicado < 0 ? reloj.ahoraMs() : publicado,
+        long duracion = ejecucion.marcapasos.duracionMs();
+        long simulado = Duration.between(ejecucion.ventanaDesde, ejecucion.ventanaHasta).toMillis();
+        // K de la ventana visible: lo simulado entre sus cortes repartido en su duración real.
+        double k = simulado > 0 ? (double) simulado / duracion : (double) sc.toMillis() / ritmo.saMs();
+        return new RitmoVista(ritmo.saMs(), sc.toMillis() / 60_000.0, k,
+                ritmo.duracionObjetivoMin(), ritmo.velocidad(), (int) ejecucion.limitesPublicados,
+                (int) ritmo.ventanas(ejecucion.horizonte), ejecucion.ventanaDesde,
+                ejecucion.ventanaHasta, publicado < 0 ? reloj.ahoraMs() : publicado,
                 ejecucion.marcapasos.transcurridoAlPausarMs(), reloj.ahoraMs(),
                 ejecucion.marcapasos.rebasadas(),
-                ritmo.duracionEstimada(ejecucion.horizonte).toMillis());
+                ritmo.duracionEstimada(ejecucion.horizonte).toMillis(), duracion);
     }
 
     private static EjecucionVista conRitmo(EjecucionVista a, RitmoVista ritmo) {
@@ -663,14 +712,22 @@ final class EjecucionesService {
     @PreDestroy
     void detener() { executor.shutdownNow(); }
 
-    /** Lo que se va juntando de una ventana mientras se calcula; se publica de una vez. */
+    /**
+     * Lo que se va juntando de una ventana mientras se calcula, iteración por iteración del
+     * simulador; se publica de una vez al cruzar el límite de la grilla.
+     */
     private static final class Ventana {
-        LocalDateTime relojPlan;
+        LocalDateTime desde;
         LocalDateTime hasta;
+        LocalDateTime relojPlan;
+        boolean huboPlan;
         List<RutaVista> rutas;
         List<PedidoVista> noAsignados;
         AvanceVista avance;
-        List<TrayectoVista> trayectos = List.of();
+        List<TrayectoVista> trayectosIteracion = List.of();
+        final Map<String, List<ApiModels.PasoVista>> trayectos = new LinkedHashMap<>();
+        final List<PlanVista> planes = new ArrayList<>();
+        final List<FotogramaVista> fotogramas = new ArrayList<>();
         List<VehiculoVista> vehiculos;
         InventarioVista inventario;
     }
@@ -679,6 +736,7 @@ final class EjecucionesService {
         final RitmoEscenario ritmo;
         final Marcapasos marcapasos;
         final Duration horizonte;
+        final LocalDateTime inicio;
         volatile EjecucionVista vista;
         volatile Future<?> tarea;
         volatile Simulador simulador;
@@ -695,7 +753,7 @@ final class EjecucionesService {
         long siguientePlan;
         long siguienteEvento;
         long inicioRealMs;
-        int ventana;
+        long limitesPublicados;
         int replanificaciones;
         LocalDateTime ventanaDesde;
         LocalDateTime ventanaHasta;
@@ -705,6 +763,7 @@ final class EjecucionesService {
             this.ritmo = ritmo;
             this.marcapasos = marcapasos;
             this.horizonte = horizonte;
+            this.inicio = inicio;
             this.ventanaDesde = inicio;
             this.ventanaHasta = inicio;
         }

@@ -9,7 +9,10 @@ import java.util.Set;
 
 /**
  * Ritmo de cada escenario: cuánto tiempo real dura una ventana (Sa) y cuánta operación
- * consume (Sc = Sa × K).
+ * se publica en ella (Sc = Sa × K).
+ *
+ * Es solo presentación: el simulador replanifica con su propia cadencia y ninguna decisión
+ * depende de Sa ni de Sc.
  *
  * <ul>
  *   <li>Cinco días: se fija la duración objetivo (30 a 60 min, 40 por defecto) y con Sa de
@@ -19,8 +22,9 @@ import java.util.Set;
  *       máximo en una hora y la corrida se corta en el primer incumplimiento.</li>
  * </ul>
  *
- * Sc se mantiene corto frente a los plazos: con ventanas de varias horas, una avería o un
- * pedido priorizado esperaría todo ese tiempo antes de replanificarse.
+ * Sc se mantiene en una o dos horas: el servidor calcula una ventana por delante de lo que se
+ * ve, así que una avería registrada desde la pantalla entra al simulador al final de la ventana
+ * visible. Con ventanas de varias horas ese desfase se notaría.
  */
 record RitmoEscenario(Ritmo ritmo, Integer duracionObjetivoMin, Integer velocidad) {
     static final int DURACION_5_DIAS_POR_DEFECTO_MIN = 40;

@@ -112,6 +112,16 @@ class MarcapasosTest {
                 "salió " + (siguiente - tarde) + " ms después");
     }
 
+    @Test
+    void unaVentanaQueCruzaVariosLimitesSeVeNVecesSa() throws Exception {
+        RelojSimulado reloj = new RelojSimulado();
+        Marcapasos marcapasos = new Marcapasos(reloj, 20_000);
+        long inicio = marcapasos.publicar(90); // media hora simulada a tiempo real
+        assertEquals(1_800_000, marcapasos.duracionMs());
+        marcapasos.esperarCierre();
+        assertEquals(1_800_000, reloj.ahoraMs() - inicio);
+    }
+
     /** Simula una corrida completa: cálculo de Ta, publicación y espera, ventana por ventana. */
     private static long recorrer(RitmoEscenario ritmo, Duration horizonte, long taMs) throws Exception {
         RelojSimulado reloj = new RelojSimulado();

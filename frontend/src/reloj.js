@@ -22,11 +22,16 @@ export function desfaseConServidor(ritmo, recibidoMs) {
   return ritmo && Number.isFinite(ritmo.servidorAhoraMs) ? recibidoMs - ritmo.servidorAhoraMs : 0;
 }
 
-/** Cuánto de la ventana visible corresponde haber reproducido ahora, entre 0 y Sa. */
+/** Cuánto dura en pantalla la ventana visible (n × Sa si abarca varios saltos). */
+export function duracionVentana(ritmo) {
+  return ritmo.duracionVentanaMs || ritmo.saMs;
+}
+
+/** Cuánto de la ventana visible corresponde haber reproducido ahora, entre 0 y su duración. */
 export function transcurridoObjetivo(ritmo, ahoraMs, desfaseMs = 0) {
   if (ritmo.transcurridoAlPausarMs != null) return ritmo.transcurridoAlPausarMs;
   const ahoraEnServidor = ahoraMs - desfaseMs;
-  return Math.max(0, Math.min(ritmo.saMs, ahoraEnServidor - ritmo.publicadoMs));
+  return Math.max(0, Math.min(duracionVentana(ritmo), ahoraEnServidor - ritmo.publicadoMs));
 }
 
 /** Instante simulado: inicio de la ventana más lo reproducido por K, sin pasar del corte. */

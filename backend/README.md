@@ -39,7 +39,10 @@ resultados **todavía no** se persisten.
 | `GET /api/ejecuciones/{id}/inventario` | Existencias actuales de los almacenes al reloj publicado. |
 | `GET /api/ejecuciones/{id}/averias` | Averías registradas y su estado. |
 | `POST /api/ejecuciones/{id}/averias` | Registra una avería durante una corrida activa. |
-| `POST /api/ejecuciones/{id}/cancelar` | Cancela la corrida. |
+| `POST /api/ejecuciones/{id}/cancelar` | Detiene la corrida (estado `CANCELADA`). |
+| `POST /api/ejecuciones/{id}/pausar` | Congela el ritmo; estado `PAUSADA`. |
+| `POST /api/ejecuciones/{id}/reanudar` | Retoma la ventana donde quedó; estado `EN_CURSO`. |
+| `GET /api/ejecuciones/{id}/eventos?desde=N` | Hechos de la operación: `AVERIA_REGISTRADA`, `AVERIA_APLICADA`, `REPLANIFICACION` (pedido, unidad anterior y nueva o por planificar) y `COLAPSO`. |
 | `WS /ws/ejecuciones/{id}` | Instantanea inicial y eventos posteriores. |
 
 Ejemplo de cuerpo para operacion diaria:
@@ -50,9 +53,8 @@ Ejemplo de cuerpo para operacion diaria:
 
 Para cinco dias usar `PERIODO_5_DIAS`; para colapso usar `COLAPSO` y,
 opcionalmente, `horizonteDias` entre 1 y 60. El segundo algoritmo se llama
-`TABU`. Para demostrar una avería
-en vivo, `pausaMs` opcional de 0 a 500 ralentiza cada salto; la GUI usa 100 ms
-en modo interactivo. Omitirlo en mediciones. El cuerpo de avería es
+`TABU`. El campo `pausaMs` (0 a 500) se sigue aceptando por compatibilidad,
+pero ya no hace falta para registrar averías. El cuerpo de avería es
 `{"unidadId":"TA01","tipo":"TIPO_3"}`. El stock de `/datos/mapa` es inicial;
 `/ejecuciones/{id}/inventario` es dinámico y el central devuelve
 `ilimitado=true`, `disponible=null`.
@@ -82,6 +84,34 @@ rutas y paradas simultáneas de ese instante. `/planes` se pagina igual que
 `/fotogramas` y conserva hasta 2048 versiones por ejecución. El plan sirve
 para mostrar lo previsto en ese momento; no equivale a un historial GPS ni
 certifica la entrega de cada pedido.
+
+## Ritmo de la simulación
+
+La corrida se publica por ventanas: cada `Sa` segundos reales sale una
+ventana de unos `Sc` minutos simulados (`K = Sc / Sa`). El simulador conserva
+su propia cadencia de replanificación (latido de 30 min, mínimo de 15 y cortes
+por llegadas, bloqueos y averías), así que **el ritmo no cambia ninguna
+decisión**: solo decide cuándo se publica. El backend junta las iteraciones
+hasta cruzar el siguiente límite de una grilla fija de `Sc`, publica la
+ventana entera (planes, recorridos, posiciones e inventario) y espera n × Sa
+(n = límites cruzados, más de uno solo a tiempo real) descontando lo que tardó
+el cálculo. Así la duración total es N × Sa.
+
+| Escenario | Por defecto | Campos opcionales |
+| --- | --- | --- |
+| `PERIODO_5_DIAS` | 40 min reales: 120 ventanas de 1 h cada 20 s | `duracionObjetivoMin` (30 a 60) o `minutosPorVentana` + `segundosPorVentana` (el total debe quedar entre 30 y 60 min) |
+| `OPERACION_DIARIA` | 60×: 20 min simulados cada 20 s (24 min el día) | `velocidad` 1, 10, 60 o 240 (1 = tiempo real) |
+| `COLAPSO` | 2 h simuladas cada 10 s (30 días ≤ 1 h); se corta en el primer pedido vencido | `minutosPorVentana`, `segundosPorVentana` |
+
+`ejecucion.ritmo` trae `saMs`, `minutosPorVentana`, `ventana`/`ventanas`,
+`relojDesde`/`relojHasta` de la ventana visible, su `duracionVentanaMs` y su
+`k` real, `publicadoMs` (cuándo se publicó) y `servidorAhoraMs`; con eso la
+GUI ancla su reloj al tiempo real.
+En pausa llega `transcurridoAlPausarMs`. `ejecucion.trayectos` son los hitos
+de cada unidad en la ventana (salida, almacén, entrega, fin de entrega y
+corte) con su hora; cada `PlanVista` los guarda junto a `hasta`. Si la
+corrida colapsa, `ejecucion.colapso` detalla pedido, instante, ventana,
+tiempo real y métricas en ese momento. Hasta tres corridas avanzan a la vez.
 
 Las coordenadas son celdas de la grilla del modelo, no latitud/longitud. La
 GUI React consume este contrato; el HTML v6 permanece como referencia visual.

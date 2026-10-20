@@ -37,6 +37,12 @@ public interface Observador {
             AvanceDeLaOperacion avance
     );
 
+    /**
+     * Recorrido de cada unidad que se movió entre {@code desde} y {@code hasta}. Llega antes de
+     * {@link #alAvanzar}; las unidades que no aparecen se quedaron quietas.
+     */
+    default void alEjecutar(LocalDateTime desde, LocalDateTime hasta, List<Trayecto> trayectos) { }
+
     /** Posiciones ya ejecutadas al cierre de cada salto; no son rutas futuras. */
     default void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) { }
 

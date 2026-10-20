@@ -9,6 +9,8 @@ import com.paqrap.api.ApiModels.ResumenVista;
 import com.paqrap.api.ApiModels.RutaVista;
 import com.paqrap.api.ApiModels.VehiculoVista;
 import com.paqrap.api.ApiModels.StockAlmacenVista;
+import com.paqrap.api.ApiModels.PasoVista;
+import com.paqrap.api.ApiModels.TrayectoVista;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Almacen;
 import com.paqrap.modelo.Bloqueo;
@@ -18,6 +20,7 @@ import com.paqrap.modelo.Vehiculo;
 import com.paqrap.simulacion.AvanceDeLaOperacion;
 import com.paqrap.simulacion.MedicionDePlanificacion;
 import com.paqrap.simulacion.ResumenSimulacion;
+import com.paqrap.simulacion.Trayecto;
 
 import java.util.List;
 
@@ -84,5 +87,12 @@ final class Vistas {
                 resumen.iteracionesDePlanificacion(), resumen.huboColapso(),
                 resumen.instanteDelColapso(), resumen.pedidoQueColapso() == null
                         ? null : resumen.pedidoQueColapso().getId());
+    }
+
+    static TrayectoVista trayecto(Trayecto trayecto) {
+        return new TrayectoVista(trayecto.unidadId(), trayecto.pasos().stream()
+                .map(p -> new PasoVista(coordenada(p.ubicacion()), p.instante(), p.hito().name(),
+                        p.pedidoId()))
+                .toList());
     }
 }

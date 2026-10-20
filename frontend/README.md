@@ -30,8 +30,17 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
 - El catálogo procede de los TXT del curso o de MySQL, según el perfil del backend.
 - El mapa distingue los tres almacenes y los nodos bloqueados vigentes a la hora simulada.
 - El usuario selecciona periodo, fecha/hora, escenario y algoritmo.
-- Puede activar modo interactivo para registrar una avería de una unidad
-  durante la corrida. Ese modo añade pausas y no sirve para medir rendimiento.
+- El ritmo lo marca el servidor: 5 días con duración objetivo de 30 a 60 min,
+  día a día a 1×, 10×, 60× o 240×, y colapso a 2 h simuladas cada 10 s.
+- El reloj en vivo se ancla al tiempo real (`src/reloj.js`): el instante sale
+  del tiempo transcurrido desde que el servidor publicó la ventana, con un tope
+  por cuadro para no saltar al volver a una pestaña dormida. Cada unidad sigue
+  los hitos de su recorrido que informa el simulador.
+- Pausar, Reanudar y Detener cambian el estado en el servidor. Las averías se
+  registran durante la corrida (también en pausa); sus pedidos se replanifican
+  y aparecen en Alertas.
+- Al recargar, la corrida se retoma desde `?ejecucion=...` o desde el
+  navegador. Si el servidor se reinició, se avisa y hay que iniciar otra.
 - Los intermedios muestran inventario actualizado y el central se indica como
   ilimitado. Durante la reproducción histórica, el stock sigue siendo el
   último publicado; no existe historial de stock por fotograma.
@@ -39,8 +48,8 @@ Copiar el contenido de `dist/` a la raíz web servida por nginx. Consultar
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado
   si la conexión en vivo se interrumpe.
 - El mapa consulta además los fotogramas de posiciones realmente ejecutadas.
-  Los reproduce a ritmo visible aunque el cálculo haya terminado en segundos;
-  incluye pausa, selección de instante y tres velocidades. Cuando varias
+  Con «Historial» o el deslizador se revisa lo ya ocurrido (pausa, selección de
+  instante y tres velocidades); «En vivo» vuelve al reloj de la corrida. Cuando varias
   unidades comparten nodo se muestra un contador para evitar iconos superpuestos.
 - Consulta el historial paginado de planes: al mover el reloj muestra las
   rutas que estaban vigentes entonces, incluidas las simultáneas. Cada ruta

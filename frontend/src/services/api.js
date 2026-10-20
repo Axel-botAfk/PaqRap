@@ -45,7 +45,11 @@ export const api = {
     `/api/ejecuciones/${encodeURIComponent(id)}/planes?desde=${encodeURIComponent(desde)}`),
   cancelar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/cancelar`, {
     method: 'POST'
-  })
+  }),
+  pausar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/pausar`, { method: 'POST' }),
+  reanudar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/reanudar`, { method: 'POST' }),
+  eventos: (id, desde = 0) => solicitud(
+    `/api/ejecuciones/${encodeURIComponent(id)}/eventos?desde=${encodeURIComponent(desde)}`)
 };
 
 export function urlWebSocket(id) {

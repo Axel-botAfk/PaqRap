@@ -442,8 +442,10 @@ public final class Simulador {
                 reconciliarParticiones(plan, pendientes);
 
                 int antesDeEjecutar = entregas.size();
+                List<Trayecto> trayectos = new ArrayList<>();
                 ejecutar(plan, reloj, corte, unidades, inventario, cargaDeLaUnidad,
-                        pendientes, entregas, acumulado);
+                        pendientes, entregas, acumulado, trayectos);
+                observador.alEjecutar(reloj, corte, List.copyOf(trayectos));
                 for (int i = antesDeEjecutar; i < entregas.size(); i++) {
                     entregasPorDia.merge(entregas.get(i).llegada().toLocalDate(), 1, Integer::sum);
                 }
@@ -523,7 +525,8 @@ public final class Simulador {
             Map<String, CargaEnAlmacen> cargaDeLaUnidad,
             List<Pedido> pendientes,
             List<Entrega> entregas,
-            Acumulado acumulado
+            Acumulado acumulado,
+            List<Trayecto> trayectos
     ) {
         List<Ruta> viajesDelPlan = plan.getRutas();
 
@@ -541,6 +544,9 @@ public final class Simulador {
             Ubicacion posicion = unidad.getUbicacion();
             LocalDateTime libre = Evaluador.libreDesde(unidad, reloj);
             int aBordo = unidad.getCargaABordo();
+            // Solo para quien dibuja: hitos del recorrido, sin efecto sobre la ejecución.
+            List<Trayecto.Paso> pasos = new ArrayList<>();
+            pasos.add(new Trayecto.Paso(posicion, libre, Trayecto.Hito.SALIDA, null));
 
             for (int i = 0; i < viajes.size(); i++) {
                 MetricasRuta medida = metricas.get(i);
@@ -559,6 +565,8 @@ public final class Simulador {
                     acumulado.sumar(haciaElAlmacen.kilometros(), unidad.getCostoPorKm());
                     posicion = haciaElAlmacen.posicion();
                     libre = haciaElAlmacen.instante();
+                    pasos.add(new Trayecto.Paso(posicion, libre, haciaElAlmacen.llego()
+                            ? Trayecto.Hito.ALMACEN : Trayecto.Hito.CORTE, null));
                     if (!haciaElAlmacen.llego()) {
                         // El corte la encontró camino al almacén; sigue desde esa esquina.
                         break;
@@ -601,6 +609,8 @@ public final class Simulador {
                     posicion = haciaElCliente.posicion();
 
                     if (!haciaElCliente.llego()) {
+                        pasos.add(new Trayecto.Paso(posicion, haciaElCliente.instante(),
+                                Trayecto.Hito.CORTE, null));
                         // Va en camino con el producto encima: no hay entrega que registrar, el
                         // pedido sigue pendiente y la carga viaja con ella hasta la próxima
                         // planificación, que decidirá si sigue a este cliente o a otro.
@@ -623,6 +633,12 @@ public final class Simulador {
                             ? Turnos.avanzar(
                                     llegada, Evaluador.HORAS_ACONDICIONAMIENTO_POR_ENTREGA)
                             : llegada;
+                    pasos.add(new Trayecto.Paso(posicion, llegada, Trayecto.Hito.ENTREGA,
+                            pedido.getId()));
+                    if (libre.isAfter(llegada)) {
+                        pasos.add(new Trayecto.Paso(posicion, libre, Trayecto.Hito.FIN_ENTREGA,
+                                pedido.getId()));
+                    }
                 }
 
                 if (interrumpido) {
@@ -635,6 +651,9 @@ public final class Simulador {
                 cargaDeLaUnidad.remove(unidad.getId());
             }
             unidades.put(unidad.getId(), unidad.tras(posicion, libre, restante));
+            if (pasos.size() > 1) {
+                trayectos.add(new Trayecto(unidad.getId(), pasos));
+            }
         }
     }
 

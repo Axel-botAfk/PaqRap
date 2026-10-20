@@ -87,11 +87,15 @@ certifica la entrega de cada pedido.
 
 ## Ritmo de la simulación
 
-La corrida avanza por ventanas: cada `Sa` segundos reales se publica una
-ventana que consume `Sc` minutos simulados (`K = Sc / Sa`). El backend calcula
-la ventana, la publica entera (plan, recorridos, posiciones e inventario) y
-espera su turno antes de calcular la siguiente; la espera descuenta lo que
-tardó el cálculo, así que N ventanas duran N × Sa.
+La corrida se publica por ventanas: cada `Sa` segundos reales sale una
+ventana de unos `Sc` minutos simulados (`K = Sc / Sa`). El simulador conserva
+su propia cadencia de replanificación (latido de 30 min, mínimo de 15 y cortes
+por llegadas, bloqueos y averías), así que **el ritmo no cambia ninguna
+decisión**: solo decide cuándo se publica. El backend junta las iteraciones
+hasta cruzar el siguiente límite de una grilla fija de `Sc`, publica la
+ventana entera (planes, recorridos, posiciones e inventario) y espera n × Sa
+(n = límites cruzados, más de uno solo a tiempo real) descontando lo que tardó
+el cálculo. Así la duración total es N × Sa.
 
 | Escenario | Por defecto | Campos opcionales |
 | --- | --- | --- |
@@ -99,9 +103,10 @@ tardó el cálculo, así que N ventanas duran N × Sa.
 | `OPERACION_DIARIA` | 60×: 20 min simulados cada 20 s (24 min el día) | `velocidad` 1, 10, 60 o 240 (1 = tiempo real) |
 | `COLAPSO` | 2 h simuladas cada 10 s (30 días ≤ 1 h); se corta en el primer pedido vencido | `minutosPorVentana`, `segundosPorVentana` |
 
-`ejecucion.ritmo` trae `saMs`, `minutosPorVentana`, `k`, `ventana`/`ventanas`,
-`relojDesde`/`relojHasta` de la ventana visible, `publicadoMs` (cuándo se
-publicó) y `servidorAhoraMs`; con eso la GUI ancla su reloj al tiempo real.
+`ejecucion.ritmo` trae `saMs`, `minutosPorVentana`, `ventana`/`ventanas`,
+`relojDesde`/`relojHasta` de la ventana visible, su `duracionVentanaMs` y su
+`k` real, `publicadoMs` (cuándo se publicó) y `servidorAhoraMs`; con eso la
+GUI ancla su reloj al tiempo real.
 En pausa llega `transcurridoAlPausarMs`. `ejecucion.trayectos` son los hitos
 de cada unidad en la ventana (salida, almacén, entrega, fin de entrega y
 corte) con su hora; cada `PlanVista` los guarda junto a `hasta`. Si la

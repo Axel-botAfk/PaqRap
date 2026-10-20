@@ -110,6 +110,35 @@ export function prepararTrayectos(trayectos, aMs, bloqueados = new Set()) {
   }));
 }
 
+/**
+ * Trazo de cada ruta en vivo, hecho con los mismos caminos por los que se mueve la unidad: lo
+ * que recorre en la ventana y, desde donde queda, las paradas que le faltan. Así la unidad va
+ * siempre encima de su línea. Las rutas de una unidad sin recorrido se trazan desde su almacén.
+ */
+export function trazosConRecorrido(rutas, preparados, bloqueados = new Set()) {
+  const yaTrazadas = new Set();
+  return rutas.map(ruta => {
+    const preparado = preparados?.get(ruta.vehiculoId);
+    if (!preparado?.pasos.length) return { ruta, tramos: tramosDeRuta(ruta, bloqueados) };
+    const entregados = new Set(preparado.pasos
+      .filter(paso => paso.hito === 'ENTREGA' && paso.pedidoId).map(paso => paso.pedidoId));
+    const paradas = ruta.paradas || [];
+    const primeraDeLaUnidad = !yaTrazadas.has(ruta.vehiculoId);
+    yaTrazadas.add(ruta.vehiculoId);
+    const tramos = primeraDeLaUnidad
+      ? preparado.tramos.map(tramo => tramo.camino).filter(camino => camino.length > 1) : [];
+    const enCurso = primeraDeLaUnidad || paradas.some(parada => entregados.has(parada.id));
+    let origen = enCurso ? preparado.pasos[preparado.pasos.length - 1].ubicacion : ruta.origen;
+    for (const parada of paradas) {
+      if (entregados.has(parada.id)) continue;
+      const tramo = caminoEnGrilla(origen, parada.destino, bloqueados);
+      if (tramo.length > 1) tramos.push(tramo);
+      origen = parada.destino;
+    }
+    return { ruta, tramos };
+  });
+}
+
 /** Dónde está la unidad en el instante dado según sus hitos; null si no tiene recorrido. */
 export function posicionEnTrayecto(preparado, instanteMs) {
   if (!preparado?.pasos.length) return null;

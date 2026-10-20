@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
 import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosDeRuta, planVigenteEn,
-  prepararTrayectos, posicionEnTrayecto } from './mapa.js';
+  prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from './mapa.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor } from './reloj.js';
 
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
@@ -177,7 +177,9 @@ function MapaOperacion({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, ma
     cuadro = requestAnimationFrame(animar);
     return () => cancelAnimationFrame(cuadro);
   }, [fotograma, posicionesObservadas, bloqueados, pasoMs]);
-  const trazos = useMemo(() => rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados]);
+  const trazos = useMemo(() => trayectosPreparados
+    ? trazosConRecorrido(rutas, trayectosPreparados, bloqueados)
+    : rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados, trayectosPreparados]);
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const puntos = rutas.flatMap(ruta => ruta.paradas.map((parada, indice) => ({
     ruta, parada, orden: indice + 1, ultima: indice === ruta.paradas.length - 1

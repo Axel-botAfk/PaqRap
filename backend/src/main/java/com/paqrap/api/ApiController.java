@@ -9,6 +9,7 @@ import com.paqrap.api.ApiModels.MapaDatosVista;
 import com.paqrap.api.ApiModels.RegistrarAveriaRequest;
 import com.paqrap.api.ApiModels.AveriaVista;
 import com.paqrap.api.ApiModels.InventarioVista;
+import com.paqrap.api.ApiModels.EventosOperacionVista;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -72,6 +73,18 @@ class ApiController {
 
     @PostMapping("/ejecuciones/{id}/cancelar")
     EjecucionVista cancelar(@PathVariable UUID id) { return ejecuciones.cancelar(id); }
+
+    @PostMapping("/ejecuciones/{id}/pausar")
+    EjecucionVista pausar(@PathVariable UUID id) { return ejecuciones.pausar(id); }
+
+    @PostMapping("/ejecuciones/{id}/reanudar")
+    EjecucionVista reanudar(@PathVariable UUID id) { return ejecuciones.reanudar(id); }
+
+    @GetMapping("/ejecuciones/{id}/eventos")
+    EventosOperacionVista eventos(@PathVariable UUID id,
+                                  @RequestParam(defaultValue = "0") long desde) {
+        return ejecuciones.eventosOperacion(id, desde);
+    }
 
     @GetMapping("/ejecuciones/{id}/inventario")
     InventarioVista inventario(@PathVariable UUID id) { return ejecuciones.inventario(id); }

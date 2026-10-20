@@ -67,6 +67,24 @@ class ApiControllerTest {
     }
 
     @Test
+    void rechazaDuracionDeCincoDiasFueraDeRango() throws Exception {
+        mvc.perform(post("/api/ejecuciones")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"escenario\":\"PERIODO_5_DIAS\",\"algoritmo\":\"GRASP\",\"inicio\":\"2026-09-01T00:00:00\",\"duracionObjetivoMin\":90}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("RITMO_INVALIDO"));
+    }
+
+    @Test
+    void controlesDeUnaEjecucionInexistenteDevuelven404() throws Exception {
+        String base = "/api/ejecuciones/00000000-0000-0000-0000-000000000001";
+        mvc.perform(post(base + "/pausar")).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.codigo").value("EJECUCION_NO_ENCONTRADA"));
+        mvc.perform(post(base + "/reanudar")).andExpect(status().isNotFound());
+        mvc.perform(get(base + "/eventos")).andExpect(status().isNotFound());
+    }
+
+    @Test
     void rechazaAveriaSinTipoYConsultaInexistente() throws Exception {
         mvc.perform(post("/api/ejecuciones/00000000-0000-0000-0000-000000000001/averias")
                 .contentType(MediaType.APPLICATION_JSON)

@@ -15,7 +15,7 @@ public final class ApiModels {
 
     public enum Escenario { OPERACION_DIARIA, PERIODO_5_DIAS, COLAPSO }
     public enum Algoritmo { GRASP, TABU }
-    public enum Estado { PENDIENTE, EN_CURSO, TERMINADA, COLAPSADA, FALLIDA, CANCELADA }
+    public enum Estado { PENDIENTE, EN_CURSO, PAUSADA, TERMINADA, COLAPSADA, FALLIDA, CANCELADA }
 
     public record CrearEjecucionRequest(
             @NotNull Escenario escenario,
@@ -23,17 +23,36 @@ public final class ApiModels {
             @NotNull LocalDateTime inicio,
             Integer horizonteDias,
             Long semilla,
-            Integer pausaMs
+            Integer pausaMs,
+            /** Solo 5 días: minutos reales que debe durar la corrida (30 a 60). */
+            Integer duracionObjetivoMin,
+            /** Solo día a día: veces más rápido que el reloj real (1, 10, 60 o 240). */
+            Integer velocidad,
+            /** Opcional: minutos simulados por ventana (Sc); se combina con Sa. */
+            Integer minutosPorVentana,
+            /** Opcional: segundos reales por ventana (Sa). */
+            Integer segundosPorVentana
     ) {
         public CrearEjecucionRequest(Escenario escenario, Algoritmo algoritmo,
                 LocalDateTime inicio, Integer horizonteDias, Long semilla) {
             this(escenario, algoritmo, inicio, horizonteDias, semilla, null);
         }
+
+        public CrearEjecucionRequest(Escenario escenario, Algoritmo algoritmo,
+                LocalDateTime inicio, Integer horizonteDias, Long semilla, Integer pausaMs) {
+            this(escenario, algoritmo, inicio, horizonteDias, semilla, pausaMs,
+                    null, null, null, null);
+        }
     }
 
     public record RegistrarAveriaRequest(@NotBlank String unidadId, @NotNull TipoAveria tipo) { }
     public record AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,
-                             String estado) { }
+                             String estado, int pedidosAfectados) {
+        public AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,
+                String estado) {
+            this(unidadId, tipo, instante, estado, 0);
+        }
+    }
     public record StockAlmacenVista(String id, String tipo, Coordenada ubicacion,
                                    Integer disponible, boolean ilimitado) { }
     public record InventarioVista(LocalDateTime reloj, List<StockAlmacenVista> almacenes) { }
@@ -58,8 +77,21 @@ public final class ApiModels {
     public record FotogramasVista(long primero, long siguiente, boolean completo,
                                  List<FotogramaVista> fotogramas) { }
 
-    /** Plan que estuvo vigente desde este instante hasta la siguiente replanificación. */
-    public record PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas) { }
+    /** Hito del recorrido de una unidad dentro de una ventana. */
+    public record PasoVista(Coordenada ubicacion, LocalDateTime instante, String hito,
+                            String pedidoId) { }
+    public record TrayectoVista(String vehiculoId, List<PasoVista> pasos) { }
+
+    /**
+     * Plan que estuvo vigente desde este instante hasta la siguiente replanificación, con lo que
+     * cada unidad alcanzó a recorrer de él antes del corte {@code hasta}.
+     */
+    public record PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas,
+                            LocalDateTime hasta, List<TrayectoVista> trayectos) {
+        public PlanVista(long indice, LocalDateTime reloj, List<RutaVista> rutas) {
+            this(indice, reloj, rutas, null, List.of());
+        }
+    }
     public record PlanesVista(long primero, long siguiente, boolean completo,
                              List<PlanVista> planes) { }
 
@@ -88,7 +120,8 @@ public final class ApiModels {
             LocalDateTime inicio, LocalDateTime reloj, LocalDateTime actualizado,
             AvanceVista avance, List<VehiculoVista> vehiculos, List<RutaVista> rutas,
             List<PedidoVista> noAsignados, ResumenVista resumen,
-            String codigoError, String mensajeError, boolean calculandoRutas
+            String codigoError, String mensajeError, boolean calculandoRutas,
+            RitmoVista ritmo, List<TrayectoVista> trayectos, ColapsoVista colapso
     ) {
         public EjecucionVista(UUID id, Estado estado, Escenario escenario, Algoritmo algoritmo,
                 LocalDateTime inicio, LocalDateTime reloj, LocalDateTime actualizado,
@@ -98,7 +131,43 @@ public final class ApiModels {
             this(id, estado, escenario, algoritmo, inicio, reloj, actualizado, avance,
                     vehiculos, rutas, noAsignados, resumen, codigoError, mensajeError, false);
         }
+
+        public EjecucionVista(UUID id, Estado estado, Escenario escenario, Algoritmo algoritmo,
+                LocalDateTime inicio, LocalDateTime reloj, LocalDateTime actualizado,
+                AvanceVista avance, List<VehiculoVista> vehiculos, List<RutaVista> rutas,
+                List<PedidoVista> noAsignados, ResumenVista resumen,
+                String codigoError, String mensajeError, boolean calculandoRutas) {
+            this(id, estado, escenario, algoritmo, inicio, reloj, actualizado, avance,
+                    vehiculos, rutas, noAsignados, resumen, codigoError, mensajeError,
+                    calculandoRutas, null, List.of(), null);
+        }
     }
+
+    /**
+     * Ritmo de la corrida: cada {@code saMs} reales se publica una ventana de
+     * {@code minutosPorVentana} simulados. Con {@code publicadoMs} y {@code servidorAhoraMs} el
+     * visualizador ancla su reloj al tiempo real sin depender de cuántos cuadros dibuja.
+     */
+    public record RitmoVista(
+            long saMs, double minutosPorVentana, double k, Integer duracionObjetivoMin,
+            Integer velocidad, int ventana, int ventanas, LocalDateTime relojDesde,
+            LocalDateTime relojHasta, long publicadoMs, Long transcurridoAlPausarMs,
+            long servidorAhoraMs, int ventanasRebasadas, long duracionEstimadaMs
+    ) { }
+
+    /** Detalle del primer incumplimiento, con la foto de la operación en ese momento. */
+    public record ColapsoVista(
+            LocalDateTime instante, PedidoVista pedido, int ventana, long milisegundosReales,
+            int pedidosEntregados, int pedidosVencidos, int pedidosEnCola,
+            int vehiculosDisponibles, int vehiculosAveriados, int replanificaciones
+    ) { }
+
+    /** Hecho de la operación (replanificación, avería, colapso) en orden de ocurrencia. */
+    public record EventoOperacionVista(long indice, String tipo, LocalDateTime reloj,
+                                       String vehiculoId, String pedidoId,
+                                       String vehiculoNuevoId, String detalle) { }
+    public record EventosOperacionVista(long primero, long siguiente, boolean completo,
+                                        List<EventoOperacionVista> eventos) { }
 
     public record EventoVista(String tipo, EjecucionVista ejecucion) { }
     public record ErrorVista(String codigo, String mensaje) { }

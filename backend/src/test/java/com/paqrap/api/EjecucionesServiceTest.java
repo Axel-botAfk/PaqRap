@@ -15,7 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -26,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 class EjecucionesServiceTest {
     @TempDir Path datosTemporales;
     EjecucionesService servicio;
+    final RelojSimulado reloj = new RelojSimulado();
 
     @AfterEach
     void cerrar() {
@@ -36,10 +39,19 @@ class EjecucionesServiceTest {
     void cincoDiasTerminaConArchivosDelCurso() throws Exception {
         prepararDatosMinimos();
         servicio = crearServicio();
+        long arranque = reloj.ahoraMs();
         UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.PERIODO_5_DIAS,
                 Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L)).id();
         var fin = esperar(id);
         assertEquals(Estado.TERMINADA, fin.estado());
+        // Con el ritmo por defecto, 5 días toman entre 30 y 60 minutos de reloj de pared.
+        long transcurrido = reloj.ahoraMs() - arranque;
+        assertTrue(transcurrido >= 30 * 60_000L && transcurrido <= 60 * 60_000L,
+                "duró " + transcurrido + " ms");
+        assertEquals(120, fin.ritmo().ventanas());
+        assertEquals(120, fin.ritmo().ventana());
+        assertEquals(20_000, fin.ritmo().saMs());
+        assertEquals(60.0, fin.ritmo().minutosPorVentana());
         assertEquals(false, fin.calculandoRutas());
         assertEquals(LocalDateTime.of(2026, 9, 6, 0, 0), fin.reloj());
         assertNotNull(fin.resumen());
@@ -70,6 +82,7 @@ class EjecucionesServiceTest {
                     .isBefore(planes.planes().get(i - 1).reloj()));
         }
         assertThrows(ApiException.class, () -> servicio.planes(id, -1));
+        verificarTrayectos(planes.planes(), historial);
         assertTrue(historial.stream().anyMatch(f -> f.vehiculos().stream()
                 .anyMatch(v -> !v.ubicacion().equals(
                         historial.get(0).vehiculos().stream()
@@ -128,6 +141,125 @@ class EjecucionesServiceTest {
                 new RegistrarAveriaRequest(unidad, TipoAveria.TIPO_1)));
     }
 
+    @Test
+    void pausaReanudaYDetieneConEstadosClaros() throws Exception {
+        prepararDatosMinimos();
+        servicio = crearServicio();
+        UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L, 20)).id();
+        esperarEstado(id, Estado.EN_CURSO);
+        var pausada = servicio.pausar(id);
+        assertEquals(Estado.PAUSADA, pausada.estado());
+        assertNotNull(pausada.ritmo().transcurridoAlPausarMs());
+        Thread.sleep(150);
+        int ventana = servicio.consultar(id).ritmo().ventana();
+        Thread.sleep(300);
+        var sigue = servicio.consultar(id);
+        assertEquals(Estado.PAUSADA, sigue.estado());
+        assertEquals(ventana, sigue.ritmo().ventana(), "no avanza mientras está en pausa");
+        assertEquals(Estado.EN_CURSO, servicio.reanudar(id).estado());
+        assertThrows(ApiException.class, () -> servicio.reanudar(UUID.randomUUID()));
+        assertEquals(Estado.CANCELADA, servicio.cancelar(id).estado());
+        assertEquals(Estado.CANCELADA, esperar(id).estado());
+        assertThrows(ApiException.class, () -> servicio.pausar(id));
+    }
+
+    @Test
+    void averiaDeUnaUnidadConPedidosLosReplanifica() throws Exception {
+        // Un destino lejano: la unidad sigue en camino cuando se registra la avería.
+        Files.writeString(datosTemporales.resolve("ventas.202609.txt"),
+                "01d00h26m:69,49,c0497,06,36\n");
+        Files.writeString(datosTemporales.resolve("bloqueo.2609.txt"), "");
+        servicio = crearServicio();
+        AtomicReference<UUID> ejecucion = new AtomicReference<>();
+        AtomicReference<String> averiada = new AtomicReference<>();
+        // Se interviene desde la espera del marcapasos: la ventana ya se publicó y la siguiente
+        // todavía no se calcula, igual que cuando alguien pulsa el botón en el visualizador.
+        reloj.alDormir = () -> {
+            UUID id = ejecucion.get();
+            if (id == null || averiada.get() != null) return;
+            servicio.planes(id, 0).planes().stream()
+                    .flatMap(p -> p.rutas().stream()).findFirst().ifPresent(ruta -> {
+                        averiada.set(ruta.vehiculoId());
+                        servicio.registrarAveria(id,
+                                new RegistrarAveriaRequest(ruta.vehiculoId(), TipoAveria.TIPO_3));
+                    });
+        };
+        UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.COLAPSO, Algoritmo.GRASP,
+                LocalDateTime.of(2026, 9, 1, 0, 0), 1, 7L, null, null, null, 1, 1)).id();
+        ejecucion.set(id);
+        var fin = esperar(id);
+        assertNotNull(averiada.get(), "el plan nunca asignó el pedido");
+        var eventos = servicio.eventosOperacion(id, 0).eventos();
+        assertTrue(eventos.stream().anyMatch(e -> e.tipo().equals("AVERIA_APLICADA")
+                && e.vehiculoId().equals(averiada.get())), eventos.toString());
+        var replanificacion = eventos.stream()
+                .filter(e -> e.tipo().equals("REPLANIFICACION")).findFirst().orElseThrow();
+        assertEquals(averiada.get(), replanificacion.vehiculoId());
+        assertEquals("P-00001", replanificacion.pedidoId());
+        assertTrue(replanificacion.vehiculoNuevoId() == null
+                || !replanificacion.vehiculoNuevoId().equals(averiada.get()));
+        var averia = servicio.averias(id).get(0);
+        assertEquals("APLICADA", averia.estado());
+        assertEquals(1, averia.pedidosAfectados());
+        assertEquals(Estado.TERMINADA, fin.estado());
+    }
+
+    @Test
+    void colapsoInformaPedidoInstanteYMetricas() throws Exception {
+        // Plazo de una hora a 77 km del central: nadie llega a tiempo.
+        Files.writeString(datosTemporales.resolve("ventas.202609.txt"),
+                "01d00h26m:69,49,c0001,06,1\n");
+        Files.writeString(datosTemporales.resolve("bloqueo.2609.txt"), "");
+        servicio = crearServicio();
+        UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.COLAPSO, Algoritmo.TABU,
+                LocalDateTime.of(2026, 9, 1, 0, 0), 2, 7L)).id();
+        var fin = esperar(id);
+        assertEquals(Estado.COLAPSADA, fin.estado());
+        var colapso = fin.colapso();
+        assertNotNull(colapso);
+        assertEquals("P-00001", colapso.pedido().id());
+        assertEquals(LocalDateTime.of(2026, 9, 1, 1, 26), colapso.pedido().fechaLimite());
+        assertNotNull(colapso.instante());
+        assertTrue(colapso.ventana() >= 1);
+        assertEquals(1, colapso.pedidosVencidos());
+        assertTrue(colapso.vehiculosDisponibles() > 0);
+        assertTrue(fin.reloj().isBefore(LocalDateTime.of(2026, 9, 3, 0, 0)),
+                "la corrida se corta en el colapso");
+        assertTrue(servicio.eventosOperacion(id, 0).eventos().stream()
+                .anyMatch(e -> e.tipo().equals("COLAPSO") && "P-00001".equals(e.pedidoId())));
+    }
+
+    /** Cada recorrido avanza en el tiempo y termina donde el fotograma deja a la unidad. */
+    private static void verificarTrayectos(List<ApiModels.PlanVista> planes,
+                                           List<ApiModels.FotogramaVista> historial) {
+        boolean alguno = false;
+        for (var plan : planes) {
+            assertNotNull(plan.hasta());
+            var fotograma = historial.stream().filter(f -> f.reloj().equals(plan.hasta()))
+                    .findFirst().orElseThrow();
+            for (var trayecto : plan.trayectos()) {
+                alguno = true;
+                for (int i = 1; i < trayecto.pasos().size(); i++) {
+                    assertTrue(!trayecto.pasos().get(i).instante()
+                            .isBefore(trayecto.pasos().get(i - 1).instante()));
+                }
+                var unidad = fotograma.vehiculos().stream()
+                        .filter(v -> v.id().equals(trayecto.vehiculoId())).findFirst().orElseThrow();
+                assertEquals(unidad.ubicacion(),
+                        trayecto.pasos().get(trayecto.pasos().size() - 1).ubicacion());
+            }
+        }
+        assertTrue(alguno, "ninguna unidad registró recorrido");
+    }
+
+    private void esperarEstado(UUID id, Estado estado) throws Exception {
+        for (int intento = 0; intento < 500 && servicio.consultar(id).estado() != estado; intento++) {
+            Thread.sleep(10);
+        }
+        assertEquals(estado, servicio.consultar(id).estado());
+    }
+
     private void prepararDatosMinimos() throws Exception {
         Files.writeString(datosTemporales.resolve("ventas.202609.txt"),
                 "01d00h26m:26,15,c0497,06,36\n");
@@ -136,11 +268,11 @@ class EjecucionesServiceTest {
 
     private EjecucionesService crearServicio() {
         return new EjecucionesService(new DatosService(datosTemporales.toString()),
-                new EventosWebSocket(new ObjectMapper()));
+                new EventosWebSocket(new ObjectMapper()), reloj);
     }
 
     private ApiModels.EjecucionVista esperar(UUID id) throws Exception {
-        for (int intento = 0; intento < 1000; intento++) {
+        for (int intento = 0; intento < 3000; intento++) {
             var vista = servicio.consultar(id);
             if (vista.estado() == Estado.TERMINADA || vista.estado() == Estado.COLAPSADA
                     || vista.estado() == Estado.FALLIDA || vista.estado() == Estado.CANCELADA) {
@@ -148,7 +280,7 @@ class EjecucionesServiceTest {
             }
             Thread.sleep(20);
         }
-        fail("La simulacion minima no termino en 20 segundos");
+        fail("La simulacion minima no termino en 60 segundos");
         return null;
     }
 }

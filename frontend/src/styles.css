@@ -382,8 +382,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .rt .l1 { display: flex; align-items: center; gap: 8px; }
 .rt .l1 b { font: 800 12.5px Archivo; }
 .rt .num { margin-left: auto; font: 800 11.5px Archivo; white-space: nowrap; }
-.rt .l2 { font-size: 10.5px; color: var(--suave); }
+.rt .l2 { display: flex; align-items: baseline; gap: 8px; font-size: 10.5px; color: var(--suave); }
 .rt .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt .costo { margin-left: auto; font-weight: 800; white-space: nowrap; }
+.nota-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.nota-total b { font: 800 11.5px Archivo; color: var(--ink); white-space: nowrap; }
 
 .almacenes { display: grid; gap: 10px; }
 .almacen-linea { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
@@ -442,6 +445,45 @@ tbody tr:hover td { background: var(--ground); }
 .pill.r { background: var(--red); }
 .pill.n { background: #fff; color: var(--suave); border: 1px solid var(--line-strong); }
 
+/* Pestañas de la hoja de pedidos: reúnen las cuatro pantallas del prototipo sin tocar el
+   menú lateral, que sigue siendo el de las cuatro vistas del caso. */
+.hoja-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; border-bottom: 1.5px solid var(--line-strong); }
+.hoja-tabs button {
+  border: 0; background: transparent; padding: 8px 14px 9px;
+  font: 800 11.5px Archivo; letter-spacing: .03em; color: var(--suave);
+  border-bottom: 3px solid transparent; margin-bottom: -1.5px;
+}
+.hoja-tabs button:hover { color: var(--ink); }
+.hoja-tabs button.activo { color: var(--red-d); border-bottom-color: var(--red); }
+
+.pedido-alta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; }
+
+/* Lista de comprobaciones del alta: el estándar pide verlas todas, no una a una. */
+.chk { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.chk li { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.45; }
+.chk .pill { flex: none; min-width: 48px; text-align: center; }
+
+/* La ficha apila etiqueta y valor; `dl div` del riel los pone en fila y hay que deshacerlo. */
+.ficha-pedido { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px 20px; margin: 0; }
+.ficha-pedido div { display: block; padding: 0; border-bottom: 0; }
+.ficha-pedido dt { font: 800 9.5px Archivo; letter-spacing: .1em; color: var(--suave); }
+.ficha-pedido dd { margin: 4px 0 0; font: 800 13px Archivo; text-align: left; }
+
+.linea-tiempo { list-style: none; margin: 0; padding: 0 0 0 18px; border-left: 2px solid var(--line-strong); display: grid; gap: 12px; }
+.linea-tiempo li { position: relative; display: grid; gap: 2px; }
+.linea-tiempo li::before {
+  content: ''; position: absolute; left: -24px; top: 4px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--line-strong);
+}
+.linea-tiempo li[data-propio]::before { background: var(--red); border-color: var(--red); }
+.linea-tiempo b { font: 800 12.5px Archivo; }
+.linea-tiempo span { font-size: 11px; color: var(--suave); }
+
+.enlace-fila { border: 0; background: transparent; padding: 0; font: 800 11px Archivo; color: var(--red-d); white-space: nowrap; }
+.enlace-fila:hover { text-decoration: underline; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+
 /* ── pantallas medianas ──────────────────────────────────────────────────────────── */
 @media (max-width: 1340px) {
   .app { --rw: 292px; --sw: 200px; }
@@ -467,6 +509,7 @@ tbody tr:hover td { background: var(--ground); }
   .sheet { padding: 16px 14px 24px; }
   .kpis { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .kpi b { font-size: 25px; }
+  .pedido-alta { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 570px) {

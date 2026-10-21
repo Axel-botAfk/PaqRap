@@ -466,7 +466,8 @@ export default function App() {
     </>}
 
     {vista === 'pedidos' && <div className="sheet">
-      <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} fuente={fuente} />
+      <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
+        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
     </div>}
     {vista === 'averias' && <div className="sheet">
       <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />

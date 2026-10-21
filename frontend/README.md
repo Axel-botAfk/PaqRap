@@ -32,6 +32,7 @@ src/
 ├── App.jsx                   armazón, estado de la corrida y carga de datos
 ├── formato.js                fechas, números, ritmo y color por ruta
 ├── mapa.js / reloj.js        geometría de la retícula y reloj anclado (sin React)
+├── pedidos.js                reglas del pedido: archivo de ventas, plazos y retícula
 ├── components/               barra superior, menú, riel, acordeón, mapa
 ├── pages/                    riel de la corrida y las hojas de pedidos y averías
 └── services/api.js           REST y WebSocket
@@ -39,7 +40,9 @@ src/
 
 Cuatro vistas, como el prototipo: **Pedidos** y **Averías de la flota** son hojas que se
 superponen al mapa; **Operación diaria** y **Simulación** son vistas de mapa y comparten el
-riel derecho (`pages/RielCorrida.jsx`). La vista decide el escenario: operación diaria fija
+riel derecho (`pages/RielCorrida.jsx`). Pedidos reúne en pestañas las tres pantallas de
+pedidos del prototipo —registrados, alta y carga masiva— y abre el seguimiento al pulsar
+«Seguir» en una fila, en vez de añadir entradas al menú lateral. La vista decide el escenario: operación diaria fija
 `OPERACION_DIARIA` y simulación deja elegir entre `PERIODO_5_DIAS` y `COLAPSO`. Al recuperar
 una corrida existente manda su escenario y la vista se ajusta a él.
 
@@ -81,6 +84,10 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
 - `POST /api/ejecuciones` inicia una corrida asincrónica; WebSocket actualiza
   mapa y métricas. Una consulta REST cada cinco segundos recupera el estado
   si la conexión en vivo se interrumpe.
+- El costo de cada ruta (`RutaVista.costo`, S/ 8, 6 y 3 por km según el tipo de unidad) se
+  muestra en la lista de rutas del riel, con el total de distancia y costo del instante al
+  pie. El resumen trae el costo total de la corrida, pero el servidor solo lo publica al
+  terminar; esto se ve mientras corre. No toca el mapa.
 - El mapa consulta además los fotogramas de posiciones realmente ejecutadas.
   Con «Historial» o el deslizador se revisa lo ya ocurrido (pausa, selección de
   instante y tres velocidades); «En vivo» vuelve al reloj de la corrida. Cuando varias
@@ -92,10 +99,20 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
   dispositivo muestra la misma corrida mientras permanezca en memoria.
 - Rutas y paradas históricas representan planificación, no entregas consumadas. Las
   entregas efectivas se toman de `avance` y `resumen`.
-- No hay alta de pedidos ni historial persistente de incidencias. Los pedidos
-  vienen de la fuente configurada y las averías se pierden al reiniciar. La vista Pedidos
-  del prototipo incluye alta, carga masiva y seguimiento por cliente: nada de eso tiene
-  endpoint, así que aquí solo está la tabla de lo que publica el backend.
+- El **seguimiento** de un pedido sale del historial de planes, la misma fuente que la
+  columna «Situación»: a qué ruta y unidad quedó asignado en cada replanificación y qué
+  hitos informó el simulador. Cada salida posterior a la primera se rotula «retoma la ruta»,
+  porque es la unidad reanudando desde donde estaba y no una salida de almacén.
+- El **alta de pedidos** y la **carga masiva** no tienen endpoint: `POST /api/ejecuciones`
+  inicia corridas y nada más, y el backend lee sus TXT del disco al arrancar. Las dos
+  pantallas existen porque la parte que sí se puede hacer sin servidor es la que falla en la
+  práctica: validar contra las reglas del caso. El alta entrega la línea en el formato del
+  archivo mensual y la carga masiva valida el archivo entero —formato, día dentro del mes,
+  hora, nodo dentro de la retícula, cantidad y plazo— y lista todos los fallos de una vez,
+  mientras que el backend aborta en el primero. Ninguna de las dos manda nada al servidor y
+  cada una lo dice en su pie.
+- Las averías se pierden al reiniciar el servidor; no hay historial persistente de
+  incidencias.
 - La grilla dibuja segmentos esquemáticos entre puntos. No afirma reproducir
   el recorrido de calles ni la posición en tiempo real de un repartidor. Los
   fotogramas sí contienen posiciones muestreadas del simulador, pero los nodos

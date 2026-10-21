@@ -20,6 +20,13 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   const inicialPorId = new Map((mapaDatos?.almacenes || [])
     .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial]));
 
+  // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
+  // resumen con el costo total solo llega al terminar la corrida, y esto se ve mientras corre.
+  const totalRutas = rutas.reduce((acumulado, ruta) => ({
+    km: acumulado.km + (ruta.distanciaKm || 0),
+    costo: acumulado.costo + (ruta.costo || 0)
+  }), { km: 0, costo: 0 });
+
   return <>
     <Acordeon titulo={simulacion ? 'Tipo de simulación' : 'Configuración de la corrida'}>
       <form onSubmit={cfg.alIniciar}>
@@ -72,8 +79,12 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
             style={{ '--ruta-color': colorDeRuta(ruta) }}
             onClick={() => alSeleccionarRuta(rutaSeleccionada === ruta.id ? null : ruta.id)}>
             <span className="l1"><b>{ruta.vehiculoId}</b><span className="num">{decimal(ruta.distanciaKm, ' km')}</span></span>
-            <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span></span>
+            <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span>
+              {typeof ruta.costo === 'number' && <span className="costo">S/ {decimal(ruta.costo)}</span>}</span>
           </button>)}</div>}
+      {rutas.length > 0 && !calculandoRutas && <p className="nota nota-total">
+        <span>Total del instante</span>
+        <b>{decimal(totalRutas.km, ' km')} · S/ {decimal(totalRutas.costo)}</b></p>}
     </Acordeon>
 
     <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>

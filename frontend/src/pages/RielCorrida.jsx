@@ -1,6 +1,5 @@
 import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
-import { esFinal } from '../services/api.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta } from '../formato.js';
 
 const ESCENARIOS_SIMULACION = [
@@ -16,8 +15,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
   aviso, progreso }) {
   const simulacion = vista === 'simulacion';
-  const { escenario, algoritmo, periodo, periodos, detalle, dia, hora, horizonte,
-    duracionObjetivo, velocidad, unidadAveriada, tipoAveria, flota } = cfg;
+  const { escenario, detalle, dia, hora, horizonte, limites,
+    unidadAveriada, tipoAveria, flota } = cfg;
   const inicialPorId = new Map((mapaDatos?.almacenes || [])
     .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial]));
 
@@ -32,52 +31,29 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           </label>)}
         </div>}
 
-        <div className="field"><label htmlFor="c-periodo">Periodo de datos</label>
-          <select id="c-periodo" className="input" value={periodo} required
-            onChange={e => cfg.alCambiarPeriodo(e.target.value)}>
-            <option value="">Seleccionar periodo</option>
-            {periodos.map(valor => <option key={valor} value={valor}>{valor.slice(0, 4)}-{valor.slice(4)}</option>)}
-          </select>
-        </div>
-        {detalle && <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento</p>}
-
+        {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. */}
         <div className="row">
           <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
             <input id="c-dia" className="input" name="dia" type="date" value={dia} required
+              min={limites.desde} max={limites.hasta}
               onChange={e => cfg.setDia(e.target.value)} /></div>
           <div className="field"><label htmlFor="c-hora">Hora inicial</label>
             <input id="c-hora" className="input" name="hora" type="time" value={hora} required
               onChange={e => cfg.setHora(e.target.value)} /></div>
         </div>
-
-        <div className="field"><label htmlFor="c-alg">Algoritmo</label>
-          <select id="c-alg" className="input" value={algoritmo} onChange={e => cfg.setAlgoritmo(e.target.value)}>
-            <option value="GRASP">GRASP</option>
-            <option value="TABU">Vecino Más Cercano + Búsqueda Tabú</option>
-          </select>
-        </div>
+        {detalle
+          ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
+          : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
 
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
-        {escenario === 'PERIODO_5_DIAS' && <div className="field"><label htmlFor="c-dur">Duración objetivo (min reales)</label>
-          <input id="c-dur" className="input" type="number" min="30" max="60" value={duracionObjetivo} required
-            onChange={e => cfg.setDuracionObjetivo(e.target.value)} /></div>}
-        {escenario === 'OPERACION_DIARIA' && <div className="field"><label htmlFor="c-vel">Velocidad</label>
-          <select id="c-vel" className="input" value={velocidad} onChange={e => cfg.setVelocidad(Number(e.target.value))}>
-            <option value="1">1× · tiempo real</option><option value="10">10×</option>
-            <option value="60">60×</option><option value="240">240×</option>
-          </select></div>}
 
-        <p className="nota">{ritmoConfigurado(escenario, duracionObjetivo, velocidad)}</p>
+        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
 
         <div className="acciones">
-          <button className="btn btn-primary" type="submit" disabled={ocupado || !periodos.length || corriendo}>
+          <button className="btn btn-primary" type="submit" disabled={ocupado || !limites.desde}>
             {ocupado ? 'Procesando…' : '▶ Iniciar'}</button>
-          <button className="btn btn-secondary" type="button" disabled={ocupado || !corriendo} onClick={cfg.alPausar}>
-            {ejecucion?.estado === 'PAUSADA' ? 'Reanudar' : 'Pausar'}</button>
-          <button className="btn btn-secondary" type="button" disabled={ocupado || !ejecucion || esFinal(ejecucion.estado)} onClick={cfg.alDetener}>
-            ■ Detener</button>
         </div>
 
         {ejecucion?.ritmo && <>

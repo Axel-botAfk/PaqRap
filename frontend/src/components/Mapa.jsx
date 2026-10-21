@@ -44,6 +44,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
   const [pieAbierto, setPieAbierto] = useState(false);
   const svgRef = useRef(null);
+  const lienzoRef = useRef(null);
+  const [tip, setTip] = useState(null);
   const arrastre = useRef(null);
 
   const marco = encuadre(vista);
@@ -209,7 +211,48 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const escala = 1 / vista.z;
   const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
 
-  return <div className="mapa-lienzo">
+  // Ficha al pasar el cursor: el <title> nativo tarda en salir y no admite varias líneas.
+  function mostrarTip(evento, titulo, lineas) {
+    const caja = lienzoRef.current?.getBoundingClientRect();
+    if (!caja) return;
+    setTip({ titulo, lineas, x: evento.clientX - caja.left, y: evento.clientY - caja.top });
+  }
+  const ocultarTip = () => setTip(null);
+
+  function fichaDeAlmacen(almacen) {
+    const stock = stockPorId.get(almacen.id);
+    const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
+    const lineas = [`Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`];
+    if (stock?.ilimitado) lineas.push('Stock ilimitado');
+    else if (stock) lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`);
+    else if (inicial) lineas.push(`Stock inicial ${numero(inicial)}`);
+    return { titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`, lineas };
+  }
+
+  const DETALLE_MAXIMO = 6;
+  function fichaDeUnidades(grupo) {
+    if (grupo.length === 1) {
+      const v = grupo[0];
+      return { titulo: `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo}`,
+        lineas: [`Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`, v.estado] };
+    }
+    const titulo = `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y})`;
+    if (grupo.length <= DETALLE_MAXIMO) {
+      return { titulo, lineas: grupo.map(v =>
+        `${v.id} · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${v.estado}`) };
+    }
+    // Aparcadas en el almacén pueden ser decenas: se resume por tipo en vez de listarlas.
+    const porTipo = new Map();
+    for (const v of grupo) {
+      const actual = porTipo.get(v.tipo) || { n: 0, carga: 0, capacidad: 0 };
+      porTipo.set(v.tipo, { n: actual.n + 1, carga: actual.carga + v.cargaAbordo,
+        capacidad: actual.capacidad + v.capacidad });
+    }
+    return { titulo, lineas: [...porTipo].map(([tipo, t]) =>
+      `${t.n} × ${ETIQUETA_TIPO[tipo] || tipo} · carga ${numero(t.carga)} / ${numero(t.capacidad)}`) };
+  }
+
+  return <div className="mapa-lienzo" ref={lienzoRef}>
     <svg ref={svgRef} className={`mapa ${arrastrando ? 'mapa-arrastrando' : ''}`}
       viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
       role="img" aria-label="Mapa de rutas, pedidos y vehículos sobre la retícula de la ciudad"
@@ -248,17 +291,23 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r={5 * escala} strokeWidth={1.5 * escala}>
         <title>{`${pedido.id} · sin asignar`}</title>
       </circle>)}
-      {almacenes.map(almacen => <g key={almacen.id} transform={fijo(almacen.ubicacion.x, almacen.ubicacion.y)}>
-        <title>{`${almacen.id} · ${almacen.tipo} · ${stockPorId.get(almacen.id)?.ilimitado ? 'stock ilimitado' : stockPorId.has(almacen.id) ? `stock actual ${stockPorId.get(almacen.id).disponible}` : `stock inicial ${almacen.stockInicial}`}`}</title>
+      {almacenes.map(almacen => <g key={almacen.id} className="mapa-almacen"
+        transform={fijo(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
+        aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
+        onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
+        onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
+        onPointerLeave={ocultarTip}>
         {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
           : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
         <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
       </g>)}
-      {gruposVehiculos.map(grupo => <g key={grupo[0].id} className={grupo.length > 1 ? 'grupo-vehiculos' : ''}
-        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}>
-        <title>{grupo.length === 1
-          ? `${grupo[0].id} · ${grupo[0].tipo} · ${grupo[0].estado}`
-          : `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y}): ${grupo.map(v => v.id).join(', ')}`}</title>
+      {gruposVehiculos.map(grupo => <g key={grupo[0].id}
+        className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
+        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)} role="img"
+        aria-label={fichaDeUnidades(grupo).lineas.join('. ')}
+        onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
+        onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
+        onPointerLeave={ocultarTip}>
         {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
         <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
           <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
@@ -360,10 +409,19 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       <b>{ejecucion?.estado === 'PENDIENTE' ? 'Preparando la corrida…' : 'Calculando rutas…'}</b>
       <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
     </div>}
+    {tip && <div className="mapa-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
+      <b>{tip.titulo}</b>
+      {tip.lineas.map(linea => <span key={linea}>{linea}</span>)}
+    </div>}
+
     {vacio && <div className="mapa-cartel"><b>Sin operación cargada</b>
       <span>Elige un periodo en el panel de la derecha e inicia una corrida para ver el mapa.</span></div>}
   </div>;
 }
+
+const ETIQUETA_TIPO = {
+  AUTO: 'Auto', MOTO: 'Moto', BICICLETA: 'Bicicleta', CAMION: 'Camión'
+};
 
 const ETIQUETA_ESTADO = {
   PLANIFICADO: 'planificado', EN_RUTA: 'en ruta', ENTREGADO: 'entregado', NO_ASIGNADO: 'sin asignar'

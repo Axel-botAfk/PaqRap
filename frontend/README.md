@@ -58,9 +58,13 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
 
 - El catálogo procede de los TXT del curso o de MySQL, según el perfil del backend.
 - El mapa distingue los tres almacenes y los nodos bloqueados vigentes a la hora simulada.
-- El usuario selecciona periodo, fecha/hora, escenario y algoritmo.
-- El ritmo lo marca el servidor: 5 días con duración objetivo de 30 a 60 min,
-  día a día a 1×, 10×, 60× o 240×, y colapso a 2 h simuladas cada 10 s.
+- El usuario solo elige fecha y hora de inicio, y en Simulación el tipo de escenario. El mes
+  de datos sale de la fecha; el calendario está acotado a los periodos con datos cargados.
+- El planificador es siempre Vecino Más Cercano + Búsqueda Tabú; no se elige desde la pantalla.
+- El ritmo es fijo por escenario y tampoco se configura: 5 días en unos 40 min reales,
+  día a día a 60× y colapso a 2 h simuladas cada 10 s.
+- La corrida solo se inicia. No hay Pausar ni Detener: para cambiar de escenario se inicia otra.
+  La anterior sigue viva en el servidor hasta que termina por sí sola.
 - El reloj en vivo se ancla al tiempo real (`src/reloj.js`): el instante sale
   del tiempo transcurrido desde que el servidor publicó la ventana, con un tope
   por cuadro para no saltar al volver a una pestaña dormida. Cada unidad sigue
@@ -123,7 +127,29 @@ Es una deducción fiel a los hitos, pero depende de que el historial de planes e
 el cliente. Si el backend llega a publicar el estado real por pedido, conviene usarlo y dejar
 `estadosDePedido()` solo como respaldo.
 
-### 2. Denominador del contador de pedidos — **pendiente de actualizar**
+### 2. La jornada del día a día no cabe en los 30 a 60 min pedidos — **pendiente**
+
+La pantalla ya no deja elegir velocidad y la corrida debería durar entre 30 y 60 min reales en
+todos los escenarios. En dos de los tres se cumple:
+
+| Escenario | Duración real | ¿Entre 30 y 60 min? |
+|---|---|---|
+| Simulación de 5 días | `duracionObjetivoMin`, fijado en 40 | sí |
+| Colapso logístico | se corta en el primer pedido vencido, tope ~1 h para 30 días | por su naturaleza |
+| **Operación diaria** | **24 min** | **no** |
+
+En el día a día la duración real es `24 h / velocidad`, y `RitmoEscenario.VELOCIDADES` solo
+admite `{1, 10, 60, 240}`: 60× da 24 min y 10× da 144 min. Para caer dentro de la banda haría
+falta una velocidad entre 24 y 48 (1440/60 = 24 min … 1440/30 = 48 min), que el backend
+rechaza. `segundosPorVentana` no sirve: cambia el tamaño de la ventana, no la duración total.
+
+Se usa 60× (24 min) por ser lo más cercano y quedarse corto en vez de pasarse.
+
+Arreglo pendiente, del lado del backend: añadir un valor entre 24 y 48 a
+`RitmoEscenario.VELOCIDADES` — por ejemplo `30`, que da 48 min. Es una línea. Cuando exista,
+cambiar `VELOCIDAD_DIA_A_DIA` en `src/formato.js` y borrar esta nota.
+
+### 3. Denominador del contador de pedidos — **pendiente de actualizar**
 
 El chip `PEDIDOS 109 / 6 240` y el `Pedidos` de la barra de simulación muestran
 `avance.pedidosEntregados` sobre **el total de pedidos del periodo cargado**

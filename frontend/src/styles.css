@@ -271,6 +271,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .mapa-aviso summary { font: 800 9.5px Archivo; letter-spacing: .1em; color: var(--red-d); cursor: pointer; }
 .mapa-aviso p { margin: 6px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--suave); }
 
+/* Ficha al pasar el cursor por una unidad o un almacén. */
+.mapa-tip {
+  position: absolute; z-index: 23; pointer-events: none;
+  transform: translate(14px, 14px); max-width: 260px;
+  background: var(--ink); color: #fff;
+  border-radius: 8px; padding: 8px 11px;
+  box-shadow: var(--sombra);
+  display: grid; gap: 2px;
+}
+.mapa-tip b { font: 800 11.5px Archivo; letter-spacing: .02em; }
+.mapa-tip span { font-size: 11px; color: rgba(255, 255, 255, .8); line-height: 1.45; }
+.mapa-unidad, .mapa-almacen { cursor: help; }
+
 .mapa-cartel {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 22;
   padding: 20px 25px; background: rgba(255, 255, 255, .96);

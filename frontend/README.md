@@ -105,14 +105,16 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
 
 ## Lo que esta interfaz deduce porque la API no lo publica
 
-Dos datos del prototipo no existen en el contrato actual. Están resueltos en el cliente, pero
-**conviene rehacerlos en el backend** cuando haya oportunidad.
+Dos datos del prototipo no existen en el contrato actual y se resuelven en el cliente;
+**conviene rehacerlos en el backend** cuando haya oportunidad. El tercer apartado documenta de
+dónde sale cada cifra de la barra superior.
 
 ### 1. Situación del pedido: «en ruta» y «entregado»
 
 `PedidoVista.estado` solo toma dos valores en todo el backend: `"PLANIFICADO"`
 (`Vistas.ruta`) y `"NO_ASIGNADO"` (`EjecucionesService`). El filtro del mapa, la columna
-«Situación» de Pedidos y el contador «En ruta» usan `estadosDePedido()` (`src/mapa.js`), que
+«Situación» de Pedidos y los indicadores de la barra superior usan `estadosDePedido()`
+(`src/mapa.js`), que
 recorre todos los planes conocidos y cruza dos fuentes:
 
 - **Entregado** cuando el hito `ENTREGA` o `FIN_ENTREGA` del pedido ya ocurrió en el instante
@@ -149,23 +151,33 @@ Arreglo pendiente, del lado del backend: añadir un valor entre 24 y 48 a
 `RitmoEscenario.VELOCIDADES` — por ejemplo `30`, que da 48 min. Es una línea. Cuando exista,
 cambiar `VELOCIDAD_DIA_A_DIA` en `src/formato.js` y borrar esta nota.
 
-### 3. Denominador del contador de pedidos — **pendiente de actualizar**
+### 3. Los cuatro indicadores de la barra superior
 
-El chip `PEDIDOS 109 / 6 240` y el `Pedidos` de la barra de simulación muestran
-`avance.pedidosEntregados` sobre **el total de pedidos del periodo cargado**
-(`/api/datos/periodos/{aaaamm}` → `pedidos`), es decir el mes completo.
+La franja superior reparte los pedidos entre cuatro situaciones y no muestra nada más
+(`chips` en `src/App.jsx`). Tres se cuentan sobre el plan vigente, igual que la hoja de
+Pedidos, y la cuarta no:
 
-**Ese denominador no es el correcto**: lo que corresponde es el total de pedidos del horizonte
-de la corrida, no el del mes. Se usa este porque `ResumenVista.productosRecibidos` /
-`pedidosRecibidos` es lo único parecido que existe y el servidor solo llena `resumen` al
-terminar la corrida (`EjecucionesService`, estado final); en `EN_CURSO` llega `null`, que es
-justo cuando se mira el contador.
+| Indicador | De dónde sale |
+|---|---|
+| Entregados | `avance.pedidosEntregados`, acumulado de la corrida |
+| En ruta | paradas del plan vigente que `estadosDePedido()` marca `EN_RUTA` |
+| Planificados | paradas del plan vigente sin situación deducida: con ruta, pero su unidad aún no sale |
+| Por planificar | `ejecucion.noAsignados` |
 
-Arreglo pendiente, del lado del backend: añadir `pedidosRecibidos` (y, si se quiere el conteo
-en paquetes del prototipo, `productosRecibidos`) a `AvanceVista`, que sí se publica en cada
-ventana. Es un campo en el record y una línea en `Vistas.avance`. Cuando exista, cambiar en
-`src/App.jsx` el `pedidosDelPeriodo` por ese valor y borrar el `title` que hoy avisa del
-desajuste.
+Los entregados van aparte porque un pedido entregado **sale del plan vigente**: contarlo sobre
+las rutas lo perdería en la siguiente replanificación. El acumulado es el único conteo que
+sobrevive, y por eso tampoco baja al mover el reloj hacia atrás: durante la reproducción
+histórica es el último valor publicado, no el de ese instante.
+
+«Planificados» suele quedarse en 0 en las corridas del curso: el planificador emite el plan y
+las unidades salen en ese mismo instante, así que el pedido pasa de planificado a en ruta sin
+un tramo visible. No es un fallo del conteo — se ve crecer al mover el reloj a un instante
+anterior a la `SALIDA` de la unidad.
+
+Antes esta franja mostraba `PEDIDOS 109 / 6 240`, con el total del mes como denominador en vez
+del horizonte de la corrida. Ese cociente ya no existe, así que la nota sobre el denominador
+equivocado se retira; si algún día hace falta el total del horizonte, el backend tendría que
+publicar `pedidosRecibidos` en `AvanceVista` (hoy `resumen` solo se llena al terminar).
 
 La beta debe permanecer bajo acceso controlado mientras el backend no tenga
 autenticación ni límites por usuario. Nunca colocar claves en `src/` ni en

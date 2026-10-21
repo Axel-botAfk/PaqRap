@@ -112,7 +112,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 .chips { display: flex; flex: 1 1 auto; min-width: 0; }
 .chip {
-  flex: 1 1 0; min-width: 112px;
+  flex: 1 1 0; min-width: 124px;   /* cabe «POR PLANIFICAR», la etiqueta más larga */
   padding: 5px 16px 6px;
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column; justify-content: center;
@@ -450,7 +450,7 @@ tbody tr:hover td { background: var(--ground); }
 @media (max-width: 900px) {
   .app { --toph: 54px; --kh: 44px; --hdr: 98px; --sw: 0px; --rw: 0px; }
   .wordmark { display: none; }
-  .chip { min-width: 96px; padding: 4px 12px 5px; }
+  .chip { min-width: 114px; padding: 4px 12px 5px; }
   .chip b { font-size: 18px; }
   /* El menú pasa a superponerse: el mapa no cede ancho en pantallas chicas. */
   .side { width: 232px; transform: translateX(-100%); transition: transform .2s ease; z-index: 37; border-right: 1.5px solid var(--line-strong); }

@@ -320,11 +320,26 @@ export default function App() {
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
     [planes, instanteReproducido]);
-  const enRuta = useMemo(() => {
-    let total = 0;
-    for (const estado of estadosPedido.values()) if (estado === 'EN_RUTA') total += 1;
-    return total;
-  }, [estadosPedido]);
+  // Las cuatro situaciones de la barra superior. En ruta, planificados y por planificar se
+  // cuentan sobre el plan vigente, igual que la hoja de Pedidos. Los entregados no: al
+  // entregarse el pedido sale del plan, así que el único conteo que no se pierde al
+  // replanificar es el acumulado de `avance`.
+  const resumenPedidos = useMemo(() => {
+    if (!ejecucion) return { entregados: null, enRuta: null, planificados: null, porPlanificar: null };
+    let enRuta = 0, planificados = 0;
+    for (const ruta of ejecucion.rutas || LISTA_VACIA) {
+      for (const parada of ruta.paradas || LISTA_VACIA) {
+        const estado = estadosPedido.get(parada.id);
+        if (estado === 'EN_RUTA') enRuta += 1;
+        else if (!estado) planificados += 1;
+      }
+    }
+    return {
+      entregados: ejecucion.avance?.pedidosEntregados ?? 0,
+      enRuta, planificados,
+      porPlanificar: ejecucion.noAsignados?.length || 0
+    };
+  }, [ejecucion, estadosPedido]);
 
   // Tiempo real de la corrida: ventanas ya publicadas más lo reproducido de la actual.
   const ritmo = ejecucion?.ritmo;
@@ -381,34 +396,25 @@ export default function App() {
     finally { setOcupado(false); }
   }
 
-  // El denominador es el total de pedidos del periodo cargado (todo el mes), no los del
-  // horizonte de la corrida: la API no publica ese total mientras la corrida está en curso.
-  const pedidosDelPeriodo = detalle?.pedidos;
-  const avanceDePedidos = pedidosDelPeriodo
-    ? `${numero(ejecucion?.avance?.pedidosEntregados ?? 0)} / ${numero(pedidosDelPeriodo)}`
-    : numero(ejecucion?.avance?.pedidosEntregados);
-  const notaDenominador = pedidosDelPeriodo
-    ? `Entregados sobre el total de pedidos del periodo ${periodo} (${numero(pedidosDelPeriodo)} del mes completo), no sobre los del horizonte de esta corrida: la API no publica ese total en vivo.`
-    : 'Pedidos entregados acumulados.';
-
-  const chips = vista === 'operacion' ? [
-    { etiqueta: 'PEDIDOS', valor: avanceDePedidos, titulo: notaDenominador },
-    { etiqueta: 'EN RUTA', valor: numero(enRuta), titulo: 'Deducido de los hitos del simulador.' },
-    { etiqueta: 'VEHÍCULOS', valor: numero(ejecucion?.vehiculos?.length ?? null) },
-    { etiqueta: 'SIN ASIGNAR', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—',
-      alerta: !!ejecucion?.noAsignados?.length }
+  // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
+  // cifras de la corrida vive en el riel y en el mapa.
+  const chips = ES_MAPA(vista) ? [
+    { etiqueta: 'ENTREGADOS', valor: numero(resumenPedidos.entregados),
+      titulo: 'Acumulado de la corrida: incluye los que ya salieron del plan vigente.' },
+    { etiqueta: 'EN RUTA', valor: numero(resumenPedidos.enRuta),
+      titulo: 'Su unidad ya salió y el pedido sigue pendiente. Deducido de los hitos del simulador.' },
+    { etiqueta: 'PLANIFICADOS', valor: numero(resumenPedidos.planificados),
+      titulo: 'Con ruta en el plan vigente, pero su unidad todavía no sale.' },
+    { etiqueta: 'POR PLANIFICAR', valor: numero(resumenPedidos.porPlanificar),
+      alerta: !!resumenPedidos.porPlanificar,
+      titulo: 'Sin ruta asignada en el plan vigente.' }
   ] : [];
 
   const meta = vista === 'simulacion' ? [
     { etiqueta: 'Fecha y hora de simulación', valor: fechaConSegundos(instanteReproducido) },
-    { etiqueta: 'Duración', valor: duracion(transcurridoMs) },
-    { etiqueta: 'Vehículos', valor: numero(ejecucion?.vehiculos?.length ?? null) },
-    { etiqueta: 'Pedidos', valor: avanceDePedidos, titulo: notaDenominador },
-    { etiqueta: 'En ruta', valor: numero(enRuta) },
-    { etiqueta: 'Sin asignar', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—' }
+    { etiqueta: 'Duración', valor: duracion(transcurridoMs) }
   ] : vista === 'operacion' ? [
-    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) },
-    { etiqueta: 'Planificador', valor: 'Tabú' }
+    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) }
   ] : [];
 
   const configuracion = {

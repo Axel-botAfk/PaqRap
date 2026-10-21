@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
 import { planVigenteEn, estadosDePedido } from './mapa.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion } from './formato.js';
+import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
+  DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
 import Riel from './components/Riel.jsx';
@@ -14,6 +15,11 @@ import HojaAverias from './pages/HojaAverias.jsx';
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
 const ID_VALIDO = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
 const LISTA_VACIA = [];
+const ALGORITMO = 'TABU';          // el planificador del caso; ya no se elige desde la pantalla
+const SIN_LIMITES = { desde: '', hasta: '' };
+
+/** El periodo de datos (aaaamm) sale de la fecha elegida, no de un selector aparte. */
+const periodoDe = dia => (dia && dia.length >= 7 ? dia.slice(0, 4) + dia.slice(5, 7) : '');
 const TITULOS = Object.fromEntries(VISTAS);
 const ES_MAPA = vista => vista === 'operacion' || vista === 'simulacion';
 
@@ -28,9 +34,7 @@ function guardarEjecucion(id) {
 export default function App() {
   const [vista, setVista] = useState('operacion');
   const [escenario, setEscenario] = useState('OPERACION_DIARIA');
-  const [algoritmo, setAlgoritmo] = useState('GRASP');
   const [periodos, setPeriodos] = useState([]);
-  const [periodo, setPeriodo] = useState('');
   const [detalle, setDetalle] = useState(null);
   const [mapaDatos, setMapaDatos] = useState(null);
   const [fuente, setFuente] = useState('ARCHIVOS');
@@ -51,8 +55,6 @@ export default function App() {
   const [indiceFotograma, setIndiceFotograma] = useState(0);
   const [reproduciendo, setReproduciendo] = useState(true);
   const [pasoMs, setPasoMs] = useState(450);
-  const [velocidad, setVelocidad] = useState(60);
-  const [duracionObjetivo, setDuracionObjetivo] = useState(40);
   const [enVivo, setEnVivo] = useState(true);
   const [ahora, setAhora] = useState(() => Date.now());
   const [eventosOperacion, setEventosOperacion] = useState([]);
@@ -66,6 +68,18 @@ export default function App() {
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
   const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
 
+  const periodo = periodoDe(dia);
+  // El calendario se acota al catálogo: así no se puede pedir un mes sin datos.
+  const limites = useMemo(() => {
+    if (!periodos.length) return SIN_LIMITES;
+    const primero = periodos[0];
+    const ultimo = periodos[periodos.length - 1];
+    const finDeMes = new Date(Date.UTC(Number(ultimo.slice(0, 4)), Number(ultimo.slice(4)), 0));
+    return { desde: `${primero.slice(0, 4)}-${primero.slice(4)}-01`,
+      hasta: finDeMes.toISOString().slice(0, 10) };
+  }, [periodos]);
+
+
   useEffect(() => {
     let activo = true;
     api.salud().then(info => { if (activo) setFuente(info.fuente || 'ARCHIVOS'); }).catch(() => {});
@@ -74,15 +88,32 @@ export default function App() {
     return () => { activo = false; };
   }, []);
 
+  // Sin fecha todavía, se arranca en el primer día con datos del catálogo.
   useEffect(() => {
-    if (!periodo) { setDetalle(null); setMapaDatos(null); return; }
+    if (dia || !periodos.length) return undefined;
     let activo = true;
-    api.periodo(periodo).then(info => { if (activo) { setDetalle(info); setDia(anterior => anterior || info.primeraFechaPedido || ''); } })
+    api.periodo(periodos[0])
+      .then(info => { if (activo) setDia(info.primeraFechaPedido || `${periodos[0].slice(0, 4)}-${periodos[0].slice(4)}-01`); })
+      .catch(() => {});
+    return () => { activo = false; };
+  }, [periodos, dia]);
+
+  useEffect(() => {
+    if (!periodo) { setDetalle(null); setMapaDatos(null); return undefined; }
+    if (!periodos.includes(periodo)) {
+      setDetalle(null);
+      setMapaDatos(null);
+      setError(`No hay datos para ${periodo.slice(0, 4)}-${periodo.slice(4)}. Elige una fecha dentro del catálogo.`);
+      return undefined;
+    }
+    let activo = true;
+    setError('');
+    api.periodo(periodo).then(info => { if (activo) setDetalle(info); })
       .catch(e => { if (activo) { setDetalle(null); setError(e.message); } });
     api.mapa(periodo).then(info => { if (activo) setMapaDatos(info); })
       .catch(e => { if (activo) { setMapaDatos(null); setError(e.message); } });
     return () => { activo = false; };
-  }, [periodo]);
+  }, [periodo, periodos]);
 
   useEffect(() => {
     if (!id) return undefined;
@@ -96,13 +127,11 @@ export default function App() {
       setEjecucion(datos);
       if (!restaurado && datos.inicio) {
         restaurado = true;
-        setPeriodo(datos.inicio.slice(0, 4) + datos.inicio.slice(5, 7));
         setDia(datos.inicio.slice(0, 10));
         setHora(datos.inicio.slice(11, 16));
         setEscenario(datos.escenario);
         // La corrida recuperada manda: su escenario decide en qué vista de mapa se retoma.
         setVista(datos.escenario === 'OPERACION_DIARIA' ? 'operacion' : 'simulacion');
-        setAlgoritmo(datos.algoritmo);
       }
       if (esFinal(datos.estado) && intervalo) clearInterval(intervalo);
     };
@@ -291,11 +320,26 @@ export default function App() {
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
     [planes, instanteReproducido]);
-  const enRuta = useMemo(() => {
-    let total = 0;
-    for (const estado of estadosPedido.values()) if (estado === 'EN_RUTA') total += 1;
-    return total;
-  }, [estadosPedido]);
+  // Las cuatro situaciones de la barra superior. En ruta, planificados y por planificar se
+  // cuentan sobre el plan vigente, igual que la hoja de Pedidos. Los entregados no: al
+  // entregarse el pedido sale del plan, así que el único conteo que no se pierde al
+  // replanificar es el acumulado de `avance`.
+  const resumenPedidos = useMemo(() => {
+    if (!ejecucion) return { entregados: null, enRuta: null, planificados: null, porPlanificar: null };
+    let enRuta = 0, planificados = 0;
+    for (const ruta of ejecucion.rutas || LISTA_VACIA) {
+      for (const parada of ruta.paradas || LISTA_VACIA) {
+        const estado = estadosPedido.get(parada.id);
+        if (estado === 'EN_RUTA') enRuta += 1;
+        else if (!estado) planificados += 1;
+      }
+    }
+    return {
+      entregados: ejecucion.avance?.pedidosEntregados ?? 0,
+      enRuta, planificados,
+      porPlanificar: ejecucion.noAsignados?.length || 0
+    };
+  }, [ejecucion, estadosPedido]);
 
   // Tiempo real de la corrida: ventanas ya publicadas más lo reproducido de la actual.
   const ritmo = ejecucion?.ritmo;
@@ -311,19 +355,14 @@ export default function App() {
     if (esPantallaAngosta()) setMenuAbierto(false);
   }
 
-  function cambiarPeriodo(valor) {
-    setPeriodo(valor);
-    setDia('');
-    setError('');
-  }
-
   async function iniciar(evento) {
     evento.preventDefault();
     setError('');
     const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
     const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
-    if (!periodo || !diaIngresado || diaIngresado.replaceAll('-', '').slice(0, 6) !== periodo) {
-      setError('Selecciona una fecha perteneciente al periodo disponible.');
+    const periodoElegido = periodoDe(diaIngresado);
+    if (!periodoElegido || !periodos.includes(periodoElegido)) {
+      setError('Elige una fecha dentro de un mes con datos cargados.');
       return;
     }
     setDia(diaIngresado);
@@ -331,35 +370,16 @@ export default function App() {
     setOcupado(true);
     try {
       const nueva = await api.iniciar({
-        escenario, algoritmo, inicio: `${diaIngresado}T${horaIngresada}:00`,
+        escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
-        ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: Number(duracionObjetivo) } : {}),
-        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: Number(velocidad) } : {})
+        ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
+        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
       });
       setEjecucion(nueva);
       setRutaSeleccionada(null);
       guardarEjecucion(nueva.id);
       setId(nueva.id);
       history.replaceState(null, '', `?ejecucion=${encodeURIComponent(nueva.id)}`);
-    } catch (e) { setError(e.message); }
-    finally { setOcupado(false); }
-  }
-
-  async function cancelar() {
-    if (!id) return;
-    setOcupado(true);
-    try { setEjecucion(await api.cancelar(id)); }
-    catch (e) { setError(e.message); }
-    finally { setOcupado(false); }
-  }
-
-  async function pausarOReanudar() {
-    if (!id || !ejecucion) return;
-    setOcupado(true);
-    try {
-      const datos = ejecucion.estado === 'PAUSADA' ? await api.reanudar(id) : await api.pausar(id);
-      if (datos.ritmo) desfase.current = desfaseConServidor(datos.ritmo, Date.now());
-      setEjecucion(datos);
     } catch (e) { setError(e.message); }
     finally { setOcupado(false); }
   }
@@ -376,42 +396,32 @@ export default function App() {
     finally { setOcupado(false); }
   }
 
-  // El denominador es el total de pedidos del periodo cargado (todo el mes), no los del
-  // horizonte de la corrida: la API no publica ese total mientras la corrida está en curso.
-  const pedidosDelPeriodo = detalle?.pedidos;
-  const avanceDePedidos = pedidosDelPeriodo
-    ? `${numero(ejecucion?.avance?.pedidosEntregados ?? 0)} / ${numero(pedidosDelPeriodo)}`
-    : numero(ejecucion?.avance?.pedidosEntregados);
-  const notaDenominador = pedidosDelPeriodo
-    ? `Entregados sobre el total de pedidos del periodo ${periodo} (${numero(pedidosDelPeriodo)} del mes completo), no sobre los del horizonte de esta corrida: la API no publica ese total en vivo.`
-    : 'Pedidos entregados acumulados.';
-
-  const chips = vista === 'operacion' ? [
-    { etiqueta: 'PEDIDOS', valor: avanceDePedidos, titulo: notaDenominador },
-    { etiqueta: 'EN RUTA', valor: numero(enRuta), titulo: 'Deducido de los hitos del simulador.' },
-    { etiqueta: 'VEHÍCULOS', valor: numero(ejecucion?.vehiculos?.length ?? null) },
-    { etiqueta: 'SIN ASIGNAR', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—',
-      alerta: !!ejecucion?.noAsignados?.length }
+  // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
+  // cifras de la corrida vive en el riel y en el mapa.
+  const chips = ES_MAPA(vista) ? [
+    { etiqueta: 'ENTREGADOS', valor: numero(resumenPedidos.entregados),
+      titulo: 'Acumulado de la corrida: incluye los que ya salieron del plan vigente.' },
+    { etiqueta: 'EN RUTA', valor: numero(resumenPedidos.enRuta),
+      titulo: 'Su unidad ya salió y el pedido sigue pendiente. Deducido de los hitos del simulador.' },
+    { etiqueta: 'PLANIFICADOS', valor: numero(resumenPedidos.planificados),
+      titulo: 'Con ruta en el plan vigente, pero su unidad todavía no sale.' },
+    { etiqueta: 'POR PLANIFICAR', valor: numero(resumenPedidos.porPlanificar),
+      alerta: !!resumenPedidos.porPlanificar,
+      titulo: 'Sin ruta asignada en el plan vigente.' }
   ] : [];
 
   const meta = vista === 'simulacion' ? [
     { etiqueta: 'Fecha y hora de simulación', valor: fechaConSegundos(instanteReproducido) },
-    { etiqueta: 'Duración', valor: duracion(transcurridoMs) },
-    { etiqueta: 'Vehículos', valor: numero(ejecucion?.vehiculos?.length ?? null) },
-    { etiqueta: 'Pedidos', valor: avanceDePedidos, titulo: notaDenominador },
-    { etiqueta: 'En ruta', valor: numero(enRuta) },
-    { etiqueta: 'Sin asignar', valor: ejecucion ? numero(ejecucion.noAsignados?.length || 0) : '—' }
+    { etiqueta: 'Duración', valor: duracion(transcurridoMs) }
   ] : vista === 'operacion' ? [
-    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) },
-    { etiqueta: 'Algoritmo', valor: algoritmo }
+    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) }
   ] : [];
 
   const configuracion = {
-    escenario, setEscenario, algoritmo, setAlgoritmo, periodo, periodos, detalle,
-    dia, setDia, hora, setHora, horizonte, setHorizonte, duracionObjetivo, setDuracionObjetivo,
-    velocidad, setVelocidad, unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
-    flota: flotaParaAveria, alCambiarPeriodo: cambiarPeriodo, alIniciar: iniciar,
-    alPausar: pausarOReanudar, alDetener: cancelar, alRegistrarAveria: registrarAveria
+    escenario, setEscenario, detalle, limites,
+    dia, setDia, hora, setHora, horizonte, setHorizonte,
+    unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
+    flota: flotaParaAveria, alIniciar: iniciar, alRegistrarAveria: registrarAveria
   };
 
   const enMapa = ES_MAPA(vista);
@@ -456,7 +466,8 @@ export default function App() {
     </>}
 
     {vista === 'pedidos' && <div className="sheet">
-      <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} fuente={fuente} />
+      <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
+        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
     </div>}
     {vista === 'averias' && <div className="sheet">
       <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />

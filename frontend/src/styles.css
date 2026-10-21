@@ -112,7 +112,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 .chips { display: flex; flex: 1 1 auto; min-width: 0; }
 .chip {
-  flex: 1 1 0; min-width: 112px;
+  flex: 1 1 0; min-width: 124px;   /* cabe «POR PLANIFICAR», la etiqueta más larga */
   padding: 5px 16px 6px;
   border-right: 1px solid var(--line);
   display: flex; flex-direction: column; justify-content: center;
@@ -271,6 +271,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .mapa-aviso summary { font: 800 9.5px Archivo; letter-spacing: .1em; color: var(--red-d); cursor: pointer; }
 .mapa-aviso p { margin: 6px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--suave); }
 
+/* Ficha al pasar el cursor por una unidad o un almacén. */
+.mapa-tip {
+  position: absolute; z-index: 23; pointer-events: none;
+  transform: translate(14px, 14px); max-width: 260px;
+  background: var(--ink); color: #fff;
+  border-radius: 8px; padding: 8px 11px;
+  box-shadow: var(--sombra);
+  display: grid; gap: 2px;
+}
+.mapa-tip b { font: 800 11.5px Archivo; letter-spacing: .02em; }
+.mapa-tip span { font-size: 11px; color: rgba(255, 255, 255, .8); line-height: 1.45; }
+.mapa-unidad, .mapa-almacen { cursor: help; }
+
 .mapa-cartel {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 22;
   padding: 20px 25px; background: rgba(255, 255, 255, .96);
@@ -369,8 +382,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .rt .l1 { display: flex; align-items: center; gap: 8px; }
 .rt .l1 b { font: 800 12.5px Archivo; }
 .rt .num { margin-left: auto; font: 800 11.5px Archivo; white-space: nowrap; }
-.rt .l2 { font-size: 10.5px; color: var(--suave); }
+.rt .l2 { display: flex; align-items: baseline; gap: 8px; font-size: 10.5px; color: var(--suave); }
 .rt .sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rt .costo { margin-left: auto; font-weight: 800; white-space: nowrap; }
+.nota-total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.nota-total b { font: 800 11.5px Archivo; color: var(--ink); white-space: nowrap; }
 
 .almacenes { display: grid; gap: 10px; }
 .almacen-linea { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
@@ -429,6 +445,45 @@ tbody tr:hover td { background: var(--ground); }
 .pill.r { background: var(--red); }
 .pill.n { background: #fff; color: var(--suave); border: 1px solid var(--line-strong); }
 
+/* Pestañas de la hoja de pedidos: reúnen las cuatro pantallas del prototipo sin tocar el
+   menú lateral, que sigue siendo el de las cuatro vistas del caso. */
+.hoja-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; border-bottom: 1.5px solid var(--line-strong); }
+.hoja-tabs button {
+  border: 0; background: transparent; padding: 8px 14px 9px;
+  font: 800 11.5px Archivo; letter-spacing: .03em; color: var(--suave);
+  border-bottom: 3px solid transparent; margin-bottom: -1.5px;
+}
+.hoja-tabs button:hover { color: var(--ink); }
+.hoja-tabs button.activo { color: var(--red-d); border-bottom-color: var(--red); }
+
+.pedido-alta { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 16px; align-items: start; }
+
+/* Lista de comprobaciones del alta: el estándar pide verlas todas, no una a una. */
+.chk { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.chk li { display: flex; align-items: flex-start; gap: 9px; font-size: 12px; line-height: 1.45; }
+.chk .pill { flex: none; min-width: 48px; text-align: center; }
+
+/* La ficha apila etiqueta y valor; `dl div` del riel los pone en fila y hay que deshacerlo. */
+.ficha-pedido { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px 20px; margin: 0; }
+.ficha-pedido div { display: block; padding: 0; border-bottom: 0; }
+.ficha-pedido dt { font: 800 9.5px Archivo; letter-spacing: .1em; color: var(--suave); }
+.ficha-pedido dd { margin: 4px 0 0; font: 800 13px Archivo; text-align: left; }
+
+.linea-tiempo { list-style: none; margin: 0; padding: 0 0 0 18px; border-left: 2px solid var(--line-strong); display: grid; gap: 12px; }
+.linea-tiempo li { position: relative; display: grid; gap: 2px; }
+.linea-tiempo li::before {
+  content: ''; position: absolute; left: -24px; top: 4px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--line-strong);
+}
+.linea-tiempo li[data-propio]::before { background: var(--red); border-color: var(--red); }
+.linea-tiempo b { font: 800 12.5px Archivo; }
+.linea-tiempo span { font-size: 11px; color: var(--suave); }
+
+.enlace-fila { border: 0; background: transparent; padding: 0; font: 800 11px Archivo; color: var(--red-d); white-space: nowrap; }
+.enlace-fila:hover { text-decoration: underline; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .92em; }
+
 /* ── pantallas medianas ──────────────────────────────────────────────────────────── */
 @media (max-width: 1340px) {
   .app { --rw: 292px; --sw: 200px; }
@@ -437,7 +492,7 @@ tbody tr:hover td { background: var(--ground); }
 @media (max-width: 900px) {
   .app { --toph: 54px; --kh: 44px; --hdr: 98px; --sw: 0px; --rw: 0px; }
   .wordmark { display: none; }
-  .chip { min-width: 96px; padding: 4px 12px 5px; }
+  .chip { min-width: 114px; padding: 4px 12px 5px; }
   .chip b { font-size: 18px; }
   /* El menú pasa a superponerse: el mapa no cede ancho en pantallas chicas. */
   .side { width: 232px; transform: translateX(-100%); transition: transform .2s ease; z-index: 37; border-right: 1.5px solid var(--line-strong); }
@@ -454,6 +509,7 @@ tbody tr:hover td { background: var(--ground); }
   .sheet { padding: 16px 14px 24px; }
   .kpis { grid-template-columns: repeat(2, 1fr); gap: 12px; }
   .kpi b { font-size: 25px; }
+  .pedido-alta { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 570px) {

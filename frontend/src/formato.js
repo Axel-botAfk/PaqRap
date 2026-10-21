@@ -55,17 +55,18 @@ export function textoRitmo(ritmo) {
   return `${minutos(ritmo.minutosPorVentana)} simulados cada ${decimal(ritmo.saMs / 1000, ' s')}`;
 }
 
-export function ritmoConfigurado(escenario, duracionObjetivo, velocidad) {
+// Ritmo fijo por escenario: ya no se configura desde la pantalla.
+export const VELOCIDAD_DIA_A_DIA = 60;
+export const DURACION_5_DIAS_MIN = 40;
+
+export function ritmoConfigurado(escenario) {
   if (escenario === 'PERIODO_5_DIAS') {
-    const objetivo = Number(duracionObjetivo) || 40;
-    return `Ritmo: ${minutos(7200 / (objetivo * 3))} simulados cada 20 s; los 5 días duran unos ${objetivo} min reales.`;
+    return `Los 5 días se reproducen en unos ${DURACION_5_DIAS_MIN} min reales.`;
   }
   if (escenario === 'OPERACION_DIARIA') {
-    const v = Number(velocidad) || 60;
-    return v === 1 ? 'Ritmo: tiempo real (el día dura 24 h).'
-      : `Ritmo: ${minutos(v / 3)} simulados cada 20 s; el día dura unos ${minutos(1440 / v)} reales.`;
+    return `La jornada se reproduce en unos ${minutos(1440 / VELOCIDAD_DIA_A_DIA)} reales.`;
   }
-  return 'Ritmo: 2 h simuladas cada 10 s; se detiene en el primer pedido vencido.';
+  return 'Avanza 2 h simuladas cada 10 s y se detiene en el primer pedido vencido.';
 }
 
 export const ETIQUETAS = {

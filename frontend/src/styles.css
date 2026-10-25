@@ -524,3 +524,168 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   .kpis { grid-template-columns: 1fr; }
   .row { grid-template-columns: 1fr; }
 }
+
+/* Rediseño compacto de las hojas. El mapa y su riel usan íntegramente los estilos
+   anteriores a este bloque. */
+.app:not(.mapview) {
+  --app-bg: #F7F8FB;
+  --surface: #FFFFFF;
+  --surface-secondary: #F3F6FC;
+  --navy: #071B56;
+  --blue-ui: #506CA6;
+  --blue-secondary: #7287B4;
+  --text-primary: #17213D;
+  --text-secondary: #7785A5;
+  --text-muted: #9CA8C0;
+  --brand-red: #FF1717;
+  --action-red: #F40724;
+  --error-red: #DC1515;
+  --red-soft: #FFF0F0;
+  --success: #098C50;
+  --warning: #F5AA00;
+  --border: #E1E8F3;
+  --border-strong: #D6E0EE;
+  --border-soft: #E8EDF5;
+  --shadow-card: 0 6px 22px rgba(26, 52, 105, .055);
+  --ink: var(--text-primary);
+  --red: var(--brand-red);
+  --red-d: var(--error-red);
+  --red-100: var(--red-soft);
+  --red-200: #FFDADA;
+  --verde: var(--success);
+  --ambar: var(--warning);
+  --line: var(--border);
+  --line-strong: var(--border-strong);
+  --suave: var(--text-secondary);
+  --ground: var(--app-bg);
+  --sombra-sm: var(--shadow-card);
+  color: var(--ink);
+  background: var(--app-bg);
+}
+.app:not(.mapview) .top {
+  background: var(--app-bg);
+  border-color: var(--border);
+  backdrop-filter: none;
+}
+.app:not(.mapview) .marca-simbolo { background: var(--brand-red); }
+.app:not(.mapview) .wordmark,
+.app:not(.mapview) .top h1 { color: var(--navy); }
+.app:not(.mapview) .burger { border-color: var(--border); }
+.app:not(.mapview) .burger i {
+  background: var(--navy);
+  box-shadow: 0 5px 0 var(--navy), 0 -5px 0 var(--navy);
+}
+.app:not(.mapview) .estado-ejecucion { letter-spacing: 0; font-size: 10.5px; }
+.app:not(.mapview) .estado-ejecucion.TERMINADA { background: #D9F5E5; color: var(--success); }
+.app:not(.mapview) .side { background: var(--app-bg); border-color: var(--border); }
+.app:not(.mapview) .side nav { padding: 10px 0; gap: 2px; }
+.app:not(.mapview) .side nav button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: calc(100% - 8px);
+  padding: 9px 14px;
+  border-radius: 0 9px 9px 0;
+  color: var(--blue-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.app:not(.mapview) .side nav button svg { flex: none; }
+.app:not(.mapview) .side nav button[data-on] {
+  background: var(--red-soft);
+  border-left-color: var(--brand-red);
+  color: var(--brand-red);
+  font-weight: 700;
+}
+.app:not(.mapview) .side footer { border-color: var(--border-soft); }
+.app:not(.mapview) .sheet { background: var(--app-bg); padding: 18px 20px 26px; }
+.app:not(.mapview) .sheet-contenido { max-width: 1500px; }
+.app:not(.mapview) .kpis { gap: 12px; margin-bottom: 16px; }
+.app:not(.mapview) .kpi {
+  position: relative;
+  min-height: 94px;
+  padding: 15px 17px;
+  border-color: var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
+}
+.app:not(.mapview) .kpi span {
+  max-width: calc(100% - 45px);
+  color: var(--text-secondary);
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+.app:not(.mapview) .kpi b { margin-top: 7px; font-size: 27px; }
+.app:not(.mapview) .kpi-icono {
+  position: absolute;
+  top: 23px;
+  right: 15px;
+  box-sizing: content-box;
+  width: 25px;
+  height: 25px;
+  padding: 8px;
+  border-radius: 11px;
+  color: var(--k);
+  background: color-mix(in srgb, var(--k) 9%, white);
+}
+.app:not(.mapview) .card { border-color: var(--border); border-radius: 13px; box-shadow: var(--shadow-card); }
+.app:not(.mapview) .card > header { min-height: 46px; padding: 11px 17px; border-color: var(--border-soft); }
+.app:not(.mapview) .card > header h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--brand-red);
+  font-size: 12.5px;
+  letter-spacing: .06em;
+}
+.app:not(.mapview) .card-cuerpo { padding: 16px 17px; }
+.app:not(.mapview) .card-pie { padding: 12px 17px; color: var(--blue-ui); font-size: 11px; }
+.app:not(.mapview) .vacio { background: var(--surface); border-color: var(--border-strong); border-radius: 10px; color: var(--blue-secondary); font-size: 11.5px; }
+.app:not(.mapview) .muted { color: var(--blue-ui); font-size: 11.5px; }
+.app:not(.mapview) .hoja-tabs { margin-bottom: 16px; border-color: var(--border-strong); }
+.app:not(.mapview) .hoja-tabs button { padding: 10px 14px; color: var(--text-secondary); font-size: 12.5px; letter-spacing: 0; }
+.app:not(.mapview) .hoja-tabs button.activo { color: var(--brand-red); border-color: var(--brand-red); }
+.app:not(.mapview) .filtro-opciones button { padding: 5px 10px; border-color: var(--border); color: var(--text-secondary); font-size: 11px; }
+.app:not(.mapview) .filtro-opciones button.activo { background: var(--brand-red); border-color: var(--brand-red); color: white; }
+.app:not(.mapview) th { background: var(--surface-secondary); color: var(--blue-ui); font-size: 10px; }
+.app:not(.mapview) td { color: var(--text-primary); font-size: 11.5px; }
+.app:not(.mapview) .pill { padding: 3px 9px; font-size: 10px; }
+.app:not(.mapview) .field label { color: var(--blue-ui); font-size: 11.5px; letter-spacing: 0; }
+.app:not(.mapview) .input { height: 40px; border-color: var(--border-strong); color: var(--navy); font-size: 12.5px; }
+.app:not(.mapview) .input:disabled { background: var(--surface-secondary); color: var(--text-muted); }
+.app:not(.mapview) .btn { border-radius: 9px; padding: 9px 12px; font-size: 11.5px; }
+.app:not(.mapview) .btn-primary { background: var(--action-red); border-color: var(--action-red); }
+.app:not(.mapview) .nota { color: var(--blue-ui); font-size: 11px; }
+.app:not(.mapview) .pedido-alta { grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr); gap: 14px; }
+.app:not(.mapview) .pedido-alta .row { gap: 12px; }
+.app:not(.mapview) .pedido-alta .btn-primary { min-height: 40px; }
+.app:not(.mapview) .chk li { align-items: center; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-size: 11.5px; }
+.app:not(.mapview) .chk .pill { min-width: 53px; }
+.app:not(.mapview) .pedido-alta .nota { padding-top: 12px; border-top: 1px solid var(--border-soft); }
+.app:not(.mapview) .sheet-pedidos .card .vacio { margin: 16px !important; min-height: 75px; display: grid; place-items: center; text-align: center; }
+.app:not(.mapview) .sheet-averias .kpi { border-top: 1px solid var(--border); }
+.app:not(.mapview) .sheet-averias .card .vacio { min-height: 145px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; text-align: center; }
+.app:not(.mapview) .sheet-averias .card .vacio svg { width: 29px; height: 29px; color: var(--blue-secondary); }
+.app:not(.mapview) .alerta-lista { border-color: var(--border); border-left-color: var(--brand-red); background: var(--surface-secondary); }
+.app:not(.mapview) .sheet-pedidos .card-cuerpo > .row:first-child { grid-template-columns: minmax(0, 1.4fr) minmax(220px, 1fr); gap: 18px; }
+.app:not(.mapview) .sheet-pedidos input[type=file] { height: 52px; padding: 10px; border: 1px dashed var(--border-strong); border-radius: 9px; color: var(--blue-secondary); }
+.app:not(.mapview) .sheet-pedidos input[type=file]::file-selector-button { margin-right: 10px; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; background: var(--surface-secondary); color: var(--blue-ui); font: inherit; cursor: pointer; }
+.app:not(.mapview) .sheet-pedidos #cm-periodo { height: 52px; }
+.app:not(.mapview) .nota-carga { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; padding: 12px 14px; border-radius: 10px; background: var(--surface-secondary); line-height: 1.5; }
+.app:not(.mapview) .nota-carga svg { flex: none; width: 19px; height: 19px; color: var(--blue-ui); }
+.app:not(.mapview) .nota-carga span { min-width: 0; }
+.app:not(.mapview) .nota-carga code { overflow-wrap: anywhere; }
+
+@media (max-width: 900px) {
+  .app:not(.mapview) .pedido-alta { grid-template-columns: 1fr; }
+}
+@media (max-width: 570px) {
+  .app:not(.mapview) .sheet { padding: 14px 12px 22px; }
+  .app:not(.mapview) .sheet .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+  .app:not(.mapview) .kpi { min-height: 87px; padding: 11px; }
+  .app:not(.mapview) .kpi span { font-size: 9px; }
+  .app:not(.mapview) .kpi b { font-size: 23px; }
+  .app:not(.mapview) .kpi-icono { right: 7px; top: 30px; width: 18px; height: 18px; padding: 5px; }
+  .app:not(.mapview) .sheet-pedidos .card-cuerpo > .row:first-child { grid-template-columns: 1fr; gap: 4px; }
+  .app:not(.mapview) .hoja-tabs button { padding: 8px 9px; font-size: 11px; }
+}

@@ -465,11 +465,11 @@ export default function App() {
       </Riel>
     </>}
 
-    {vista === 'pedidos' && <div className="sheet">
+    {vista === 'pedidos' && <div className="sheet sheet-pedidos">
       <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
         periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
     </div>}
-    {vista === 'averias' && <div className="sheet">
+    {vista === 'averias' && <div className="sheet sheet-averias">
       <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />
     </div>}
   </div>;

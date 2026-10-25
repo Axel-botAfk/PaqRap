@@ -96,13 +96,6 @@ export default function PedidoNuevo({ almacenes = [] }) {
           </tr>)}</tbody>
         </table></div>
       </>}
-
-      <div className="card-pie">
-        <span>La API no tiene alta de pedidos, así que esto no llega al servidor ni entra en la
-          corrida: lo que valida son las reglas del caso y lo que entrega es la línea en el
-          formato del archivo mensual, para pegarla en el juego de datos. Cuando el backend
-          publique el endpoint, este formulario pasa a enviarlo.</span>
-      </div>
     </div>
   </div>;
 }

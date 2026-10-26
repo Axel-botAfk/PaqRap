@@ -1,8 +1,31 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { caminoEnGrilla, nodosBloqueados, posicionVisual, tramosDeRuta, planVigenteEn,
-  estadosDePedido } from './mapa.js';
+  estadosDePedido, xEnMapa, yEnMapa, vehiculosObservadosEn } from './mapa.js';
 import { aMs } from './reloj.js';
+
+test('las coordenadas publicadas por la API conservan el nodo al proyectarse en SVG', () => {
+  assert.deepEqual([xEnMapa(27), yEnMapa(14)], [270, 360]);
+  assert.deepEqual([xEnMapa(12), yEnMapa(38)], [120, 120]);
+  assert.deepEqual([xEnMapa(70), yEnMapa(50)], [700, 0]);
+  assert.deepEqual([xEnMapa(0), yEnMapa(0)], [0, 500]);
+});
+
+test('pausar, avanzar y retroceder muestran exactamente el fotograma elegido', () => {
+  const anterior = [{ id: 'TA01', ubicacion: { x: 12, y: 38 }, cargaAbordo: 4 }];
+  const posterior = [{ id: 'TA01', ubicacion: { x: 27, y: 14 }, cargaAbordo: 0 }];
+  const fotogramas = [
+    { reloj: '2026-09-01T08:30:00', vehiculos: anterior },
+    { reloj: '2026-09-01T08:45:00', vehiculos: posterior }
+  ];
+  const ejecucion = { reloj: '2026-09-01T08:45:00', vehiculos: posterior };
+  assert.equal(vehiculosObservadosEn(fotogramas, 0, ejecucion, false,
+    '2026-09-01T08:30:00', aMs), anterior);
+  assert.equal(vehiculosObservadosEn(fotogramas, 1, ejecucion, false,
+    '2026-09-01T08:45:00', aMs), posterior);
+  assert.equal(vehiculosObservadosEn(fotogramas, 0, ejecucion, true,
+    '2026-09-01T08:33:00', aMs), anterior);
+});
 
 test('cada paso de la ruta es horizontal o vertical y de una arista', () => {
   const camino = caminoEnGrilla({ x: 1, y: 1 }, { x: 4, y: 3 });
@@ -20,6 +43,14 @@ test('rodea un bloqueo activo sin atravesarlo', () => {
   const camino = caminoEnGrilla({ x: 1, y: 1 }, { x: 3, y: 1 }, bloqueados);
   assert.equal(camino.length, 5);
   assert.equal(camino.some(p => p.x === 2 && p.y === 1), false);
+});
+
+test('el camino visual sigue el desempate y la llegada a nodos cerrados del enrutador', () => {
+  assert.deepEqual(caminoEnGrilla({ x: 2, y: 1 }, { x: 1, y: 2 }),
+    [{ x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }]);
+  const cerrado = nodosBloqueados([{ nodos: [{ x: 1, y: 0 }] }]);
+  assert.deepEqual(caminoEnGrilla({ x: 0, y: 0 }, { x: 1, y: 0 }, cerrado),
+    [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
 });
 
 test('no dibuja un tramo cuando no hay acceso al destino', () => {

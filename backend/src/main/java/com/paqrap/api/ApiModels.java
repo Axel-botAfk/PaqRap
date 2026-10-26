@@ -79,7 +79,7 @@ public final class ApiModels {
 
     /** Hito del recorrido de una unidad dentro de una ventana. */
     public record PasoVista(Coordenada ubicacion, LocalDateTime instante, String hito,
-                            String pedidoId) { }
+                            String pedidoId, int cargaAbordo) { }
     public record TrayectoVista(String vehiculoId, List<PasoVista> pasos) { }
 
     /**

@@ -1,9 +1,31 @@
 // Retícula del caso: nodos 0..70 y 0..50, con aristas de 1 km y sin diagonales.
 export const ANCHO = 70;
 export const ALTO = 50;
+/** Proyección de los nodos de la API al lienzo SVG (origen visual arriba a la izquierda). */
+export const xEnMapa = valor => Math.max(0, Math.min(ANCHO * 10, (valor ?? 0) * 10));
+export const yEnMapa = valor => Math.max(0, Math.min(ALTO * 10, (ALTO - (valor ?? 0)) * 10));
+
+/** El historial usa el corte elegido; en vivo nunca toma una instantánea futura. */
+export function fotogramaObservadoEn(fotogramas, indice, ejecucion, enVivo, instante, aMs) {
+  const tiempo = aMs(instante);
+  if (!enVivo) return fotogramas[indice]
+    ?? (ejecucion ? { reloj: ejecucion.reloj, vehiculos: ejecucion.vehiculos } : null);
+  const corte = [...fotogramas].reverse().find(f => aMs(f.reloj) <= tiempo);
+  const tiempoActual = aMs(ejecucion?.reloj);
+  if (Number.isFinite(tiempoActual) && tiempoActual <= tiempo
+      && (!corte || tiempoActual >= aMs(corte.reloj))) {
+    return { reloj: ejecucion.reloj, vehiculos: ejecucion.vehiculos ?? [] };
+  }
+  return corte ?? null;
+}
+
+export function vehiculosObservadosEn(fotogramas, indice, ejecucion, enVivo, instante, aMs) {
+  return fotogramaObservadoEn(fotogramas, indice, ejecucion, enVivo, instante, aMs)?.vehiculos ?? [];
+}
 const COLUMNAS = ANCHO + 1;
 const TOTAL = COLUMNAS * (ALTO + 1);
-const DIRECCIONES = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+// Igual orden de vecinos que EnrutadorBloqueos: izquierda, derecha, abajo, arriba.
+const DIRECCIONES = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
 function valido(punto) {
   return punto && Number.isInteger(punto.x) && Number.isInteger(punto.y)
@@ -18,7 +40,6 @@ export function caminoEnGrilla(origen, destino, bloqueados = new Set()) {
   if (!valido(origen) || !valido(destino)) return [];
   const inicio = indice(origen);
   const fin = indice(destino);
-  if (bloqueados.has(inicio) || bloqueados.has(fin)) return [];
   if (inicio === fin) return [origen];
 
   const anterior = new Int32Array(TOTAL).fill(-1);
@@ -36,9 +57,10 @@ export function caminoEnGrilla(origen, destino, bloqueados = new Set()) {
       const siguiente = { x: x + dx, y: y + dy };
       if (!valido(siguiente)) continue;
       const posicion = indice(siguiente);
-      if (bloqueados.has(posicion) || anterior[posicion] !== -1) continue;
+      if (anterior[posicion] !== -1) continue;
       anterior[posicion] = actual;
-      cola[ultimo++] = posicion;
+      // Un nodo cerrado puede ser destino, pero no se atraviesa.
+      if (!bloqueados.has(posicion)) cola[ultimo++] = posicion;
     }
   }
 
@@ -152,6 +174,16 @@ export function posicionEnTrayecto(preparado, instanteMs) {
     }
   }
   return pasos[pasos.length - 1].ubicacion;
+}
+
+/** Última carga observada en un hito del trayecto, sin tomar eventos futuros. */
+export function cargaEnTrayecto(preparado, instanteMs, cargaDelCorte) {
+  let carga = cargaDelCorte;
+  for (const paso of preparado?.pasos || []) {
+    if (paso.ms > instanteMs) break;
+    if (Number.isFinite(paso.cargaAbordo)) carga = paso.cargaAbordo;
+  }
+  return carga;
 }
 
 /**

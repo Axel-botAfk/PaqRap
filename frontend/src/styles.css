@@ -291,6 +291,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .mapa-stock-critico { fill: #e3262a; }
 .mapa-stock-vacio { fill: #8f9aac; }
 .mapa-stock-sin-datos { fill: #fff; stroke: #8f9aac; stroke-dasharray: 2 1; }
+.mapa-carga { stroke: #fff; stroke-width: 1.7; filter: drop-shadow(0 1px 2px rgba(10, 29, 58, .22)); }
+.mapa-carga-alta { fill: #098c50; }
+.mapa-carga-intermedia { fill: #f1b800; }
+.mapa-carga-baja { fill: #e3262a; }
+.mapa-carga-vacio { fill: #8f9aac; }
+.mapa-carga-sin-datos, .mapa-carga-mixto { fill: #fff; stroke: #8f9aac; stroke-dasharray: 2 1; }
 
 .mapa-cartel {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 22;

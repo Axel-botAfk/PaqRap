@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { posicionEnTrayecto, prepararTrayectos, tramosDeRuta, trazosConRecorrido } from './mapa.js';
+import { posicionEnTrayecto, prepararTrayectos, cargaEnTrayecto, tramosDeRuta,
+  trazosConRecorrido } from './mapa.js';
 import { aMs } from './reloj.js';
 
 // Ruta del plan desde el central (27,14) a dos clientes; el simulador informa que la unidad
@@ -19,6 +20,18 @@ const trayectos = [{ vehiculoId: 'TA01', pasos: [
 ] }];
 
 const nodos = trazo => new Set(trazo.tramos.flat().map(p => `${p.x},${p.y}`));
+
+test('la carga sigue los hitos reales al avanzar, pausar y retroceder', () => {
+  const preparado = prepararTrayectos([{ vehiculoId: 'TA01', pasos: [
+    { ubicacion: { x: 27, y: 14 }, instante: '2026-09-01T08:30:00', hito: 'SALIDA', cargaAbordo: 0 },
+    { ubicacion: { x: 27, y: 14 }, instante: '2026-09-01T08:35:00', hito: 'CARGA', cargaAbordo: 12 },
+    { ubicacion: { x: 30, y: 15 }, instante: '2026-09-01T08:45:00', hito: 'ENTREGA', cargaAbordo: 4 }
+  ] }], aMs).get('TA01');
+  assert.equal(cargaEnTrayecto(preparado, aMs('2026-09-01T08:33:00'), 0), 0);
+  assert.equal(cargaEnTrayecto(preparado, aMs('2026-09-01T08:40:00'), 0), 12);
+  assert.equal(cargaEnTrayecto(preparado, aMs('2026-09-01T08:45:00'), 0), 4);
+  assert.equal(cargaEnTrayecto(preparado, aMs('2026-09-01T08:34:00'), 0), 0);
+});
 
 test('en vivo la unidad va siempre encima de la línea de su ruta', () => {
   const preparados = prepararTrayectos(trayectos, aMs);

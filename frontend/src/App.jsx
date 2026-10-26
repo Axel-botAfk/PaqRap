@@ -500,7 +500,7 @@ export default function App() {
 
   // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
   // cifras de la corrida vive en el riel y en el mapa.
-  const numeroMetrica = valor => numero(valor ?? (vista === 'operacion' ? 0 : null));
+  const numeroMetrica = valor => numero(valor ?? 0);
   const chips = ES_MAPA(vista) ? [
     { etiqueta: 'ENTREGADOS', valor: numeroMetrica(resumenPedidos.entregados),
       titulo: 'Acumulado de la corrida: incluye los que ya salieron del plan vigente.' },
@@ -515,7 +515,7 @@ export default function App() {
 
   const meta = vista === 'simulacion' ? [
     { etiqueta: 'Fecha y hora de simulación', valor: fechaConSegundos(instanteReproducido) },
-    { etiqueta: 'Duración', valor: duracion(transcurridoMs) }
+    { etiqueta: 'Duración', valor: duracion(transcurridoMs ?? 0) }
   ] : vista === 'operacion' ? [
     { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) }
   ] : [];

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosDeRuta,
-  prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from '../mapa.js';
+import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados, tramosDeRuta,
+  prepararTrayectos, posicionEnTrayecto, cargaEnTrayecto, trazosConRecorrido } from '../mapa.js';
 import { aMs } from '../reloj.js';
 import { esFinal } from '../services/api.js';
 import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from '../formato.js';
@@ -8,6 +8,7 @@ import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
 import FondoUrbano from './FondoUrbano.jsx';
 import IconoUI from './IconoUI.jsx';
 import { estadoDeStock, ETIQUETAS_STOCK } from '../stock.js';
+import { estadoDeCarga, estadoDeGrupo, ETIQUETAS_CARGA } from '../carga.js';
 
 const LISTA_VACIA = [];
 
@@ -155,10 +156,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   }
 
   const fotograma = fotogramas[indiceFotograma];
-  const posicionesObservadas = fotograma?.vehiculos ?? ejecucion?.vehiculos ?? LISTA_VACIA;
-  const [vehiculosAnimados, setVehiculosAnimados] = useState(posicionesObservadas);
-  const anteriores = useRef(null);
-  const vehiculosObservados = fotograma ? vehiculosAnimados : posicionesObservadas;
+  const fotoObservada = fotogramaObservadoEn(
+    fotogramas, indiceFotograma, ejecucion, enVivo, instante, aMs);
+  const posicionesObservadas = fotoObservada?.vehiculos ?? LISTA_VACIA;
   // Los sin asignar del plan vigente en el instante mostrado; sin historial, los más recientes.
   const noAsignados = noAsignadosDelInstante || ejecucion?.noAsignados || LISTA_VACIA;
   const almacenes = mapaDatos?.almacenes || [];
@@ -174,46 +174,14 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const trayectosPreparados = useMemo(() => trayectosEnVivo
     ? prepararTrayectos(trayectosEnVivo, aMs, bloqueados) : null, [trayectosEnVivo, bloqueados]);
   const instanteMs = instante ? aMs(instante) : NaN;
-  const vehiculosTodos = trayectosPreparados ? posicionesObservadas.map(vehiculo => {
-    const ubicacion = posicionEnTrayecto(trayectosPreparados.get(vehiculo.id), instanteMs);
-    return ubicacion ? { ...vehiculo, ubicacion } : vehiculo;
-  }) : vehiculosObservados;
-
-  useEffect(() => {
-    if (!fotograma) {
-      anteriores.current = null;
-      setVehiculosAnimados(posicionesObservadas);
-      return undefined;
-    }
-    const origenes = anteriores.current;
-    if (!origenes) {
-      anteriores.current = posicionesObservadas;
-      setVehiculosAnimados(posicionesObservadas);
-      return undefined;
-    }
-    const porId = new Map(origenes.map(vehiculo => [vehiculo.id, vehiculo]));
-    const trayectos = posicionesObservadas.map(vehiculo => {
-      const origen = porId.get(vehiculo.id)?.ubicacion;
-      return { vehiculo, origen,
-        camino: origen ? caminoEnGrilla(origen, vehiculo.ubicacion, bloqueados) : [] };
-    });
-    let cuadro;
-    const inicio = performance.now();
-    const animar = ahora => {
-      const progreso = Math.min(1, (ahora - inicio) / pasoMs);
-      const visibles = trayectos.map(({ vehiculo, origen, camino }) => ({
-        ...vehiculo,
-        ubicacion: origen ? posicionEnCamino(camino, origen, vehiculo.ubicacion, progreso)
-          : vehiculo.ubicacion
-      }));
-      anteriores.current = visibles;
-      setVehiculosAnimados(visibles);
-      if (progreso < 1) cuadro = requestAnimationFrame(animar);
-      else anteriores.current = posicionesObservadas;
-    };
-    cuadro = requestAnimationFrame(animar);
-    return () => cancelAnimationFrame(cuadro);
-  }, [fotograma, posicionesObservadas, bloqueados, pasoMs]);
+  const enCortePublicado = enVivo && (ejecucion?.reloj === instante
+    || fotogramas.some(corte => corte.reloj === instante));
+  const vehiculosTodos = trayectosPreparados && !enCortePublicado ? posicionesObservadas.map(vehiculo => {
+    const preparado = trayectosPreparados.get(vehiculo.id);
+    const ubicacion = posicionEnTrayecto(preparado, instanteMs);
+    return { ...vehiculo, ubicacion: ubicacion || vehiculo.ubicacion,
+      cargaAbordo: cargaEnTrayecto(preparado, instanteMs, vehiculo.cargaAbordo) };
+  }) : posicionesObservadas;
 
   const trazosTodos = useMemo(() => trayectosPreparados
     ? trazosConRecorrido(rutas, trayectosPreparados, bloqueados)
@@ -249,8 +217,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
   const vacio = rutas.length === 0 && vehiculosTodos.length === 0 && noAsignados.length === 0 && !mapaDatos;
 
-  const x = valor => limitar((valor ?? 0) * 10, 0, LIENZO_ANCHO);
-  const y = valor => limitar((ALTO - (valor ?? 0)) * 10, 0, LIENZO_ALTO);
+  const x = xEnMapa;
+  const y = yEnMapa;
   // Los símbolos conservan su tamaño en pantalla: al acercar crece la ciudad, no los iconos.
   const escala = 1 / vista.z;
   const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
@@ -270,7 +238,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     const lineas = [`Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`, ETIQUETAS_STOCK[estado]];
     if (stock?.ilimitado) lineas.push('Stock ilimitadas');
     else if (stock && Number.isFinite(stock.disponible)) {
-      lineas.push(`Existencias ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}`);
+      lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}`);
       if (inventario?.reloj) lineas.push(`Último corte disponible: ${fecha(inventario.reloj)}`);
     }
     return { titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`, lineas };
@@ -281,12 +249,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     if (grupo.length === 1) {
       const v = grupo[0];
       return { titulo: `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo}`,
-        lineas: [`Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`, estadoVehiculo(v.estado)] };
+        lineas: [`Nodo (${v.ubicacion.x}, ${v.ubicacion.y})`,
+          `Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`,
+          ETIQUETAS_CARGA[estadoDeCarga(v)], estadoVehiculo(v.estado),
+          `Carga publicada hasta ${fecha(instante)}`] };
     }
     const titulo = `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y})`;
     if (grupo.length <= DETALLE_MAXIMO) {
       return { titulo, lineas: grupo.map(v =>
-        `${v.id} · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${estadoVehiculo(v.estado)}`) };
+        `${v.id} · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${ETIQUETAS_CARGA[estadoDeCarga(v)]} · ${estadoVehiculo(v.estado)}`)
+        .concat(`Carga publicada hasta ${fecha(instante)}`) };
     }
     // Aparcadas en el almacén pueden ser decenas: se resume por tipo en vez de listarlas.
     const porTipo = new Map();
@@ -295,8 +267,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       porTipo.set(v.tipo, { n: actual.n + 1, carga: actual.carga + v.cargaAbordo,
         capacidad: actual.capacidad + v.capacidad });
     }
+    const porNivel = new Map();
+    for (const v of grupo) {
+      const nivel = estadoDeCarga(v);
+      porNivel.set(nivel, (porNivel.get(nivel) || 0) + 1);
+    }
     return { titulo, lineas: [...porTipo].map(([tipo, t]) =>
-      `${t.n} × ${ETIQUETA_TIPO[tipo] || tipo} · carga ${numero(t.carga)} / ${numero(t.capacidad)}`) };
+      `${t.n} × ${ETIQUETA_TIPO[tipo] || tipo} · carga ${numero(t.carga)} / ${numero(t.capacidad)}`)
+      .concat([...porNivel].map(([nivel, cantidad]) =>
+        `${cantidad} unidad(es): ${ETIQUETAS_CARGA[nivel]}`))
+      .concat(`Carga publicada hasta ${fecha(instante)}`) };
   }
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
@@ -358,10 +338,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         {modoOperacion && <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
           cx="9" cy="-9" r="4.5" pointerEvents="none" />}
       </g>)}
+      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
+        transform={fijo(punto.x, punto.y)}>
+        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
+        <path d="M0 -10 V-25" /><circle cx="0" cy="-29" r="10" />
+        <text x="0" y="-25" textAnchor="middle">S</text>
+      </g>)}
       {gruposVehiculos.map(grupo => <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
         transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)} role="img"
-        aria-label={fichaDeUnidades(grupo).lineas.join('. ')}
+        aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}
         onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
         onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
         onPointerLeave={ocultarTip}>
@@ -370,16 +356,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
           <DibujoVehiculo tipo={grupo[0].tipo} />
         </svg>
+        {modoOperacion && <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
+          cx="9" cy="-9" r="4.5" pointerEvents="none" />}
         {grupo.length > 1 && <>
-          <circle className="grupo-contador" cx="12" cy="-11" r="8" />
-          <text x="12" y="-7.5" textAnchor="middle">{grupo.length}</text>
+          <circle className="grupo-contador" cx="12" cy="11" r="8" />
+          <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
         </>}
-      </g>)}
-      {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
-        transform={fijo(punto.x, punto.y)}>
-        <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>
-        <path d="M0 -10 V-17" /><circle cx="0" cy="-21" r="10" />
-        <text x="0" y="-17" textAnchor="middle">S</text>
       </g>)}
     </svg>
 

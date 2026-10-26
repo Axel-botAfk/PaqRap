@@ -548,7 +548,7 @@ export default function App() {
           calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
           inventario={inventarioDelInstante} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
           reproduciendo={reproduciendo} pasoMs={pasoMs} estadosPedido={estadosPedido}
-          modoOperacion={vista === 'operacion'} transcurridoMs={vista === 'operacion' ? tiempoRealMs : transcurridoMs}
+          modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}

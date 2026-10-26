@@ -403,7 +403,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     </div>}
 
     <div className="mapa-abajo">
-    {modoOperacion ? <div className="mapa-reproductor">
+    {!modoOperacion ? <div className="mapa-reproductor">
       <div className="reproduccion-controles">
         {enVivo
           ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}

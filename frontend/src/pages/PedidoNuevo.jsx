@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { numero } from '../formato.js';
 import { comprobaciones, hayErrores, aRegistro, PLAZOS } from '../pedidos.js';
 
-const NIVEL = { ok: ['OK', 'v'], aviso: ['AVISO', 'a'], error: ['ERROR', 'r'] };
+const NIVEL = { ok: ['CORRECTO', 'v'], aviso: ['AVISO', 'a'], error: ['ERROR', 'r'] };
 
 const VACIO = { cliente: '', x: '', y: '', cantidad: '', plazo: '36', recepcion: '' };
 

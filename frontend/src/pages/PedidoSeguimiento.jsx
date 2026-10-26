@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { fecha, decimal, numero } from '../formato.js';
+import { fecha, decimal, numero, tipoVehiculo } from '../formato.js';
 import { aMs } from '../reloj.js';
 import { seguimientoDePedido } from '../pedidos.js';
 
@@ -66,7 +66,7 @@ export default function PedidoSeguimiento({ pedido, planes, situacion, alVolver 
         <tbody>{asignaciones.map((a, i) => <tr key={`${a.rutaId}-${i}`}>
           <td>{fecha(a.reloj)}</td>
           <td><b>{a.rutaId}</b></td>
-          <td>{a.vehiculoId} · {a.tipoVehiculo}</td>
+          <td>{a.vehiculoId} · {tipoVehiculo(a.tipoVehiculo)}</td>
           <td>{a.almacenId}</td>
           <td>{decimal(a.distanciaKm, ' km')}</td>
           <td>{typeof a.costo === 'number' ? `S/ ${decimal(a.costo)}` : '—'}</td>

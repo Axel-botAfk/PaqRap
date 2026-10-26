@@ -1,6 +1,7 @@
 import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
-import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta } from '../formato.js';
+import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
+  tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
 const ESCENARIOS_SIMULACION = [
   ['PERIODO_5_DIAS', 'Semanal (5 días)', 'Cinco jornadas en 30 a 60 minutos reales.'],
@@ -93,7 +94,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           <select id="a-unidad" className="input" value={unidadAveriada} required
             onChange={e => cfg.setUnidadAveriada(e.target.value)}>
             <option value="">Seleccionar vehículo</option>
-            {flota.map(v => <option key={v.id} value={v.id}>{v.id} · {v.tipo}</option>)}
+            {flota.map(v => <option key={v.id} value={v.id}>{v.id} · {tipoVehiculo(v.tipo)}</option>)}
           </select>
         </div>
         <div className="field"><label htmlFor="a-tipo">Tipo de avería</label>
@@ -106,13 +107,15 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <button className="btn btn-primary btn-block" type="submit" disabled={ocupado || !unidadAveriada || !corriendo}>Guardar</button>
         <p className="nota">El planificador gestiona la indisponibilidad y el traslado al almacén central según el tipo. Los pedidos afectados se replanifican en el siguiente corte.</p>
         {averias.length > 0 && <ul className="averias-lista">{averias.map(a => <li key={`${a.unidadId}-${a.instante}`}>
-          {a.unidadId} · {a.tipo} · {a.estado} · {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s)
+          {a.unidadId} · {etiquetaTipoAveria(a.tipo)} · {estadoAveria(a.estado)} · {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s)
         </li>)}</ul>}
       </form>
     </Acordeon>
 
     <Acordeon titulo="Inventario de almacenes" abierto={false}>
-      {!inventario ? <p className="vacio">Sin una corrida seleccionada, se muestra el stock inicial.</p>
+      {!inventario ? <p className="vacio">{ejecucion
+        ? 'No hay un corte de inventario disponible para este instante.'
+        : 'Sin una corrida seleccionada, se muestran el Stock inicial.'}</p>
         : <>
           <div className="almacenes">{inventario.almacenes.map(almacen => {
             // La API no publica capacidad; el llenado se mide contra el stock inicial del caso.
@@ -128,8 +131,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
                 style={{ width: `${porcentaje}%` }} /></div>
             </div>;
           })}</div>
-          <p className="nota">Inventario a las {fecha(inventario.reloj)}. Durante la reproducción
-            histórica se muestra el stock más reciente: no hay historial por fotograma.</p>
+          <p className="nota">Inventario del último corte disponible, a las {fecha(inventario.reloj)}.</p>
         </>}
     </Acordeon>
 

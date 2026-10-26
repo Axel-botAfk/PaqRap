@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TOPE_CUADRO_MS, aIso, aMs, crearRelojAnclado, desfaseConServidor, instanteSimulado,
-  transcurridoObjetivo } from './reloj.js';
+  transcurridoObjetivo, tiempoRealTranscurrido } from './reloj.js';
+
+test('el tiempo real cuenta desde el inicio incluso durante una pausa y se fija al terminar', () => {
+  const base = ritmo({ inicioRealMs: 1_000_000 });
+  assert.equal(tiempoRealTranscurrido(base, 1_060_000), 60_000);
+  assert.equal(tiempoRealTranscurrido({ ...base, transcurridoAlPausarMs: 5_000 },
+    1_120_000), 120_000);
+  assert.equal(tiempoRealTranscurrido({ ...base, finRealMs: 1_130_000 },
+    2_000_000), 130_000);
+  assert.equal(tiempoRealTranscurrido({ ...base, servidorAhoraMs: 1_010_000 },
+    5_010_000, 4_000_000), 10_000);
+});
 import { posicionEnTrayecto, prepararTrayectos } from './mapa.js';
 
 // Ventana de 1 h simulada que se reproduce en 20 s reales: K = 180.

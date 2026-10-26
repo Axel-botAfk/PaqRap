@@ -1,5 +1,5 @@
 import React from 'react';
-import { fecha, numero } from '../formato.js';
+import { fecha, numero, tipoAveria, estadoAveria, motivoPedido } from '../formato.js';
 import IconoUI from '../components/IconoUI.jsx';
 
 const ETIQUETAS_EVENTO = {
@@ -36,8 +36,8 @@ export default function HojaAverias({ ejecucion, averias, eventosOperacion }) {
           <span>{ejecucion.mensajeError || 'La simulación no pudo completarse.'}</span>
         </div>}
         {averias.map(a => <div className="alerta-lista" key={`${a.unidadId}-${a.instante}`}>
-          <b>Avería {a.tipo} · {a.unidadId}</b>
-          <span>{a.estado} · registrada a las {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s).</span>
+          <b>Avería {tipoAveria(a.tipo)} · {a.unidadId}</b>
+          <span>{estadoAveria(a.estado)} · registrada a las {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s).</span>
         </div>)}
         {hechos.map(e => <div className="alerta-lista" key={`e${e.indice}`}>
           <b>{ETIQUETAS_EVENTO[e.tipo]}{e.pedidoId ? ` · ${e.pedidoId}` : e.vehiculoId ? ` · ${e.vehiculoId}` : ''}</b>
@@ -45,7 +45,7 @@ export default function HojaAverias({ ejecucion, averias, eventosOperacion }) {
         </div>)}
         {sinAsignar.slice(0, 20).map((pedido, indice) => <div className="alerta-lista" key={`${pedido.id}-${indice}`}>
           <b>{pedido.id} · sin asignar</b>
-          <span>{pedido.motivo || 'Sin motivo específico disponible'} · plazo {fecha(pedido.fechaLimite)}</span>
+          <span>{motivoPedido(pedido.motivo) || 'Sin motivo específico disponible'} · plazo {fecha(pedido.fechaLimite)}</span>
         </div>)}
         {sinAsignar.length > 20 && <p className="nota">Hay {numero(sinAsignar.length - 20)} pedidos adicionales sin asignar.</p>}
       </div>

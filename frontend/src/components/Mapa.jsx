@@ -3,10 +3,11 @@ import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosD
   prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from '../mapa.js';
 import { aMs } from '../reloj.js';
 import { esFinal } from '../services/api.js';
-import { fecha, numero, duracion, colorDeRuta, textoRitmo } from '../formato.js';
+import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from '../formato.js';
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
 import FondoUrbano from './FondoUrbano.jsx';
 import IconoUI from './IconoUI.jsx';
+import { estadoDeStock, ETIQUETAS_STOCK } from '../stock.js';
 
 const LISTA_VACIA = [];
 
@@ -15,6 +16,7 @@ const LIENZO_ANCHO = ANCHO * 10;
 const LIENZO_ALTO = ALTO * 10;
 const ZOOM_MIN = 1;
 const ZOOM_MAX = 8;
+const DURACION_ZOOM_MS = 250;
 const VISTA_INICIAL = { cx: LIENZO_ANCHO / 2, cy: LIENZO_ALTO / 2, z: 1 };
 
 const TIPOS_FLOTA = [['AUTO', 'Auto'], ['MOTO', 'Moto'], ['BICICLETA', 'Bicicleta'], ['CAMION', 'Camión']];
@@ -37,7 +39,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
   alReproducir, pasoMs, alCambiarPaso, enVivo = false, trayectosEnVivo = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
-  modoOperacion = false, transcurridoMs = null }) {
+  modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -50,6 +52,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const lienzoRef = useRef(null);
   const [tip, setTip] = useState(null);
   const arrastre = useRef(null);
+  const animacionZoom = useRef(null);
+  const vistaActual = useRef(vista);
+  vistaActual.current = vista;
 
   const marco = encuadre(vista);
 
@@ -61,19 +66,50 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     return { caja, px: Math.min(caja.width / marco.ancho, caja.height / marco.alto) };
   }
 
-  function acercar(factor, hacia = null) {
-    setVista(actual => {
-      const previo = encuadre(actual);
-      const z = limitar(actual.z * factor, ZOOM_MIN, ZOOM_MAX);
-      if (z === actual.z) return actual;
-      if (!hacia) return { ...actual, z };
-      // El punto bajo el cursor se queda donde está: el resto se abre a su alrededor.
-      const proporcion = actual.z / z;
-      return { z,
-        cx: hacia.x - (hacia.x - previo.cx) * proporcion,
-        cy: hacia.y - (hacia.y - previo.cy) * proporcion };
-    });
+  function cancelarZoom() {
+    if (animacionZoom.current !== null) cancelAnimationFrame(animacionZoom.current);
+    animacionZoom.current = null;
   }
+
+  function aplicarVista(siguiente) {
+    vistaActual.current = siguiente;
+    setVista(siguiente);
+  }
+
+  function acercar(factor, hacia = null, animar = false) {
+    cancelarZoom();
+    const actual = vistaActual.current;
+    const previo = encuadre(actual);
+    const z = limitar(actual.z * factor, ZOOM_MIN, ZOOM_MAX);
+    if (z === actual.z) return;
+    // El punto bajo el cursor se queda donde está: el resto se abre a su alrededor.
+    const proporcion = actual.z / z;
+    const destino = hacia ? {
+      z, cx: hacia.x - (hacia.x - previo.cx) * proporcion,
+      cy: hacia.y - (hacia.y - previo.cy) * proporcion
+    } : { ...actual, z };
+    const final = encuadre(destino);
+    if (!animar || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      aplicarVista({ cx: final.cx, cy: final.cy, z });
+      return;
+    }
+    const inicio = performance.now();
+    const paso = ahora => {
+      const avance = limitar((ahora - inicio) / DURACION_ZOOM_MS, 0, 1);
+      const suave = avance * avance * (3 - 2 * avance);
+      const centro = encuadre({
+        z: actual.z + (z - actual.z) * suave,
+        cx: actual.cx + (final.cx - actual.cx) * suave,
+        cy: actual.cy + (final.cy - actual.cy) * suave
+      });
+      aplicarVista({ z: LIENZO_ANCHO / centro.ancho, cx: centro.cx, cy: centro.cy });
+      if (avance < 1) animacionZoom.current = requestAnimationFrame(paso);
+      else animacionZoom.current = null;
+    };
+    animacionZoom.current = requestAnimationFrame(paso);
+  }
+
+  useEffect(() => () => cancelarZoom(), []);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -95,6 +131,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   }, [marco.cx, marco.cy, marco.ancho, marco.alto]);
 
   function empezarArrastre(evento) {
+    cancelarZoom();
     const medida = escalaEnPantalla();
     if (!medida) return;
     arrastre.current = { clientX: evento.clientX, clientY: evento.clientY,
@@ -126,6 +163,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const noAsignados = noAsignadosDelInstante || ejecucion?.noAsignados || LISTA_VACIA;
   const almacenes = mapaDatos?.almacenes || [];
   const stockPorId = new Map((inventario?.almacenes || []).map(a => [a.id, a]));
+  const stockDe = almacen => !ejecucion
+    ? almacen.tipo === 'CENTRAL' ? { ilimitado: true } : { disponible: almacen.stockInicial }
+    : stockDelInstante ? stockPorId.get(almacen.id) : null;
   const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
   const claveBloqueos = bloqueosActivos.map(b => `${b.inicio}/${b.fin}`).join('|');
   const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, claveBloqueos]);
@@ -224,12 +264,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const ocultarTip = () => setTip(null);
 
   function fichaDeAlmacen(almacen) {
-    const stock = stockPorId.get(almacen.id);
+    const stock = stockDe(almacen);
     const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
-    const lineas = [`Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`];
-    if (stock?.ilimitado) lineas.push('Stock ilimitado');
-    else if (stock) lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`);
-    else if (inicial) lineas.push(`Stock inicial ${numero(inicial)}`);
+    const estado = estadoDeStock(stock, almacen.stockInicial);
+    const lineas = [`Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`, ETIQUETAS_STOCK[estado]];
+    if (stock?.ilimitado) lineas.push('Stock ilimitadas');
+    else if (stock && Number.isFinite(stock.disponible)) {
+      lineas.push(`Existencias ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}`);
+      if (inventario?.reloj) lineas.push(`Último corte disponible: ${fecha(inventario.reloj)}`);
+    }
     return { titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`, lineas };
   }
 
@@ -238,12 +281,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     if (grupo.length === 1) {
       const v = grupo[0];
       return { titulo: `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo}`,
-        lineas: [`Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`, v.estado] };
+        lineas: [`Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`, estadoVehiculo(v.estado)] };
     }
     const titulo = `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y})`;
     if (grupo.length <= DETALLE_MAXIMO) {
       return { titulo, lineas: grupo.map(v =>
-        `${v.id} · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${v.estado}`) };
+        `${v.id} · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${estadoVehiculo(v.estado)}`) };
     }
     // Aparcadas en el almacén pueden ser decenas: se resume por tipo en vez de listarlas.
     const porTipo = new Map();
@@ -257,6 +300,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   }
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
+    <div className="mapa-reloj-actual">
+      <time dateTime={ahoraReal ? new Date(ahoraReal).toISOString() : undefined}>
+        Ahora: {ahoraReal ? fecha(new Date(ahoraReal)) : '—'}
+      </time>
+      {modoOperacion && ejecucion && <span>Real transcurrido: {duracion(transcurridoMs)}</span>}
+    </div>
     <svg className="mapa-fondo-urbano"
       viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
       aria-hidden="true" focusable="false" pointerEvents="none">
@@ -306,6 +355,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
           : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
         <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
+        {modoOperacion && <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
+          cx="9" cy="-9" r="4.5" pointerEvents="none" />}
       </g>)}
       {gruposVehiculos.map(grupo => <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
@@ -333,9 +384,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     </svg>
 
     <div className="mapa-herramientas">
-      <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
-      <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
-      <button type="button" className="ancho" onClick={() => setVista(VISTA_INICIAL)} title="Ver toda la ciudad">
+      <button type="button" onClick={() => acercar(1.5, null, true)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
+      <button type="button" onClick={() => acercar(1 / 1.5, null, true)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
+      <button type="button" className="ancho" onClick={() => { cancelarZoom(); aplicarVista(VISTA_INICIAL); }} title="Ver toda la ciudad">
         <svg className="mapa-todo-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
           <path d="M4 9V4h5M4 4l5 5M15 4h5v5M20 4l-5 5M4 15v5h5M4 20l5-5M15 20h5v-5M20 20l-5-5" />

@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
 import { planVigenteEn, estadosDePedido } from './mapa.js';
-import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo } from './reloj.js';
+import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
+  tiempoRealTranscurrido } from './reloj.js';
 import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
@@ -11,8 +12,12 @@ import Mapa from './components/Mapa.jsx';
 import RielCorrida from './pages/RielCorrida.jsx';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
+import { inventarioEn } from './stock.js';
 
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
+const CLAVE_POR_VISTA = vista => `${CLAVE_EJECUCION}.${vista}`;
+const claveDeEscenario = escenario => escenario === 'OPERACION_DIARIA'
+  ? 'operacion' : `simulacion.${escenario.toLowerCase()}`;
 const ID_VALIDO = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
 const LISTA_VACIA = [];
 const ALGORITMO = 'TABU';          // el planificador del caso; ya no se elige desde la pantalla
@@ -31,8 +36,20 @@ function guardarEjecucion(id) {
   try { id ? localStorage.setItem(CLAVE_EJECUCION, id) : localStorage.removeItem(CLAVE_EJECUCION); } catch { /* sin almacenamiento */ }
 }
 
+function leerEjecucionDeVista(vista) {
+  try { return localStorage.getItem(CLAVE_POR_VISTA(vista)); } catch { return null; }
+}
+
+function guardarEjecucionDeVista(vista, id) {
+  try { id ? localStorage.setItem(CLAVE_POR_VISTA(vista), id)
+    : localStorage.removeItem(CLAVE_POR_VISTA(vista)); } catch { /* sin almacenamiento */ }
+}
+
+const vistaDeEscenario = escenario => escenario === 'OPERACION_DIARIA' ? 'operacion' : 'simulacion';
+
 export default function App() {
   const [vista, setVista] = useState('operacion');
+  const vistaActual = useRef('operacion');
   const [escenario, setEscenario] = useState('OPERACION_DIARIA');
   const [periodos, setPeriodos] = useState([]);
   const [detalle, setDetalle] = useState(null);
@@ -46,6 +63,7 @@ export default function App() {
     const valor = new URLSearchParams(location.search).get('ejecucion') || leerEjecucionGuardada();
     return ID_VALIDO.test(valor || '') ? valor : null;
   });
+  const idActual = useRef(id);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -57,6 +75,16 @@ export default function App() {
   const [pasoMs, setPasoMs] = useState(450);
   const [enVivo, setEnVivo] = useState(true);
   const [ahora, setAhora] = useState(() => Date.now());
+  const ejecucionesPorVista = useRef({
+    operacion: leerEjecucionDeVista('operacion'),
+    'simulacion.periodo_5_dias': leerEjecucionDeVista('simulacion.periodo_5_dias'),
+    'simulacion.colapso': leerEjecucionDeVista('simulacion.colapso')
+  });
+  const restaurarVistaInicial = useRef(true);
+  const escenarioSimulacion = useRef((() => {
+    try { return localStorage.getItem('paqrap.escenario.simulacion') === 'COLAPSO'
+      ? 'COLAPSO' : 'PERIODO_5_DIAS'; } catch { return 'PERIODO_5_DIAS'; }
+  })());
   const [eventosOperacion, setEventosOperacion] = useState([]);
   const relojAnclado = useRef(crearRelojAnclado());
   const desfase = useRef(0);
@@ -122,28 +150,43 @@ export default function App() {
     let intervalo;
     let restaurado = false;
     const actualizar = datos => {
-      if (!activo) return;
+      if (!activo || idActual.current !== id) return;
       if (datos.ritmo) desfase.current = desfaseConServidor(datos.ritmo, Date.now());
       setEjecucion(datos);
+      const vistaCorrida = vistaDeEscenario(datos.escenario);
+      const claveCorrida = claveDeEscenario(datos.escenario);
+      ejecucionesPorVista.current[claveCorrida] = id;
+      guardarEjecucionDeVista(claveCorrida, id);
       if (!restaurado && datos.inicio) {
         restaurado = true;
         setDia(datos.inicio.slice(0, 10));
         setHora(datos.inicio.slice(11, 16));
         setEscenario(datos.escenario);
-        // La corrida recuperada manda: su escenario decide en qué vista de mapa se retoma.
-        setVista(datos.escenario === 'OPERACION_DIARIA' ? 'operacion' : 'simulacion');
+        if (datos.escenario !== 'OPERACION_DIARIA') escenarioSimulacion.current = datos.escenario;
+        if (restaurarVistaInicial.current) {
+          setVista(vistaCorrida);
+          vistaActual.current = vistaCorrida;
+          restaurarVistaInicial.current = false;
+        }
       }
       if (esFinal(datos.estado) && intervalo) clearInterval(intervalo);
     };
     const consultar = () => api.consultar(id).then(actualizar)
       .catch(e => {
-        if (!activo) return;
+        if (!activo || idActual.current !== id) return;
         if (e.status === 404) {
           activo = false;
           clearInterval(intervalo);
           guardarEjecucion(null);
+          for (const vistaCorrida of ['operacion', 'simulacion.periodo_5_dias', 'simulacion.colapso']) {
+            if (ejecucionesPorVista.current[vistaCorrida] === id) {
+              ejecucionesPorVista.current[vistaCorrida] = null;
+              guardarEjecucionDeVista(vistaCorrida, null);
+            }
+          }
           history.replaceState(null, '', location.pathname);
           setEjecucion(null);
+          idActual.current = null;
           setId(null);
           setError('El servidor se reinició o la corrida ya no existe: las corridas viven en memoria. Inicia una nueva corrida.');
           return;
@@ -223,6 +266,13 @@ export default function App() {
     return () => cancelAnimationFrame(cuadro);
   }, [corriendo]);
 
+  useEffect(() => {
+    if (corriendo) return undefined;
+    setAhora(Date.now());
+    const intervalo = setInterval(() => setAhora(Date.now()), 1000);
+    return () => clearInterval(intervalo);
+  }, [corriendo]);
+
   const instanteVivoMs = useMemo(() => modoVivo
     ? relojAnclado.current(ejecucion.ritmo, ahora, desfase.current) : null, [modoVivo, ejecucion, ahora]);
 
@@ -252,7 +302,7 @@ export default function App() {
       } catch (fallo) {
         if (fallo.status === 404) completo = true;
         if (activo) setAviso(fallo.status === 404
-          ? 'El backend aún no ofrece reproducción; se muestra la última instantánea.'
+          ? 'El servidor aún no ofrece reproducción; se muestra la última instantánea.'
           : 'Reproducción temporalmente no disponible; se muestra la última instantánea.');
       } finally { consultando = false; }
     };
@@ -309,6 +359,9 @@ export default function App() {
   const instanteVivo = Number.isFinite(instanteVivoMs) ? aIso(instanteVivoMs) : null;
   const instanteReproducido = modoVivo ? instanteVivo || ejecucion.reloj
     : fotogramas[indiceFotograma]?.reloj || ejecucion?.reloj || null;
+  const inventarioDelInstante = useMemo(() => ejecucion
+    ? inventarioEn(fotogramas, inventario, instanteReproducido) : null,
+  [ejecucion?.id, fotogramas, inventario, instanteReproducido]);
   const planReproducido = planVigenteEn(planes, instanteReproducido);
   const rutasReproducidas = modoVivo ? planReproducido?.rutas || ejecucion.rutas || LISTA_VACIA
     : planReproducido?.rutas || (!fotogramas.length ? ejecucion?.rutas : null) || LISTA_VACIA;
@@ -341,18 +394,59 @@ export default function App() {
     };
   }, [ejecucion, estadosPedido]);
 
-  // Tiempo real de la corrida: ventanas ya publicadas más lo reproducido de la actual.
+  // Duración de reproducción de Simulación: ventanas publicadas más la ventana actual.
   const ritmo = ejecucion?.ritmo;
   const transcurridoMs = ritmo
     ? Math.max(0, ritmo.ventana - 1) * ritmo.saMs + transcurridoObjetivo(ritmo, ahora, desfase.current)
     : null;
+  const tiempoRealMs = tiempoRealTranscurrido(ritmo, ahora, desfase.current);
   const progreso = ritmo?.ventanas ? Math.min(1, ritmo.ventana / ritmo.ventanas) : 0;
 
   function cambiarVista(destino) {
+    restaurarVistaInicial.current = false;
+    vistaActual.current = destino;
+    if (ES_MAPA(destino) && destino !== vista) {
+      const clave = destino === 'operacion' ? 'operacion'
+        : claveDeEscenario(escenarioSimulacion.current);
+      const siguienteId = ejecucionesPorVista.current[clave] || null;
+      if (siguienteId !== id) {
+        setEjecucion(null);
+        setFotogramas([]);
+        setPlanes([]);
+        setInventario(null);
+        setAverias([]);
+        setRutaSeleccionada(null);
+        idActual.current = siguienteId;
+        setId(siguienteId);
+        guardarEjecucion(siguienteId);
+        history.replaceState(null, '', siguienteId
+          ? `?ejecucion=${encodeURIComponent(siguienteId)}` : location.pathname);
+      }
+    }
     setVista(destino);
     if (destino === 'operacion') setEscenario('OPERACION_DIARIA');
-    else if (destino === 'simulacion' && escenario === 'OPERACION_DIARIA') setEscenario('PERIODO_5_DIAS');
+    else if (destino === 'simulacion') setEscenario(escenarioSimulacion.current);
     if (esPantallaAngosta()) setMenuAbierto(false);
+  }
+
+  function cambiarEscenario(valor) {
+    escenarioSimulacion.current = valor;
+    try { localStorage.setItem('paqrap.escenario.simulacion', valor); } catch { /* sin almacenamiento */ }
+    setEscenario(valor);
+    const siguienteId = ejecucionesPorVista.current[claveDeEscenario(valor)] || null;
+    if (siguienteId !== id) {
+      setEjecucion(null);
+      setFotogramas([]);
+      setPlanes([]);
+      setInventario(null);
+      setAverias([]);
+      setRutaSeleccionada(null);
+      idActual.current = siguienteId;
+      setId(siguienteId);
+      guardarEjecucion(siguienteId);
+      history.replaceState(null, '', siguienteId
+        ? `?ejecucion=${encodeURIComponent(siguienteId)}` : location.pathname);
+    }
   }
 
   async function iniciar(evento) {
@@ -375,11 +469,19 @@ export default function App() {
         ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
         ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
       });
-      setEjecucion(nueva);
-      setRutaSeleccionada(null);
-      guardarEjecucion(nueva.id);
-      setId(nueva.id);
-      history.replaceState(null, '', `?ejecucion=${encodeURIComponent(nueva.id)}`);
+      const claveCorrida = claveDeEscenario(nueva.escenario);
+      ejecucionesPorVista.current[claveCorrida] = nueva.id;
+      guardarEjecucionDeVista(claveCorrida, nueva.id);
+      if (vistaActual.current === vistaDeEscenario(nueva.escenario)
+          && (nueva.escenario === 'OPERACION_DIARIA'
+            || nueva.escenario === escenarioSimulacion.current)) {
+        setEjecucion(nueva);
+        setRutaSeleccionada(null);
+        guardarEjecucion(nueva.id);
+        idActual.current = nueva.id;
+        setId(nueva.id);
+        history.replaceState(null, '', `?ejecucion=${encodeURIComponent(nueva.id)}`);
+      }
     } catch (e) { setError(e.message); }
     finally { setOcupado(false); }
   }
@@ -419,7 +521,7 @@ export default function App() {
   ] : [];
 
   const configuracion = {
-    escenario, setEscenario, detalle, limites,
+    escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
     flota: flotaParaAveria, alIniciar: iniciar, alRegistrarAveria: registrarAveria
@@ -444,9 +546,10 @@ export default function App() {
       <section className="mapsec">
         <Mapa key={id || 'sin-ejecucion'} ejecucion={ejecucion} rutas={rutasVisibles}
           calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
-          inventario={inventario} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
+          inventario={inventarioDelInstante} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
           reproduciendo={reproduciendo} pasoMs={pasoMs} estadosPedido={estadosPedido}
-          modoOperacion={vista === 'operacion'} transcurridoMs={transcurridoMs}
+          modoOperacion={vista === 'operacion'} transcurridoMs={vista === 'operacion' ? tiempoRealMs : transcurridoMs}
+          ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
           noAsignadosDelInstante={planReproducido?.noAsignados || null}
@@ -463,7 +566,7 @@ export default function App() {
         <RielCorrida vista={vista} cfg={configuracion} ejecucion={ejecucion} corriendo={corriendo}
           ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
           rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={setRutaSeleccionada}
-          inventario={inventario} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
+          inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
           progreso={progreso} />
       </Riel>
     </>}

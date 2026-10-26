@@ -72,7 +72,7 @@ public final class ApiModels {
 
     /** Posición observada después de ejecutar un salto del simulador. */
     public record FotogramaVista(long indice, LocalDateTime reloj,
-                                List<VehiculoVista> vehiculos) { }
+                                List<VehiculoVista> vehiculos, InventarioVista inventario) { }
 
     public record FotogramasVista(long primero, long siguiente, boolean completo,
                                  List<FotogramaVista> fotogramas) { }
@@ -162,7 +162,7 @@ public final class ApiModels {
             Integer velocidad, int ventana, int ventanas, LocalDateTime relojDesde,
             LocalDateTime relojHasta, long publicadoMs, Long transcurridoAlPausarMs,
             long servidorAhoraMs, int ventanasRebasadas, long duracionEstimadaMs,
-            long duracionVentanaMs
+            long duracionVentanaMs, long inicioRealMs, Long finRealMs
     ) { }
 
     /** Detalle del primer incumplimiento, con la foto de la operación en ese momento. */

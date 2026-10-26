@@ -69,6 +69,11 @@ class EjecucionesServiceTest {
         assertTrue(pagina.completo());
         assertTrue(historial.size() >= 2);
         assertEquals(0, historial.get(0).indice());
+        assertTrue(historial.stream().allMatch(f -> f.inventario() != null
+                && f.reloj().equals(f.inventario().reloj())),
+                "cada fotograma conserva el inventario observado en su propio corte");
+        assertTrue(fin.ritmo().inicioRealMs() > 0);
+        assertTrue(fin.ritmo().finRealMs() >= fin.ritmo().inicioRealMs());
         assertEquals(fin.reloj(), historial.get(historial.size() - 1).reloj());
         assertEquals(fin.vehiculos(), historial.get(historial.size() - 1).vehiculos());
         var planes = servicio.planes(id, 0);

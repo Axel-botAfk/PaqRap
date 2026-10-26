@@ -34,6 +34,13 @@ export function transcurridoObjetivo(ritmo, ahoraMs, desfaseMs = 0) {
   return Math.max(0, Math.min(duracionVentana(ritmo), ahoraEnServidor - ritmo.publicadoMs));
 }
 
+/** Duración de pared desde que el servidor inició la ejecución; la pausa no detiene este reloj. */
+export function tiempoRealTranscurrido(ritmo, ahoraMs, desfaseMs = 0) {
+  if (!Number.isFinite(ritmo?.inicioRealMs) || ritmo.inicioRealMs <= 0) return null;
+  const fin = Number.isFinite(ritmo.finRealMs) ? ritmo.finRealMs : ahoraMs - desfaseMs;
+  return Math.max(0, fin - ritmo.inicioRealMs);
+}
+
 /** Instante simulado: inicio de la ventana más lo reproducido por K, sin pasar del corte. */
 export function instanteSimulado(ritmo, transcurridoMs) {
   const desde = aMs(ritmo.relojDesde);

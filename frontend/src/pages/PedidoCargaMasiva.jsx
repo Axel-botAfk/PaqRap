@@ -110,7 +110,7 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
           </table></div>}
         <div className="card-pie">
           {resultado.pedidos.length > MUESTRA && <span>Se muestran los primeros {MUESTRA} de {numero(resultado.pedidos.length)} pedidos.</span>}
-          <span>La API no recibe archivos: esta pantalla valida la estructura, no incorpora los
+          <span>El servidor no recibe archivos: esta pantalla valida la estructura, no incorpora los
             pedidos. El archivo se deja en el directorio de datos del servidor
             (<code>PAQRAP_DATA_DIR</code>) y se inicia una corrida con una fecha de ese mes.</span>
         </div>

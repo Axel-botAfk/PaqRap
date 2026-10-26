@@ -74,6 +74,20 @@ export const ETIQUETAS = {
   COLAPSADA: 'Colapso detectado', FALLIDA: 'Fallida', CANCELADA: 'Cancelada'
 };
 
+const TIPOS_VEHICULO = { AUTO: 'Auto', MOTO: 'Moto', BICICLETA: 'Bicicleta', CAMION: 'Camión' };
+const ESTADOS_VEHICULO = {
+  DISPONIBLE: 'Disponible', EN_RUTA: 'En ruta', AVERIADO: 'Averiado',
+  EN_MANTENIMIENTO: 'En mantenimiento'
+};
+
+export const tipoVehiculo = tipo => TIPOS_VEHICULO[tipo] || tipo;
+export const estadoVehiculo = estado => ESTADOS_VEHICULO[estado] || estado;
+export const tipoAveria = tipo => ({ TIPO_1: 'Tipo 1', TIPO_2: 'Tipo 2', TIPO_3: 'Tipo 3' })[tipo] || tipo;
+export const estadoAveria = estado => ({ REGISTRADA: 'Registrada', APLICADA: 'Aplicada' })[estado] || estado;
+export const motivoPedido = motivo => ({
+  SIN_RUTA_FACTIBLE: 'Sin ruta factible', VENCIDO: 'Plazo vencido sin entrega'
+})[motivo] || motivo;
+
 /** Un color estable por unidad, para distinguir las rutas simultáneas en el mapa. */
 export function colorDeRuta(ruta) {
   const clave = ruta.vehiculoId || ruta.id;

@@ -36,7 +36,7 @@ resultados **todavía no** se persisten.
 | `GET /api/ejecuciones/{id}` | Estado e instantanea mas reciente. |
 | `GET /api/ejecuciones/{id}/fotogramas?desde=N` | Posiciones ejecutadas al cierre de cada salto, en páginas de hasta 100 fotogramas. |
 | `GET /api/ejecuciones/{id}/planes?desde=N` | Versiones históricas del plan, paginadas, para sincronizar rutas con el reloj reproducido. |
-| `GET /api/ejecuciones/{id}/inventario` | Existencias actuales de los almacenes al reloj publicado. |
+| `GET /api/ejecuciones/{id}/inventario` | Stock actual de los almacenes al reloj publicado. |
 | `GET /api/ejecuciones/{id}/averias` | Averías registradas y su estado. |
 | `POST /api/ejecuciones/{id}/averias` | Registra una avería durante una corrida activa. |
 | `POST /api/ejecuciones/{id}/cancelar` | Detiene la corrida (estado `CANCELADA`). |

@@ -61,7 +61,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
       : <>
         <div className="kpis">
           <div className="kpi" style={{ '--k': 'var(--navy)' }}><span>EN EL PLAN VIGENTE</span><b>{numero(filas.length)}</b><IconoUI nombre="caja" className="kpi-icono" size={32} /></div>
-          <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS (ACUMULADO)</span><b>{numero(ejecucion?.avance?.pedidosEntregados)}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS (ACUMULADO)</span><b>{numero(ejecucion?.avance?.pedidosEntregados ?? 0)}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>
           <div className="kpi" style={{ '--k': 'var(--warning)' }}><span>EN RUTA</span><b>{numero(cuenta('EN_RUTA'))}</b><IconoUI nombre="enviar" className="kpi-icono" size={32} /></div>
           <div className="kpi" style={{ '--k': 'var(--brand-red)' }}><span>SIN ASIGNAR</span><b>{numero(cuenta('NO_ASIGNADO'))}</b><IconoUI nombre="persona" className="kpi-icono" size={32} /></div>
         </div>

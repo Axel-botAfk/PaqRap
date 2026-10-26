@@ -398,14 +398,15 @@ export default function App() {
 
   // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
   // cifras de la corrida vive en el riel y en el mapa.
+  const numeroMetrica = valor => numero(valor ?? (vista === 'operacion' ? 0 : null));
   const chips = ES_MAPA(vista) ? [
-    { etiqueta: 'ENTREGADOS', valor: numero(resumenPedidos.entregados),
+    { etiqueta: 'ENTREGADOS', valor: numeroMetrica(resumenPedidos.entregados),
       titulo: 'Acumulado de la corrida: incluye los que ya salieron del plan vigente.' },
-    { etiqueta: 'EN RUTA', valor: numero(resumenPedidos.enRuta),
+    { etiqueta: 'EN RUTA', valor: numeroMetrica(resumenPedidos.enRuta),
       titulo: 'Su unidad ya salió y el pedido sigue pendiente. Deducido de los hitos del simulador.' },
-    { etiqueta: 'PLANIFICADOS', valor: numero(resumenPedidos.planificados),
+    { etiqueta: 'PLANIFICADOS', valor: numeroMetrica(resumenPedidos.planificados),
       titulo: 'Con ruta en el plan vigente, pero su unidad todavía no sale.' },
-    { etiqueta: 'POR PLANIFICAR', valor: numero(resumenPedidos.porPlanificar),
+    { etiqueta: 'POR PLANIFICAR', valor: numeroMetrica(resumenPedidos.porPlanificar),
       alerta: !!resumenPedidos.porPlanificar,
       titulo: 'Sin ruta asignada en el plan vigente.' }
   ] : [];
@@ -426,9 +427,10 @@ export default function App() {
 
   const enMapa = ES_MAPA(vista);
 
-  return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
+  return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${vista === 'operacion' ? 'vista-operacion' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
     <BarraSuperior titulo={TITULOS[vista]} menuAbierto={menuAbierto} ejecucion={ejecucion}
-      alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta} />
+      alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta}
+      modoOperacion={enMapa} />
 
     <BarraLateral vista={vista} alCambiar={cambiarVista} fuente={fuente} />
     {menuAbierto && <div className="scrim" onClick={() => setMenuAbierto(false)} />}
@@ -444,6 +446,7 @@ export default function App() {
           calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
           inventario={inventario} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
           reproduciendo={reproduciendo} pasoMs={pasoMs} estadosPedido={estadosPedido}
+          modoOperacion={vista === 'operacion'} transcurridoMs={transcurridoMs}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
           noAsignadosDelInstante={planReproducido?.noAsignados || null}

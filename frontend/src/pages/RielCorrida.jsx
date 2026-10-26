@@ -104,8 +104,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           </select>
         </div>
         <button className="btn btn-primary btn-block" type="submit" disabled={ocupado || !unidadAveriada || !corriendo}>Guardar</button>
-        <p className="nota">La indisponibilidad y el traslado al almacén central los aplica el
-          planificador según el tipo; los pedidos afectados se replanifican en el siguiente corte.</p>
+        <p className="nota">El planificador gestiona la indisponibilidad y el traslado al almacén central según el tipo. Los pedidos afectados se replanifican en el siguiente corte.</p>
         {averias.length > 0 && <ul className="averias-lista">{averias.map(a => <li key={`${a.unidadId}-${a.instante}`}>
           {a.unidadId} · {a.tipo} · {a.estado} · {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s)
         </li>)}</ul>}
@@ -113,7 +112,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
     </Acordeon>
 
     <Acordeon titulo="Inventario de almacenes" abierto={false}>
-      {!inventario ? <p className="vacio">Sin corrida: se muestra el stock inicial al iniciar.</p>
+      {!inventario ? <p className="vacio">Sin una corrida seleccionada, se muestra el stock inicial.</p>
         : <>
           <div className="almacenes">{inventario.almacenes.map(almacen => {
             // La API no publica capacidad; el llenado se mide contra el stock inicial del caso.

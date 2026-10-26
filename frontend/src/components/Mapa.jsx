@@ -3,8 +3,10 @@ import { ANCHO, ALTO, caminoEnGrilla, nodosBloqueados, posicionEnCamino, tramosD
   prepararTrayectos, posicionEnTrayecto, trazosConRecorrido } from '../mapa.js';
 import { aMs } from '../reloj.js';
 import { esFinal } from '../services/api.js';
-import { fecha, numero, colorDeRuta, textoRitmo } from '../formato.js';
+import { fecha, numero, duracion, colorDeRuta, textoRitmo } from '../formato.js';
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
+import FondoUrbano from './FondoUrbano.jsx';
+import IconoUI from './IconoUI.jsx';
 
 const LISTA_VACIA = [];
 
@@ -34,7 +36,8 @@ function encuadre({ cx, cy, z }) {
 export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos,
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
   alReproducir, pasoMs, alCambiarPaso, enVivo = false, trayectosEnVivo = null,
-  alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null }) {
+  alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
+  modoOperacion = false, transcurridoMs = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -194,6 +197,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const hayFiltro = !!flota || !!estadoPedido;
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
+  const hayReproduccion = fotogramas.length > 0 || enVivo;
   const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
     if (!vehiculo.ubicacion) return grupos;
     const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
@@ -253,14 +257,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   }
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
+    <svg className="mapa-fondo-urbano"
+      viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
+      aria-hidden="true" focusable="false" pointerEvents="none">
+      <FondoUrbano />
+    </svg>
     <svg ref={svgRef} className={`mapa ${arrastrando ? 'mapa-arrastrando' : ''}`}
       viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
       role="img" aria-label="Mapa de rutas, pedidos y vehículos sobre la retícula de la ciudad"
       onPointerDown={empezarArrastre} onPointerMove={mover}
       onPointerUp={soltar} onPointerCancel={soltar}>
-      <rect x="0" y="0" width={LIENZO_ANCHO} height={LIENZO_ALTO} fill="#f2eeed" />
-      {Array.from({ length: ANCHO + 1 }, (_, i) => <line key={`v${i}`} x1={i * 10} x2={i * 10} y1="0" y2={LIENZO_ALTO} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
-      {Array.from({ length: ALTO + 1 }, (_, i) => <line key={`h${i}`} x1="0" x2={LIENZO_ANCHO} y1={i * 10} y2={i * 10} className={`grid-line ${i % 10 === 0 ? 'grid-major' : ''}`} />)}
       {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
         <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
           fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
@@ -329,18 +335,30 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     <div className="mapa-herramientas">
       <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
       <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
-      <button type="button" className="ancho" onClick={() => setVista(VISTA_INICIAL)} title="Ver toda la ciudad">TODO</button>
+      <button type="button" className="ancho" onClick={() => setVista(VISTA_INICIAL)} title="Ver toda la ciudad">
+        <svg className="mapa-todo-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M4 9V4h5M4 4l5 5M15 4h5v5M20 4l-5 5M4 15v5h5M4 20l5-5M15 20h5v-5M20 20l-5-5" />
+        </svg>
+        Todo
+      </button>
       <button type="button" className={`ancho ${filtros || hayFiltro ? 'activo' : ''}`}
-        aria-expanded={filtros} onClick={() => setFiltros(!filtros)}>FILTROS{hayFiltro ? ' ·' : ''}</button>
+        aria-expanded={filtros} onClick={() => setFiltros(!filtros)}>
+        <svg className="mapa-filtrar-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+          <path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z" />
+        </svg>
+        Filtrar{hayFiltro ? ' ·' : ''}
+      </button>
     </div>
 
     {filtros && <div className="mapa-filtros">
-      <div><span className="filtro-titulo">Flota</span><div className="filtro-opciones">
+      <div><span className="filtro-titulo"><IconoUI nombre="camion" size={19} className="filtro-encabezado-icono" />Flota</span><div className="filtro-opciones">
         <button type="button" className={flota === '' ? 'activo' : ''} onClick={() => setFlota('')}>Todas</button>
         {TIPOS_FLOTA.map(([valor, texto]) => <button key={valor} type="button"
           className={flota === valor ? 'activo' : ''} onClick={() => setFlota(valor)}>{texto}</button>)}
       </div></div>
-      <div><span className="filtro-titulo">Pedidos</span><div className="filtro-opciones">
+      <div><span className="filtro-titulo"><IconoUI nombre="pedidos" size={19} className="filtro-encabezado-icono" />Pedidos</span><div className="filtro-opciones">
         <button type="button" className={estadoPedido === '' ? 'activo' : ''} onClick={() => setEstadoPedido('')}>Todos</button>
         {ESTADOS_PEDIDO.map(([valor, texto]) => <button key={valor} type="button"
           className={estadoPedido === valor ? 'activo' : ''} onClick={() => setEstadoPedido(valor)}>{texto}</button>)}
@@ -349,25 +367,95 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <span>{numero(vehiculos.length)} unidad(es) · {numero(puntos.length + sinAsignar.length)} pedido(s) a la vista</span>
         <button type="button" disabled={!hayFiltro} onClick={() => { setFlota(''); setEstadoPedido(''); }}>Limpiar filtros</button>
       </div>
-      <p className="filtro-nota">«En ruta» y «entregado» se deducen de los hitos que informa el
-        simulador; la API solo publica planificado y sin asignar.</p>
     </div>}
 
     <div className="mapa-abajo">
-    {(fotogramas.length > 0 || enVivo) && <div className="mapa-reproductor">
-      {enVivo
-        ? <button type="button" disabled={fotogramas.length < 2} onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
-        : <button type="button" onClick={alReproducir}>{reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}</button>}
-      <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)} value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
-        onChange={evento => alCambiarFotograma(Number(evento.target.value))}
-        aria-label="Seleccionar instante de la reproducción" />
-      {enVivo
-        ? <span>{ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · {fecha(instante)} · ventana {ejecucion?.ritmo?.ventana ?? 0} de {ejecucion?.ritmo?.ventanas ?? '—'} · {ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}</span>
-        : <span>Reproducción {indiceFotograma + 1}/{fotogramas.length} · {fecha(fotograma?.reloj)}{finalizada && reproduciendo ? ' · cálculo terminado' : ''}</span>}
-      {!enVivo && alVolverEnVivo && <button type="button" onClick={alVolverEnVivo}>En vivo</button>}
-      {!enVivo && <label>Velocidad <select value={pasoMs} onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-        <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
-      </select></label>}
+    {modoOperacion ? <div className="mapa-reproductor">
+      <div className="reproduccion-controles">
+        {enVivo
+          ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
+              onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
+          : <button type="button" className="reproduccion-principal" disabled={!hayReproduccion} onClick={alReproducir}>
+              <span className="reproduccion-play" aria-hidden="true">{hayReproduccion && reproduciendo ? 'Ⅱ' : '▶'}</span>
+              {!hayReproduccion ? 'Reproducir' : reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}
+            </button>}
+        <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)}
+          disabled={!hayReproduccion}
+          value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
+          style={{ '--progreso': `${Math.round(100 * (enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma) / Math.max(1, fotogramas.length - 1))}%` }}
+          onChange={evento => alCambiarFotograma(Number(evento.target.value))}
+          aria-label="Seleccionar instante de la reproducción" />
+        <span className="reproduccion-contador" title={enVivo
+          ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
+          : !hayReproduccion ? 'Sin reproducción disponible'
+            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}`}>
+          {enVivo ? `En vivo · ${ejecucion?.ritmo?.ventana ?? 0}/${ejecucion?.ritmo?.ventanas ?? '—'}`
+            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length}` : 'Reproducción 0/0'}
+        </span>
+        <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
+          disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
+        <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
+          disabled={indiceFotograma >= fotogramas.length - 1}
+          onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
+        {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo"
+          onClick={alVolverEnVivo}>En vivo</button>}
+      </div>
+      <div className="reproduccion-tiempos">
+        <div className="reproduccion-tiempo reproduccion-momento">
+          <IconoUI nombre="calendario" size={22} />
+          <span><small>Momento simulado</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
+        </div>
+        <div className="reproduccion-tiempo reproduccion-simulado">
+          <IconoUI nombre="reloj" size={22} />
+          <span><small>Tiempo simulado transcurrido</small><b>{hayReproduccion ? duracion(aMs(instante) - aMs(ejecucion?.inicio)) : '—'}</b></span>
+        </div>
+        <div className="reproduccion-tiempo reproduccion-real">
+          <IconoUI nombre="reloj" size={22} />
+          <span><small>Tiempo real transcurrido</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
+        </div>
+        {!enVivo && <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!hayReproduccion}
+          onChange={evento => alCambiarPaso(Number(evento.target.value))}>
+          <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
+        </select></label>}
+      </div>
+    </div> : <div className="mapa-reproductor">
+      <div className="reproduccion-controles">
+        {enVivo
+          ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
+              onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
+          : <button type="button" className="reproduccion-principal" disabled={!hayReproduccion} onClick={alReproducir}>
+              <span className="reproduccion-play" aria-hidden="true">{hayReproduccion && reproduciendo ? 'Ⅱ' : '▶'}</span>
+              {!hayReproduccion ? 'Reproducir' : reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}
+            </button>}
+        <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)}
+          disabled={!hayReproduccion} value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
+          style={{ '--progreso': `${Math.round(100 * (enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma) / Math.max(1, fotogramas.length - 1))}%` }}
+          onChange={evento => alCambiarFotograma(Number(evento.target.value))}
+          aria-label="Seleccionar instante de la reproducción" />
+        <span className="reproduccion-contador" title={enVivo
+          ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
+          : !hayReproduccion ? 'Sin reproducción disponible'
+            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}`}>
+          {enVivo
+            ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
+            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}` : 'Reproducción 0/0'}
+        </span>
+        {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo" onClick={alVolverEnVivo}>En vivo</button>}
+      </div>
+      <div className="reproduccion-tiempos">
+        <div className="reproduccion-tiempo reproduccion-momento">
+          <IconoUI nombre="calendario" size={22} />
+          <span><small>Fecha y hora de simulación</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
+        </div>
+        <div className="reproduccion-tiempo reproduccion-real">
+          <IconoUI nombre="reloj" size={22} />
+          <span><small>Duración</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
+        </div>
+        {!enVivo && <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!hayReproduccion}
+          onChange={evento => alCambiarPaso(Number(evento.target.value))}>
+          <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
+        </select></label>}
+      </div>
     </div>}
 
     <div className={`mapa-pie ${pieAbierto ? '' : 'mapa-pie-cerrado'}`}>
@@ -389,17 +477,6 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <IconoLeyenda tipo="BICICLETA" texto="Bicicleta" />
           <span><i className="punto punto-vehiculo" /> Ícono con número: varias unidades en el mismo nodo</span>
         </div>
-        <details className="mapa-aviso">
-          <summary>Cómo leer el mapa</summary>
-          <p>En vivo el reloj avanza con el tiempo real según el ritmo del escenario y cada unidad
-            recorre los hitos que informó el simulador (salida, almacén, entregas y corte); entre
-            hitos el trazo por la retícula es esquemático, no GPS. En el historial las posiciones
-            proceden de los saltos del simulador. Se muestra el plan vigente para el instante
-            reproducido, con sus rutas simultáneas y todas sus paradas numeradas. Son entregas
-            previstas, no prueba de entrega efectiva. El inventario y las métricas superiores
-            corresponden al estado más reciente, no al de cada fotograma. Al terminar, el trazo se
-            atenúa; pasa el cursor o usa Tab para resaltarlo.</p>
-        </details>
       </div>}
     </div>
     </div>

@@ -1,12 +1,15 @@
 import React from 'react';
 import { ETIQUETAS } from '../formato.js';
+import IconoUI from './IconoUI.jsx';
+
+const ICONOS_OPERACION = { ENTREGADOS: 'caja', 'EN RUTA': 'ruta', PLANIFICADOS: 'calendario', 'POR PLANIFICAR': 'reloj' };
 
 /**
  * Barra superior fija y, debajo, la franja de indicadores. Ocupan juntas 104 px (--hdr):
  * todo lo demás, el mapa incluido, se cuelga de esa altura.
  */
 export default function BarraSuperior({ titulo, menuAbierto, alAlternarMenu, ejecucion,
-  chips = [], meta = [] }) {
+  chips = [], meta = [], modoOperacion = false }) {
   return <>
     <div className="top">
       <div className="marca-simbolo">PQR</div>
@@ -22,11 +25,13 @@ export default function BarraSuperior({ titulo, menuAbierto, alAlternarMenu, eje
       {chips.length > 0 && <div className="chips">
         {chips.map(chip => <div key={chip.etiqueta} className="chip"
           data-alerta={chip.alerta ? '' : undefined} title={chip.titulo}>
+          {modoOperacion && <IconoUI nombre={ICONOS_OPERACION[chip.etiqueta]} size={28} className="chip-icono" />}
           <span>{chip.etiqueta}</span><b>{chip.valor}</b>
         </div>)}
       </div>}
       {meta.length > 0 && <div className="kmeta">
         {meta.map(dato => <span key={dato.etiqueta} title={dato.titulo}>
+          {modoOperacion && <IconoUI nombre="reloj" size={28} className="kmeta-icono" />}
           <i>{dato.etiqueta}:</i><b>{dato.valor}</b>
         </span>)}
       </div>}

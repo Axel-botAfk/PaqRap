@@ -262,6 +262,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .leyenda span { display: inline-flex; align-items: center; gap: 5px; }
 .leyenda-vehiculo { display: inline-flex; align-items: center; gap: 5px; }
 .leyenda-vehiculo svg { width: 20px; height: 20px; flex: none; }
+.leyenda-almacen svg { width: 20px; height: 20px; flex: none; }
 .punto { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
 .punto-ruta { background: #27889a; }
 .punto-vehiculo { background: var(--red-d); }

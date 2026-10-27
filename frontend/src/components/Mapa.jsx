@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
   prepararTrayectos, posicionEnTrayecto, cargaEnTrayecto, trazosConRecorrido,
   segmentosEnInstante, rutaFinalizadaEn, orientacionEnTrayecto, orientacionEnFotogramas,
@@ -42,7 +42,8 @@ function encuadre({ cx, cy, z }) {
 
 export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos,
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
-  alReproducir, pasoMs, alCambiarPaso, enVivo = false, trayectosEnVivo = null,
+  alReproducir, pasoMs, alCambiarPaso, velocidadHabilitada = false,
+  enVivo = false, trayectosEnVivo = null,
   trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null }) {
@@ -223,7 +224,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const hayReproduccion = fotogramas.length > 0 || enVivo;
-  const contadorOperacion = `Reproducción ${fotogramas.length ? (enVivo ? fotogramas.length : indiceFotograma + 1) : 0}-${fotogramas.length}`;
+  const contadorOperacion = `Reproducción ${fotogramas.length ? (enVivo ? fotogramas.length : indiceFotograma + 1) : 0}/${fotogramas.length}`;
   const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
     if (!vehiculo.ubicacion) return grupos;
     const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
@@ -296,9 +297,11 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
   const x = xEnMapa;
   const y = yEnMapa;
-  // Los símbolos conservan su tamaño en pantalla: al acercar crece la ciudad, no los iconos.
+  // Los marcadores logísticos crecen con el zoom sin llegar a tapar el mapa.
   const escala = 1 / vista.z;
   const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
+  const escalaIcono = Math.min(1.8, Math.sqrt(vista.z)) / vista.z;
+  const icono = (px, py) => `translate(${x(px)},${y(py)}) scale(${escalaIcono})`;
 
   // Ficha al pasar el cursor: el <title> nativo tarda en salir y no admite varias líneas.
   function mostrarTip(evento, titulo, lineas, vehiculoId = null, almacenId = null) {
@@ -462,44 +465,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <title>{`${pedido.id} · sin asignar`}</title>
       </circle>)}
       {almacenes.map(almacen => <g key={almacen.id} className="mapa-almacen"
-        transform={fijo(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
+        transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
         aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
         onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
         onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
         onPointerLeave={ocultarTip}>
-        {almacen.tipo === 'CENTRAL' ? <svg x="-22.5" y="-24.5" width="45" height="49" viewBox="0 0 36 40"
-          overflow="visible" aria-hidden="true" focusable="false">
-          <defs><linearGradient id={`fondo-central-${almacen.id}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
-          </linearGradient></defs>
-          <path d="M18 1 Q19 1 20 2 L34.5 17 Q36 19 34.5 21 L20 37 Q18 39 16 37 L1.5 21 Q0 19 1.5 17 L16 2 Q17 1 18 1Z"
-            fill={`url(#fondo-central-${almacen.id})`} />
-          <path d="M6 19 18 9 30 19 V34 H6Z" fill="#8E24AA" />
-          <path d="M5.5 19 18 8 30.5 19 M5.5 19v15 M30.5 19v15"
-            fill="none" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-          <text x="18" y="25.5" textAnchor="middle" fontFamily="Archivo, sans-serif" fontSize="9.5"
-            fontWeight="900" fill="white">C</text>
-          <rect x="10" y="27" width="16" height="8" rx="1.2" fill="white" />
-          <rect x="12" y="30" width="9" height="4" rx=".6" fill="#6A1B9A" />
-          <path d="M21 31h2l2 2v1h-4Z" fill="#8E24AA" />
-          <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
-          <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
-        </svg> : <>
-          <svg x="-20" y="-20" width="40" height="40" viewBox="0 0 20 20"
-            overflow="visible" aria-hidden="true" focusable="false">
-            <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z"
-              fill="#9222B4" />
-            <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"
-              stroke="#9222B4" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M2.4 9.2 10 4l7.6 5.2" fill="none" stroke="white"
-              strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M8.5 10.5h3M10 10.5v5.2M8.5 15.7h3" fill="none"
-              stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </>}
-        {modoOperacion && <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
+        <DibujoAlmacen tipo={almacen.tipo} />
+        <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
           cx={almacen.tipo === 'CENTRAL' ? 17.5 : 15} cy={almacen.tipo === 'CENTRAL' ? -17.5 : -15}
-          r="4.5" pointerEvents="none" />}
+          r="4.5" pointerEvents="none" />
       </g>)}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
         transform={fijo(punto.x, punto.y)}>
@@ -509,7 +483,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       </g>)}
       {gruposVehiculos.map(grupo => <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
-        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
+        transform={icono(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
         role={grupo.length > DETALLE_MAXIMO ? 'button' : 'img'}
         tabIndex={grupo.length > DETALLE_MAXIMO ? 0 : undefined}
         aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}
@@ -537,9 +511,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
             <DibujoVehiculo tipo={grupo[0].tipo} />
           </svg>
         </g>
-        {modoOperacion && <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
+        <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
           cx={TIPOS_CENITALES.has(grupo[0].tipo) ? 11 : 9} cy={TIPOS_CENITALES.has(grupo[0].tipo) ? -17 : -9}
-          r="4.5" pointerEvents="none" />}
+          r="4.5" pointerEvents="none" />
         {grupo.length > 1 && <>
           <circle className="grupo-contador" cx="12" cy="11" r="8" />
           <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
@@ -626,10 +600,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <IconoUI nombre="reloj" size={22} />
           <span><small>Tiempo real transcurrido</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
         </div>
-        {!enVivo && <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!hayReproduccion}
+        <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!velocidadHabilitada}
           onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-          <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
-        </select></label>}
+          <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
+        </select></label>
       </div>
     </div> : <div className="mapa-reproductor">
       <div className="reproduccion-controles">
@@ -662,10 +636,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <IconoUI nombre="reloj" size={22} />
           <span><small>Duración</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
         </div>
-        {!enVivo && <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!hayReproduccion}
+        <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!velocidadHabilitada}
           onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-          <option value="800">Lenta</option><option value="450">Normal</option><option value="200">Rápida</option>
-        </select></label>}
+          <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
+        </select></label>
       </div>
     </div>}
 
@@ -681,8 +655,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <span><i className="punto punto-ruta" /> Rutas simultáneas por color</span>
           <span><i className="punto punto-alerta" /> Sin asignar</span>
           <span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span>
-          <span><i className="punto punto-central" /> Central</span>
-          <span><i className="punto punto-intermedio" /> Intermedio</span>
+          <span className="leyenda-almacen"><DibujoAlmacen tipo="CENTRAL" leyenda /> Central</span>
+          <span className="leyenda-almacen"><DibujoAlmacen tipo="INTERMEDIO" leyenda /> Intermedio</span>
           <IconoLeyenda tipo="AUTO" texto="Auto" />
           <IconoLeyenda tipo="MOTO" texto="Moto" />
           <IconoLeyenda tipo="BICICLETA" texto="Bicicleta" />
@@ -733,6 +707,40 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     {vacio && <div className="mapa-cartel"><b>Sin operación cargada</b>
       <span>Elige un periodo en el panel de la derecha e inicia una corrida para ver el mapa.</span></div>}
   </div>;
+}
+
+function DibujoAlmacen({ tipo, leyenda = false }) {
+  const gradiente = useId();
+  if (tipo === 'CENTRAL') return <svg x={leyenda ? undefined : -22.5}
+    y={leyenda ? undefined : -24.5} width={leyenda ? 20 : 45} height={leyenda ? 20 : 49}
+    viewBox="0 0 36 40" overflow="visible" aria-hidden="true" focusable="false">
+    <defs><linearGradient id={gradiente} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
+    </linearGradient></defs>
+    <path d="M18 1 Q19 1 20 2 L34.5 17 Q36 19 34.5 21 L20 37 Q18 39 16 37 L1.5 21 Q0 19 1.5 17 L16 2 Q17 1 18 1Z"
+      fill={`url(#${gradiente})`} />
+    <path d="M6 19 18 9 30 19 V34 H6Z" fill="#8E24AA" />
+    <path d="M5.5 19 18 8 30.5 19 M5.5 19v15 M30.5 19v15"
+      fill="none" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    <text x="18" y="25.5" textAnchor="middle" fontFamily="Archivo, sans-serif" fontSize="9.5"
+      fontWeight="900" fill="white">C</text>
+    <rect x="10" y="27" width="16" height="8" rx="1.2" fill="white" />
+    <rect x="12" y="30" width="9" height="4" rx=".6" fill="#6A1B9A" />
+    <path d="M21 31h2l2 2v1h-4Z" fill="#8E24AA" />
+    <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
+    <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
+  </svg>;
+  return <svg x={leyenda ? undefined : -20} y={leyenda ? undefined : -20}
+    width={leyenda ? 20 : 40} height={leyenda ? 20 : 40} viewBox="0 0 20 20"
+    overflow="visible" aria-hidden="true" focusable="false">
+    <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z" fill="#9222B4" />
+    <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"
+      stroke="#9222B4" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M2.4 9.2 10 4l7.6 5.2" fill="none" stroke="white"
+      strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8.5 10.5h3M10 10.5v5.2M8.5 15.7h3" fill="none"
+      stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>;
 }
 
 const ETIQUETA_TIPO = {

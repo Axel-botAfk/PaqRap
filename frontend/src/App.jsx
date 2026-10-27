@@ -69,10 +69,14 @@ export default function App() {
   const [ocupado, setOcupado] = useState(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
   const [fotogramas, setFotogramas] = useState([]);
+  const cantidadFotogramas = useRef(0);
+  const cargarFotogramas = useRef(null);
+  const cargarPlanes = useRef(null);
   const [planes, setPlanes] = useState([]);
   const [indiceFotograma, setIndiceFotograma] = useState(0);
-  const [reproduciendo, setReproduciendo] = useState(true);
-  const [pasoMs, setPasoMs] = useState(450);
+  const [reproduciendo, setReproduciendo] = useState(false);
+  const [reproduccionIniciada, setReproduccionIniciada] = useState(false);
+  const [pasoMs, setPasoMs] = useState(300);
   const [enVivo, setEnVivo] = useState(true);
   const [ahora, setAhora] = useState(() => Date.now());
   const ejecucionesPorVista = useRef({
@@ -201,7 +205,11 @@ export default function App() {
       socket.onmessage = evento => {
         try {
           const mensaje = JSON.parse(evento.data);
-          if (mensaje.ejecucion) actualizar(mensaje.ejecucion);
+          if (mensaje.ejecucion) {
+            actualizar(mensaje.ejecucion);
+            if (cargarFotogramas.current?.id === id) cargarFotogramas.current.cargar();
+            if (cargarPlanes.current?.id === id) cargarPlanes.current.cargar();
+          }
         } catch { if (activo) setAviso('Evento no reconocido; se mantiene la consulta periódica.'); }
       };
       socket.onclose = () => { if (activo) setAviso('Conexión en vivo interrumpida; la vista se actualiza periódicamente.'); };
@@ -278,8 +286,11 @@ export default function App() {
 
   useEffect(() => {
     setFotogramas([]);
+    cantidadFotogramas.current = 0;
     setIndiceFotograma(0);
-    setReproduciendo(true);
+    setReproduciendo(false);
+    setReproduccionIniciada(false);
+    setPasoMs(300);
     if (!id) return undefined;
     let activo = true;
     let siguiente = 0;
@@ -293,9 +304,11 @@ export default function App() {
         if (!activo) return;
         if (pagina.primero > siguiente) {
           setFotogramas(pagina.fotogramas);
+          cantidadFotogramas.current = pagina.fotogramas.length;
           setIndiceFotograma(0);
         } else if (pagina.fotogramas.length) {
           setFotogramas(actual => [...actual, ...pagina.fotogramas]);
+          cantidadFotogramas.current += pagina.fotogramas.length;
         }
         siguiente = pagina.siguiente;
         completo = pagina.completo && pagina.fotogramas.length < 100;
@@ -306,9 +319,14 @@ export default function App() {
           : 'Reproducción temporalmente no disponible; se muestra la última instantánea.');
       } finally { consultando = false; }
     };
+    cargarFotogramas.current = { id, cargar };
     cargar();
     const intervalo = setInterval(cargar, 900);
-    return () => { activo = false; clearInterval(intervalo); };
+    return () => {
+      activo = false;
+      clearInterval(intervalo);
+      if (cargarFotogramas.current?.id === id) cargarFotogramas.current = null;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -332,9 +350,14 @@ export default function App() {
         if (activo) setAviso(`No se pudo recuperar el historial de planes: ${e.message}`);
       } finally { consultando = false; }
     };
+    cargarPlanes.current = { id, cargar };
     cargar();
     const intervalo = setInterval(cargar, 900);
-    return () => { activo = false; clearInterval(intervalo); };
+    return () => {
+      activo = false;
+      clearInterval(intervalo);
+      if (cargarPlanes.current?.id === id) cargarPlanes.current = null;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -343,12 +366,13 @@ export default function App() {
     setIndiceFotograma(Math.max(0, fotogramas.length - 1));
   }, [modoVivo, fotogramas.length]);
 
+  const haySecuencia = fotogramas.length >= 2;
   useEffect(() => {
-    if (!reproduciendo || fotogramas.length < 2 || modoVivo) return undefined;
+    if (!reproduciendo || !haySecuencia || modoVivo) return undefined;
     const intervalo = setInterval(() => setIndiceFotograma(actual =>
-      Math.min(actual + 1, fotogramas.length - 1)), pasoMs);
+      Math.min(actual + 1, cantidadFotogramas.current - 1)), pasoMs);
     return () => clearInterval(intervalo);
-  }, [reproduciendo, fotogramas.length, pasoMs, modoVivo]);
+  }, [reproduciendo, haySecuencia, pasoMs, modoVivo]);
 
   useEffect(() => {
     if (ejecucion && esFinal(ejecucion.estado) && fotogramas.length > 0
@@ -547,7 +571,9 @@ export default function App() {
         <Mapa key={id || 'sin-ejecucion'} ejecucion={ejecucion} rutas={rutasVisibles}
           calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
           inventario={inventarioDelInstante} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
-          reproduciendo={reproduciendo} pasoMs={pasoMs} estadosPedido={estadosPedido}
+          reproduciendo={reproduciendo} pasoMs={pasoMs}
+          velocidadHabilitada={reproduccionIniciada && !modoVivo}
+          estadosPedido={estadosPedido}
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
@@ -557,6 +583,7 @@ export default function App() {
           alCambiarFotograma={indice => { setEnVivo(false); setReproduciendo(false); setIndiceFotograma(indice); }}
           alReproducir={() => {
             if (!reproduciendo && indiceFotograma >= fotogramas.length - 1) setIndiceFotograma(0);
+            setReproduccionIniciada(true);
             setReproduciendo(!reproduciendo);
           }} alCambiarPaso={setPasoMs}
           instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} />

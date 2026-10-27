@@ -118,7 +118,7 @@ function crearCiudad() {
 
 const CIUDAD = crearCiudad();
 
-export default function FondoUrbano() {
+function FondoUrbano() {
   return <g aria-hidden="true" pointerEvents="none">
     <defs>
       <pattern id="fondo-urbano-operacion" patternUnits="userSpaceOnUse"
@@ -138,3 +138,5 @@ export default function FondoUrbano() {
       fill="url(#fondo-urbano-operacion)" />
   </g>;
 }
+
+export default React.memo(FondoUrbano);

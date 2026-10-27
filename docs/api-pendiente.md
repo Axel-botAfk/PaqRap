@@ -5,7 +5,7 @@ ya existe en el frontend y que hoy muestra un aviso «Pendiente» en lugar de in
 
 Mientras no existan, la interfaz no se rompe: degrada a un estado declarado.
 
-## 1. Existencias por almacén, en vivo
+## 1. Stock por almacén, en vivo
 
 **Para:** panel «Inventario de almacenes» en Operación diaria.
 
@@ -16,7 +16,7 @@ usa. Lo que falta es el stock **durante** la corrida: el motor lo lleva en `Inve
 hace con vehículos y rutas en `Vistas`.
 
 ```
-EjecucionVista.existencias: [
+EjecucionVista.Stock: [
   { "almacenId": "ALM-CENTRAL",   "disponible": 0, "reservado": 0, "ilimitado": true  },
   { "almacenId": "ALM-NOR-OESTE", "disponible": 812, "reservado": 40, "ilimitado": false }
 ]

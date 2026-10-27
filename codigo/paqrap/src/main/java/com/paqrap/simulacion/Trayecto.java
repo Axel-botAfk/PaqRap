@@ -24,12 +24,13 @@ public record Trayecto(String unidadId, List<Paso> pasos) {
     }
 
     /** Qué ocurre en cada punto del recorrido. */
-    public enum Hito { SALIDA, ALMACEN, ENTREGA, FIN_ENTREGA, CORTE }
+    public enum Hito { SALIDA, ALMACEN, CARGA, ENTREGA, FIN_ENTREGA, CORTE }
 
     /**
      * La unidad está en {@code ubicacion} a la hora {@code instante}.
      *
      * @param pedidoId pedido entregado en ese punto; nulo si no es una entrega.
      */
-    public record Paso(Ubicacion ubicacion, LocalDateTime instante, Hito hito, String pedidoId) { }
+    public record Paso(Ubicacion ubicacion, LocalDateTime instante, Hito hito, String pedidoId,
+                       int cargaAbordo) { }
 }

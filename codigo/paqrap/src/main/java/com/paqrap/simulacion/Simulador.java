@@ -546,7 +546,7 @@ public final class Simulador {
             int aBordo = unidad.getCargaABordo();
             // Solo para quien dibuja: hitos del recorrido, sin efecto sobre la ejecución.
             List<Trayecto.Paso> pasos = new ArrayList<>();
-            pasos.add(new Trayecto.Paso(posicion, libre, Trayecto.Hito.SALIDA, null));
+            pasos.add(new Trayecto.Paso(posicion, libre, Trayecto.Hito.SALIDA, null, aBordo));
 
             for (int i = 0; i < viajes.size(); i++) {
                 MetricasRuta medida = metricas.get(i);
@@ -566,7 +566,7 @@ public final class Simulador {
                     posicion = haciaElAlmacen.posicion();
                     libre = haciaElAlmacen.instante();
                     pasos.add(new Trayecto.Paso(posicion, libre, haciaElAlmacen.llego()
-                            ? Trayecto.Hito.ALMACEN : Trayecto.Hito.CORTE, null));
+                            ? Trayecto.Hito.ALMACEN : Trayecto.Hito.CORTE, null, aBordo));
                     if (!haciaElAlmacen.llego()) {
                         // El corte la encontró camino al almacén; sigue desde esa esquina.
                         break;
@@ -592,6 +592,8 @@ public final class Simulador {
                     inventario.consumir(
                             viaje.getAlmacen(), medida.horaCarga(), viaje.getCargaTotal());
                     aBordo = viaje.getCargaTotal();
+                    pasos.add(new Trayecto.Paso(posicion, medida.horaCarga(),
+                            Trayecto.Hito.CARGA, null, aBordo));
                     cargaDeLaUnidad.put(unidad.getId(), new CargaEnAlmacen(
                             viaje.getAlmacen(), medida.horaCarga(), viaje.getCargaTotal()));
                 }
@@ -610,7 +612,7 @@ public final class Simulador {
 
                     if (!haciaElCliente.llego()) {
                         pasos.add(new Trayecto.Paso(posicion, haciaElCliente.instante(),
-                                Trayecto.Hito.CORTE, null));
+                                Trayecto.Hito.CORTE, null, aBordo));
                         // Va en camino con el producto encima: no hay entrega que registrar, el
                         // pedido sigue pendiente y la carga viaja con ella hasta la próxima
                         // planificación, que decidirá si sigue a este cliente o a otro.
@@ -634,10 +636,10 @@ public final class Simulador {
                                     llegada, Evaluador.HORAS_ACONDICIONAMIENTO_POR_ENTREGA)
                             : llegada;
                     pasos.add(new Trayecto.Paso(posicion, llegada, Trayecto.Hito.ENTREGA,
-                            pedido.getId()));
+                            pedido.getId(), aBordo));
                     if (libre.isAfter(llegada)) {
                         pasos.add(new Trayecto.Paso(posicion, libre, Trayecto.Hito.FIN_ENTREGA,
-                                pedido.getId()));
+                                pedido.getId(), aBordo));
                     }
                 }
 

@@ -69,8 +69,14 @@ class EjecucionesServiceTest {
         assertTrue(pagina.completo());
         assertTrue(historial.size() >= 2);
         assertEquals(0, historial.get(0).indice());
+        assertTrue(historial.stream().allMatch(f -> f.inventario() != null
+                && f.reloj().equals(f.inventario().reloj())),
+                "cada fotograma conserva el inventario observado en su propio corte");
+        assertTrue(fin.ritmo().inicioRealMs() > 0);
+        assertTrue(fin.ritmo().finRealMs() >= fin.ritmo().inicioRealMs());
         assertEquals(fin.reloj(), historial.get(historial.size() - 1).reloj());
         assertEquals(fin.vehiculos(), historial.get(historial.size() - 1).vehiculos());
+        verificarPosicionesPublicadas(id, fin);
         var planes = servicio.planes(id, 0);
         assertTrue(planes.completo());
         assertTrue(planes.planes().size() > 0);
@@ -101,6 +107,7 @@ class EjecucionesServiceTest {
         assertEquals(Estado.TERMINADA, fin.estado());
         assertNotNull(fin.resumen());
         assertEquals(false, fin.resumen().huboColapso());
+        verificarPosicionesPublicadas(id, fin);
     }
 
     @Test
@@ -115,6 +122,7 @@ class EjecucionesServiceTest {
         var pagina = servicio.fotogramas(id, 0);
         assertTrue(pagina.fotogramas().size() > 1);
         assertEquals(0, pagina.fotogramas().get(0).indice());
+        verificarPosicionesPublicadas(id, fin);
     }
 
     @Test
@@ -253,6 +261,41 @@ class EjecucionesServiceTest {
     }
 
     /** Cada recorrido avanza en el tiempo y termina donde el fotograma deja a la unidad. */
+    private void verificarPosicionesPublicadas(UUID id, ApiModels.EjecucionVista fin) {
+        ApiModels.FotogramaVista primero = null;
+        ApiModels.FotogramaVista ultimo = null;
+        var historial = new ArrayList<ApiModels.FotogramaVista>();
+        long desde = 0;
+        ApiModels.FotogramasVista pagina;
+        do {
+            pagina = servicio.fotogramas(id, desde);
+            for (ApiModels.FotogramaVista foto : pagina.fotogramas()) {
+                historial.add(foto);
+                if (primero == null) primero = foto;
+                ultimo = foto;
+                assertTrue(foto.vehiculos().stream().allMatch(v ->
+                        v.ubicacion().x() >= 0 && v.ubicacion().x() <= 70
+                                && v.ubicacion().y() >= 0 && v.ubicacion().y() <= 50));
+            }
+            desde = pagina.siguiente();
+        } while (pagina.fotogramas().size() == 100);
+        assertNotNull(primero);
+        assertNotNull(ultimo);
+        assertEquals(fin.inicio(), primero.reloj());
+        assertEquals(fin.reloj(), ultimo.reloj());
+        assertEquals(fin.vehiculos(), ultimo.vehiculos());
+
+        var planes = new ArrayList<ApiModels.PlanVista>();
+        desde = 0;
+        ApiModels.PlanesVista paginaPlanes;
+        do {
+            paginaPlanes = servicio.planes(id, desde);
+            planes.addAll(paginaPlanes.planes());
+            desde = paginaPlanes.siguiente();
+        } while (paginaPlanes.planes().size() == 100);
+        verificarTrayectos(planes, historial);
+    }
+
     private static void verificarTrayectos(List<ApiModels.PlanVista> planes,
                                            List<ApiModels.FotogramaVista> historial) {
         boolean alguno = false;
@@ -266,10 +309,13 @@ class EjecucionesServiceTest {
                     assertTrue(!trayecto.pasos().get(i).instante()
                             .isBefore(trayecto.pasos().get(i - 1).instante()));
                 }
+                assertTrue(trayecto.pasos().stream().allMatch(p -> p.cargaAbordo() >= 0));
                 var unidad = fotograma.vehiculos().stream()
                         .filter(v -> v.id().equals(trayecto.vehiculoId())).findFirst().orElseThrow();
                 assertEquals(unidad.ubicacion(),
                         trayecto.pasos().get(trayecto.pasos().size() - 1).ubicacion());
+                assertEquals(unidad.cargaAbordo(),
+                        trayecto.pasos().get(trayecto.pasos().size() - 1).cargaAbordo());
             }
         }
         assertTrue(alguno, "ninguna unidad registró recorrido");

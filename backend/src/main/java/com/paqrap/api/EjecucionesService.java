@@ -303,6 +303,7 @@ final class EjecucionesService {
         synchronized (ejecucion) {
             Estado estado = ejecucion.vista.estado();
             if (estado == Estado.PENDIENTE || estado == Estado.EN_CURSO || estado == Estado.PAUSADA) {
+                ejecucion.finRealMs = reloj.ahoraMs();
                 ejecucion.vista = cambiarEstado(ejecucion.vista, Estado.CANCELADA, null, null);
                 if (ejecucion.tarea != null) ejecucion.tarea.cancel(true);
                 eventos.publicar(new EventoVista("CANCELADA", ejecucion.vista));
@@ -332,7 +333,7 @@ final class EjecucionesService {
             List<Vehiculo> flota = datos.flota();
             ejecucion.inicioRealMs = reloj.ahoraMs();
             registrarFotograma(ejecucion, request.inicio(),
-                    flota.stream().map(Vistas::vehiculo).toList());
+                    flota.stream().map(Vistas::vehiculo).toList(), ejecucion.inventario);
             Simulador simulador = new Simulador(planificador, ruteo,
                     datos.almacenes(), parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
@@ -387,15 +388,22 @@ final class EjecucionesService {
                             ventana.noAsignados = List.of();
                         }
                         ventana.huboPlan = false;
-                        ventana.fotogramas.add(new FotogramaVista(-1, reloj, posiciones));
+                        ventana.fotogramas.add(new FotogramaVista(-1, reloj, posiciones, null));
                         ventana.hasta = reloj;
                         ventana.vehiculos = posiciones;
                     }
 
                     @Override
                     public void alActualizarInventario(LocalDateTime reloj, List<Almacen> almacenes) {
-                        ejecucion.ventanaEnCurso.inventario = new InventarioVista(reloj,
+                        Ventana ventana = ejecucion.ventanaEnCurso;
+                        ventana.inventario = new InventarioVista(reloj,
                                 almacenes.stream().map(Vistas::stock).toList());
+                        int ultimo = ventana.fotogramas.size() - 1;
+                        if (ultimo >= 0 && ventana.fotogramas.get(ultimo).reloj().equals(reloj)) {
+                            FotogramaVista fotograma = ventana.fotogramas.get(ultimo);
+                            ventana.fotogramas.set(ultimo, new FotogramaVista(-1, reloj,
+                                    fotograma.vehiculos(), ventana.inventario));
+                        }
                         long limites = limitesHasta(ejecucion, reloj);
                         if (limites <= ejecucion.limitesPublicados) return;
                         publicarVentana(ejecucion, limites);
@@ -456,6 +464,7 @@ final class EjecucionesService {
                 FotogramaVista ultimo = ejecucion.fotogramas.peekLast();
                 posicionesFinales = ultimo == null ? anterior.vehiculos() : ultimo.vehiculos();
             }
+            ejecucion.finRealMs = reloj.ahoraMs();
             EjecucionVista finalVista = new EjecucionVista(anterior.id(), finalEstado,
                     anterior.escenario(), anterior.algoritmo(), anterior.inicio(), resumen.fin(),
                     LocalDateTime.now(), anterior.avance(), posicionesFinales,
@@ -463,13 +472,16 @@ final class EjecucionesService {
                     false, ritmoVista(ejecucion), anterior.trayectos(), colapso);
             actualizar(ejecucion, finalVista, resumen.huboColapso() ? "COLAPSO" : "TERMINADA");
         } catch (CancellationException e) {
+            if (ejecucion.finRealMs == null) ejecucion.finRealMs = reloj.ahoraMs();
             actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.CANCELADA, null, null),
                     "CANCELADA");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            if (ejecucion.finRealMs == null) ejecucion.finRealMs = reloj.ahoraMs();
             actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.CANCELADA, null, null),
                     "CANCELADA");
         } catch (RuntimeException e) {
+            ejecucion.finRealMs = reloj.ahoraMs();
             actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.FALLIDA,
                     "ERROR_DE_EJECUCION", "La simulación no pudo completarse."), "FALLIDA");
         }
@@ -499,7 +511,8 @@ final class EjecucionesService {
             ejecucion.ventanaDesde = ventana.desde;
             ejecucion.ventanaHasta = ventana.hasta;
             for (FotogramaVista fotograma : ventana.fotogramas) {
-                registrarFotograma(ejecucion, fotograma.reloj(), fotograma.vehiculos());
+                registrarFotograma(ejecucion, fotograma.reloj(), fotograma.vehiculos(),
+                        fotograma.inventario());
             }
             for (PlanVista plan : ventana.planes) {
                 ejecucion.planes.addLast(new PlanVista(ejecucion.siguientePlan++, plan.reloj(),
@@ -631,11 +644,12 @@ final class EjecucionesService {
     }
 
     private static void registrarFotograma(Ejecucion ejecucion, LocalDateTime reloj,
-                                           List<VehiculoVista> posiciones) {
+                                           List<VehiculoVista> posiciones,
+                                           InventarioVista inventario) {
         synchronized (ejecucion) {
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             ejecucion.fotogramas.addLast(new FotogramaVista(
-                    ejecucion.siguienteIndice++, reloj, posiciones));
+                    ejecucion.siguienteIndice++, reloj, posiciones, inventario));
             if (ejecucion.fotogramas.size() > MAX_FOTOGRAMAS) {
                 ejecucion.fotogramas.removeFirst();
             }
@@ -656,7 +670,8 @@ final class EjecucionesService {
                 ejecucion.ventanaHasta, publicado < 0 ? reloj.ahoraMs() : publicado,
                 ejecucion.marcapasos.transcurridoAlPausarMs(), reloj.ahoraMs(),
                 ejecucion.marcapasos.rebasadas(),
-                ritmo.duracionEstimada(ejecucion.horizonte).toMillis(), duracion);
+                ritmo.duracionEstimada(ejecucion.horizonte).toMillis(), duracion,
+                ejecucion.inicioRealMs, ejecucion.finRealMs);
     }
 
     private static EjecucionVista conRitmo(EjecucionVista a, RitmoVista ritmo) {
@@ -753,6 +768,7 @@ final class EjecucionesService {
         long siguientePlan;
         long siguienteEvento;
         long inicioRealMs;
+        Long finRealMs;
         long limitesPublicados;
         int replanificaciones;
         LocalDateTime ventanaDesde;

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { fecha, numero } from '../formato.js';
 import { parsearVentas, periodoDelNombre } from '../pedidos.js';
+import IconoUI from '../components/IconoUI.jsx';
 
 const MUESTRA = 50;
 
@@ -59,10 +60,10 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
               onChange={e => setAaaamm(e.target.value.trim())}
               disabled={resultado?.delNombre} /></div>
         </div>
-        <p className="nota">Un registro por línea, con el formato
+        <p className="nota nota-carga"><IconoUI nombre="info" size={24} /><span>Un registro por línea, con el formato
           <code> ##d##h##m:posX,posY,cIdCliente,qq,hl</code>. El periodo sale del nombre del
           archivo cuando lo trae (<code>ventas.202601.txt</code>); si no, se indica a mano,
-          porque de él dependen los días válidos del mes.</p>
+          porque de él dependen los días válidos del mes.</span></p>
         {leyendo && <p className="nota" role="status">Leyendo el archivo…</p>}
       </div>
     </div>
@@ -87,8 +88,6 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
         </table></div>
         <div className="card-pie">
           {resultado.errores.length > MUESTRA && <span>Se muestran los primeros {MUESTRA} de {numero(resultado.errores.length)} errores.</span>}
-          <span>El backend aborta la lectura en la primera línea mala; aquí se recorren todas
-            para corregirlas de una vez.</span>
         </div>
       </div>}
 
@@ -111,9 +110,7 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
           </table></div>}
         <div className="card-pie">
           {resultado.pedidos.length > MUESTRA && <span>Se muestran los primeros {MUESTRA} de {numero(resultado.pedidos.length)} pedidos.</span>}
-          <span>Los identificadores son los que asignaría el backend: correlativos por orden de
-            aparición, contando también las líneas rechazadas.</span>
-          <span>La API no recibe archivos: esta pantalla valida la estructura, no incorpora los
+          <span>El servidor no recibe archivos: esta pantalla valida la estructura, no incorpora los
             pedidos. El archivo se deja en el directorio de datos del servidor
             (<code>PAQRAP_DATA_DIR</code>) y se inicia una corrida con una fecha de ese mes.</span>
         </div>

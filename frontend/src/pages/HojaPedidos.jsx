@@ -3,6 +3,7 @@ import { fecha, numero } from '../formato.js';
 import PedidoNuevo from './PedidoNuevo.jsx';
 import PedidoCargaMasiva from './PedidoCargaMasiva.jsx';
 import PedidoSeguimiento from './PedidoSeguimiento.jsx';
+import IconoUI from '../components/IconoUI.jsx';
 
 const ETIQUETA = {
   PLANIFICADO: ['Planificado', 'n'], EN_RUTA: ['En ruta', 'a'],
@@ -59,10 +60,10 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
         situacion={enSeguimiento.situacion} alVolver={() => setSeguido(null)} />
       : <>
         <div className="kpis">
-          <div className="kpi" style={{ '--k': 'var(--ink)' }}><span>EN EL PLAN VIGENTE</span><b>{numero(filas.length)}</b></div>
-          <div className="kpi" style={{ '--k': 'var(--verde)' }}><span>ENTREGADOS (ACUMULADO)</span><b>{numero(ejecucion?.avance?.pedidosEntregados)}</b></div>
-          <div className="kpi" style={{ '--k': 'var(--ambar)' }}><span>EN RUTA</span><b>{numero(cuenta('EN_RUTA'))}</b></div>
-          <div className="kpi" style={{ '--k': 'var(--red)' }}><span>SIN ASIGNAR</span><b>{numero(cuenta('NO_ASIGNADO'))}</b></div>
+          <div className="kpi" style={{ '--k': 'var(--navy)' }}><span>EN EL PLAN VIGENTE</span><b>{numero(filas.length)}</b><IconoUI nombre="caja" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS (ACUMULADO)</span><b>{numero(ejecucion?.avance?.pedidosEntregados ?? 0)}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--warning)' }}><span>EN RUTA</span><b>{numero(cuenta('EN_RUTA'))}</b><IconoUI nombre="enviar" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--brand-red)' }}><span>SIN ASIGNAR</span><b>{numero(cuenta('NO_ASIGNADO'))}</b><IconoUI nombre="persona" className="kpi-icono" size={32} /></div>
         </div>
 
         <div className="card">
@@ -75,7 +76,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
             </div>
           </header>
           {visibles.length === 0
-            ? <p className="vacio" style={{ margin: 16 }}>No hay pedidos que mostrar en la instantánea actual.</p>
+            ? <p className="vacio" style={{ margin: 16 }}>No hay pedidos que mostrar.</p>
             : <div className="tabla-wrap"><table>
               <thead><tr><th>Pedido</th><th>Destino</th><th>Cantidad</th><th>Unidad</th><th>Ruta</th><th>Situación</th><th>Plazo</th><th /></tr></thead>
               <tbody>{visibles.slice(0, LIMITE).map((pedido, indice) => <tr key={`${pedido.id}-${indice}`}>
@@ -93,9 +94,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
           <div className="card-pie">
             {visibles.length > LIMITE && <span>Se muestran los primeros {LIMITE} de {numero(visibles.length)} registros.</span>}
             <span>Los pedidos se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}: esta
-              beta no registra ni cancela pedidos. «En ruta» y «entregado» se deducen de los hitos del
-              simulador; los entregados que ya salieron del plan vigente se cuentan en el acumulado de
-              arriba, no en la tabla.</span>
+              beta no registra ni cancela pedidos. Los estados «En ruta» y «Entregado» dependen del simulador. Los pedidos entregados que ya no aparecen en el plan actual solo se cuentan en el total superior.</span>
           </div>
         </div>
       </>)}

@@ -92,7 +92,7 @@ final class Vistas {
     static TrayectoVista trayecto(Trayecto trayecto) {
         return new TrayectoVista(trayecto.unidadId(), trayecto.pasos().stream()
                 .map(p -> new PasoVista(coordenada(p.ubicacion()), p.instante(), p.hito().name(),
-                        p.pedidoId()))
+                        p.pedidoId(), p.cargaAbordo()))
                 .toList());
     }
 }

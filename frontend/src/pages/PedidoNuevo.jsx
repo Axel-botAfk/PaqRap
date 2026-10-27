@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { numero } from '../formato.js';
 import { comprobaciones, hayErrores, aRegistro, PLAZOS } from '../pedidos.js';
 
-const NIVEL = { ok: ['OK', 'v'], aviso: ['AVISO', 'a'], error: ['ERROR', 'r'] };
+const NIVEL = { ok: ['CORRECTO', 'v'], aviso: ['AVISO', 'a'], error: ['ERROR', 'r'] };
 
 const VACIO = { cliente: '', x: '', y: '', cantidad: '', plazo: '36', recepcion: '' };
 
@@ -96,13 +96,6 @@ export default function PedidoNuevo({ almacenes = [] }) {
           </tr>)}</tbody>
         </table></div>
       </>}
-
-      <div className="card-pie">
-        <span>La API no tiene alta de pedidos, así que esto no llega al servidor ni entra en la
-          corrida: lo que valida son las reglas del caso y lo que entrega es la línea en el
-          formato del archivo mensual, para pegarla en el juego de datos. Cuando el backend
-          publique el endpoint, este formulario pasa a enviarlo.</span>
-      </div>
     </div>
   </div>;
 }

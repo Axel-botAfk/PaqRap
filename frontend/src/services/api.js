@@ -8,7 +8,7 @@ async function solicitud(ruta, opciones = {}) {
   const respuesta = await fetch(ruta, {
     ...opciones,
     headers: { Accept: 'application/json', ...(opciones.headers || {}) }
-  });
+  }).catch(() => { throw new Error('No se pudo conectar con el servidor.'); });
   let cuerpo;
   try {
     cuerpo = await respuesta.json();

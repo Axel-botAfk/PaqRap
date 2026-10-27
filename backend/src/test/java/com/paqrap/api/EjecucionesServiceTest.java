@@ -276,6 +276,9 @@ class EjecucionesServiceTest {
                 assertTrue(foto.vehiculos().stream().allMatch(v ->
                         v.ubicacion().x() >= 0 && v.ubicacion().x() <= 70
                                 && v.ubicacion().y() >= 0 && v.ubicacion().y() <= 50));
+                assertTrue(foto.vehiculos().stream().allMatch(v ->
+                        v.capacidad() > 0 && v.cargaAbordo() >= 0
+                                && v.cargaAbordo() <= v.capacidad()));
             }
             desde = pagina.siguiente();
         } while (pagina.fotogramas().size() == 100);
@@ -308,6 +311,10 @@ class EjecucionesServiceTest {
                 for (int i = 1; i < trayecto.pasos().size(); i++) {
                     assertTrue(!trayecto.pasos().get(i).instante()
                             .isBefore(trayecto.pasos().get(i - 1).instante()));
+                    if (trayecto.pasos().get(i).hito().equals("ENTREGA")) {
+                        assertTrue(trayecto.pasos().get(i).cargaAbordo()
+                                <= trayecto.pasos().get(i - 1).cargaAbordo());
+                    }
                 }
                 assertTrue(trayecto.pasos().stream().allMatch(p -> p.cargaAbordo() >= 0));
                 var unidad = fotograma.vehiculos().stream()

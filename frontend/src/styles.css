@@ -174,8 +174,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .grid-major { stroke: #c8bfbc; stroke-width: 1; }
 
 .trazo-visible { stroke: var(--ruta-color, #27889a); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; opacity: .82; pointer-events: none; vector-effect: non-scaling-stroke; transition: opacity .2s, stroke-width .2s, stroke .2s; }
-.trazo-final .trazo-visible { opacity: .16; }
-.trazo-resaltado .trazo-visible, .trazo-ruta:hover .trazo-visible, .trazo-ruta:focus-within .trazo-visible { stroke: var(--red); stroke-width: 4.2; opacity: 1; }
+.trazo-recorrido { stroke: #aebacc; stroke-dasharray: 4 5; opacity: .38; stroke-width: 2.2; }
+.trazo-final .trazo-recorrido { opacity: .22; }
+.trazo-resaltado .trazo-pendiente, .trazo-ruta:hover .trazo-pendiente, .trazo-ruta:focus-within .trazo-pendiente { stroke: var(--red); stroke-width: 4.2; opacity: 1; }
+.trazo-resaltado .trazo-recorrido, .trazo-ruta:hover .trazo-recorrido, .trazo-ruta:focus-within .trazo-recorrido { stroke: #71839c; stroke-width: 3.4; opacity: .85; }
 .trazo-interaccion { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
 .trazo-interaccion:focus-visible { stroke: var(--red-200); outline: none; }
 
@@ -284,6 +286,48 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 }
 .mapa-tip b { font: 800 11.5px Archivo; letter-spacing: .02em; }
 .mapa-tip span { font-size: 11px; color: rgba(255, 255, 255, .8); line-height: 1.45; }
+.mapa-tip-fija { transform: none; pointer-events: auto; width: min(300px, calc(100% - 20px)); max-width: none; max-height: min(340px, calc(100% - 20px)); overflow-y: auto; }
+.mapa-tip-fija button { justify-self: end; position: sticky; top: 0; border: 0; background: var(--ink); color: #fff; cursor: pointer; font-size: 17px; line-height: 1; }
+.mapa-tip-vehiculo {
+  box-sizing: border-box; display: block; transform: none;
+  width: min(350px, calc(100% - 16px)); max-width: none;
+  max-height: calc(100% - 16px); overflow: visible;
+  padding: 14px 16px; border: 1px solid #404650; border-radius: 12px;
+  background: #1c1d1f; color: #fff;
+  box-shadow: 0 12px 28px rgba(10, 20, 36, .24);
+  font-family: Archivo, sans-serif;
+}
+.mapa-tip-vehiculo::before {
+  content: ''; position: absolute; left: -6px; top: var(--punta-y);
+  width: 10px; height: 10px; transform: rotate(45deg);
+  border-left: 1px solid #404650; border-bottom: 1px solid #404650;
+  background: #1c1d1f;
+}
+.mapa-tip-vehiculo.mapa-tip-izquierda::before {
+  left: auto; right: -6px; border: 0;
+  border-right: 1px solid #404650; border-top: 1px solid #404650;
+}
+.mapa-tip-cabecera { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #404650; }
+.mapa-tip-cabecera > div { min-width: 0; display: grid; gap: 3px; }
+.mapa-tip-cabecera strong { color: #fff; font-size: 13.5px; font-weight: 700; line-height: 1.2; }
+.mapa-tip .mapa-tip-nodo { color: #aeb8cc; font-size: 10.5px; line-height: 1.25; }
+.mapa-tip .mapa-tip-estado { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; background: #064e3b; color: #6ee7b7; font-size: 10px; font-weight: 700; line-height: 1; white-space: nowrap; }
+.mapa-tip-estado i { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.mapa-tip .mapa-tip-estado-en-ruta { background: #143e63; color: #9ed9ff; }
+.mapa-tip .mapa-tip-estado-averiado { background: #5b2529; color: #ffadb3; }
+.mapa-tip .mapa-tip-estado-mantenimiento { background: #574019; color: #ffe19a; }
+.mapa-tip .mapa-tip-estado-otro { background: #343a43; color: #d7deea; }
+.mapa-tip-filas { display: grid; }
+.mapa-tip-fila { display: grid; grid-template-columns: 18px minmax(80px, 1fr) minmax(0, 1.35fr); align-items: center; gap: 8px; min-height: 37px; padding: 7px 0; }
+.mapa-tip-fila + .mapa-tip-fila { border-top: 1px solid #404650; }
+.mapa-tip-fila > svg, .mapa-tip-calendario { color: #aeb8cc; }
+.mapa-tip .mapa-tip-fila > span:not(.mapa-tip-calendario) { color: #aeb8cc; font-size: 10.5px; line-height: 1.3; }
+.mapa-tip-fila strong { min-width: 0; color: #fff; font-size: 11px; font-weight: 600; line-height: 1.3; text-align: right; overflow-wrap: anywhere; }
+.mapa-tip-calendario { position: relative; width: 18px; height: 18px; }
+.mapa-tip-calendario svg:last-child { position: absolute; right: -2px; bottom: -2px; border-radius: 50%; background: #1c1d1f; }
+@media (max-width: 600px) {
+  .mapa-tip-vehiculo { width: min(320px, calc(100% - 16px)); padding: 12px 14px; }
+}
 .mapa-unidad, .mapa-almacen { cursor: help; }
 .mapa-stock { stroke: #fff; stroke-width: 1.7; filter: drop-shadow(0 1px 2px rgba(10, 29, 58, .22)); }
 .mapa-stock-suficiente { fill: #098c50; }
@@ -871,6 +915,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .mapview .row { gap: 12px; }
 .mapview .dato-periodo { margin-top: -2px; padding: 10px 11px; background: var(--surface-secondary); color: var(--blue-ui); border-radius: 9px; font-size: 11px; }
 .mapview .nota { color: var(--blue-ui); font-size: 11px; line-height: 1.4; }
+.mapview .nota.nota-conexion-activa { color: var(--success); }
 .mapview .acciones .btn-primary { min-height: 41px; background: var(--action-red); border-color: var(--action-red); border-radius: 9px; font-size: 14px; letter-spacing: 0; }
 .mapview .bar { height: 8px; background: var(--border-soft); border-radius: 999px; }
 .mapview .bar i { height: 8px; background: var(--navy); border-radius: 999px; }
@@ -993,4 +1038,75 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   .app.mapview:not(.vista-operacion) { --kh: 90px; --hdr: 166px; }
   .app.mapview:not(.vista-operacion) .kbar { grid-template-rows: 42px 42px; }
   .app.mapview:not(.vista-operacion) .kmeta { height: 42px; }
+}
+
+/* El reproductor se adapta al ancho del mapa, que también cambia al abrir el riel. */
+.mapview .mapa-lienzo { container-type: inline-size; }
+@container (max-width: 760px) {
+  .mapview .mapa-reproductor {
+    display: grid; grid-template-rows: 34px 40px; align-content: center;
+    width: 100%; height: 88px; min-height: 88px; max-height: none;
+    gap: 4px; padding: 5px 7px; overflow: visible;
+  }
+  .mapview .reproduccion-controles { width: 100%; min-width: 0; height: 34px; gap: 4px; }
+  .mapview .reproduccion-tiempos {
+    display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, .95fr);
+    width: 100%; min-width: 0; height: 40px; gap: 4px;
+  }
+  .mapview .mapa-reproductor button.reproduccion-principal {
+    width: 105px; min-width: 105px; height: 33px; min-height: 33px;
+    gap: 5px; padding: 0 7px; font-size: 10px;
+  }
+  .mapview .mapa-reproductor .reproduccion-play { font-size: 12px; }
+  .mapview .mapa-reproductor input[type=range] { min-width: 35px; height: 6px; }
+  .mapview .mapa-reproductor .reproduccion-contador {
+    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 10px;
+  }
+  .mapview .mapa-reproductor button.reproduccion-flecha {
+    width: 20px; min-width: 20px; height: 30px; min-height: 30px; font-size: 18px;
+  }
+  .mapview .reproduccion-tiempo { width: auto; min-width: 0; height: 40px; gap: 5px; padding: 0 6px; }
+  .mapview .reproduccion-tiempo svg { width: 16px; height: 16px; }
+  .mapview .reproduccion-tiempo small { font-size: 8px; }
+  .mapview .reproduccion-tiempo b { font-size: 10px; white-space: normal; }
+  .mapview .mapa-reproductor label.reproduccion-velocidad {
+    flex-direction: column; align-items: stretch; justify-content: center;
+    width: auto; min-width: 0; height: 40px; gap: 2px; font-size: 8px;
+  }
+  .mapview .mapa-reproductor .reproduccion-velocidad select {
+    width: 100%; height: 25px; font-size: 10px;
+  }
+  .mapview .mapa-reloj-actual { bottom: 100px; }
+  .mapview .mapsec:has(.mapa-reproductor) .mapa,
+  .mapview .mapsec:has(.mapa-reproductor) .mapa-fondo-urbano { height: calc(100% - 100px); }
+}
+@container (max-width: 500px) {
+  .mapview .reproduccion-controles { gap: 3px; }
+  .mapview .mapa-reproductor button.reproduccion-principal { width: 92px; min-width: 92px; }
+  .mapview .mapa-reproductor .reproduccion-contador { font-size: 9px; }
+  .mapview .mapa-reproductor button.reproduccion-flecha { width: 17px; min-width: 17px; }
+  .mapview.vista-operacion .reproduccion-tiempos {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, .95fr);
+  }
+  .mapview:not(.vista-operacion) .mapa-reproductor {
+    grid-template-rows: 34px 72px; height: 120px; min-height: 120px;
+  }
+  .mapview:not(.vista-operacion) .reproduccion-tiempos {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+    grid-template-rows: 34px 34px; height: 72px;
+  }
+  .mapview:not(.vista-operacion) .reproduccion-momento { grid-column: 1; grid-row: 1; }
+  .mapview:not(.vista-operacion) .reproduccion-simulado { grid-column: 1; grid-row: 2; }
+  .mapview:not(.vista-operacion) .reproduccion-real { grid-column: 2; grid-row: 2; }
+  .mapview:not(.vista-operacion) .reproduccion-velocidad { grid-column: 2; grid-row: 1; }
+  .mapview:not(.vista-operacion) .reproduccion-tiempo,
+  .mapview:not(.vista-operacion) .mapa-reproductor label.reproduccion-velocidad { height: 34px; }
+  .mapview:not(.vista-operacion) .mapa-reloj-actual { bottom: 132px; }
+  .mapview:not(.vista-operacion) .mapsec:has(.mapa-reproductor) .mapa,
+  .mapview:not(.vista-operacion) .mapsec:has(.mapa-reproductor) .mapa-fondo-urbano {
+    height: calc(100% - 132px);
+  }
+}
+@container (max-width: 360px) {
+  .mapview.vista-operacion .reproduccion-momento svg { display: none; }
 }

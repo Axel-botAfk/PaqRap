@@ -68,7 +68,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           <div className="bar"><i style={{ width: `${Math.round(progreso * 100)}%` }} /></div>
           <p className="nota">Ventana {numero(ejecucion.ritmo.ventana)} de {numero(ejecucion.ritmo.ventanas)} · {textoRitmo(ejecucion.ritmo)}</p>
         </>}
-        {aviso && <p className="nota nota-aviso" role="status">{aviso}</p>}
+        {aviso && <p className={`nota nota-aviso ${aviso === 'Conexión en vivo activa.' ? 'nota-conexion-activa' : ''}`}
+          role="status">{aviso}</p>}
       </form>
     </Acordeon>
 

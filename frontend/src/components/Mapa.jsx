@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados, tramosDeRuta,
-  prepararTrayectos, posicionEnTrayecto, cargaEnTrayecto, trazosConRecorrido } from '../mapa.js';
+import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
+  prepararTrayectos, posicionEnTrayecto, cargaEnTrayecto, trazosConRecorrido,
+  segmentosEnInstante, rutaFinalizadaEn, orientacionEnTrayecto, orientacionEnFotogramas,
+  giroMasCorto } from '../mapa.js';
 import { aMs } from '../reloj.js';
 import { esFinal } from '../services/api.js';
 import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from '../formato.js';
@@ -21,6 +23,7 @@ const DURACION_ZOOM_MS = 250;
 const VISTA_INICIAL = { cx: LIENZO_ANCHO / 2, cy: LIENZO_ALTO / 2, z: 1 };
 
 const TIPOS_FLOTA = [['AUTO', 'Auto'], ['MOTO', 'Moto'], ['BICICLETA', 'Bicicleta'], ['CAMION', 'Camión']];
+const TIPOS_CON_GIRO = new Set(['AUTO', 'MOTO', 'BICICLETA']);
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
 
@@ -39,6 +42,7 @@ function encuadre({ cx, cy, z }) {
 export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos,
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
   alReproducir, pasoMs, alCambiarPaso, enVivo = false, trayectosEnVivo = null,
+  trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
@@ -51,9 +55,13 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [pieAbierto, setPieAbierto] = useState(false);
   const svgRef = useRef(null);
   const lienzoRef = useRef(null);
+  const tipRef = useRef(null);
   const [tip, setTip] = useState(null);
   const arrastre = useRef(null);
   const animacionZoom = useRef(null);
+  const animacionGiro = useRef(null);
+  const iconosVehiculos = useRef(new Map());
+  const angulosMostrados = useRef(new Map());
   const vistaActual = useRef(vista);
   vistaActual.current = vista;
 
@@ -173,6 +181,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   // tienen recorrido se quedaron quietas y se muestran donde las deja el corte.
   const trayectosPreparados = useMemo(() => trayectosEnVivo
     ? prepararTrayectos(trayectosEnVivo, aMs, bloqueados) : null, [trayectosEnVivo, bloqueados]);
+  const trayectosParaGiro = useMemo(() => prepararTrayectos(
+    enVivo ? trayectosEnVivo : trayectosDelInstante, aMs, bloqueados),
+  [enVivo, trayectosEnVivo, trayectosDelInstante, bloqueados]);
   const instanteMs = instante ? aMs(instante) : NaN;
   const enCortePublicado = enVivo && (ejecucion?.reloj === instante
     || fotogramas.some(corte => corte.reloj === instante));
@@ -183,9 +194,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       cargaAbordo: cargaEnTrayecto(preparado, instanteMs, vehiculo.cargaAbordo) };
   }) : posicionesObservadas;
 
-  const trazosTodos = useMemo(() => trayectosPreparados
-    ? trazosConRecorrido(rutas, trayectosPreparados, bloqueados)
-    : rutas.map(ruta => ({ ruta, tramos: tramosDeRuta(ruta, bloqueados) })), [rutas, bloqueados, trayectosPreparados]);
+  const trazosTodos = useMemo(() => trazosConRecorrido(rutas, trayectosParaGiro, bloqueados),
+    [rutas, bloqueados, trayectosParaGiro]);
 
   // ── filtros del mapa ───────────────────────────────────────────────────────────────
   const estadoDe = pedido => estadosPedido?.get(pedido.id) || 'PLANIFICADO';
@@ -195,6 +205,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo));
   const trazos = estadoPedido === 'NO_ASIGNADO' ? LISTA_VACIA
     : trazosTodos.filter(({ ruta }) => enFlota(ruta.tipoVehiculo));
+  const segmentosDibujados = trazos.flatMap(({ ruta, detalles }) => {
+    const terminada = rutaFinalizadaEn(ruta, trayectosParaGiro.get(ruta.vehiculoId), instanteMs);
+    return detalles.flatMap((detalle, indice) => segmentosEnInstante(detalle, instanteMs)
+      .map((segmento, parte) => ({ ...segmento, ruta, terminada,
+        clave: `${ruta.id}-${indice}-${parte}` })));
+  }).sort((a, b) => Number(b.recorrido) - Number(a.recorrido));
   const puntos = rutas.filter(ruta => enFlota(ruta.tipoVehiculo))
     .flatMap(ruta => ruta.paradas.map((parada, indice) => ({
       ruta, parada, estado: estadoDe(parada), orden: indice + 1,
@@ -213,6 +229,63 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     grupos.get(clave).push(vehiculo);
     return grupos;
   }, new Map()).values()];
+  const historialOrientacion = fotoObservada && !fotogramas.some(f => f.reloj === fotoObservada.reloj)
+    ? [...fotogramas, fotoObservada] : fotogramas;
+  const indiceOrientacion = historialOrientacion.findLastIndex(f => f.reloj === fotoObservada?.reloj);
+  const objetivosGiro = gruposVehiculos.map(grupo => {
+    const id = grupo[0].id;
+    if (!TIPOS_CON_GIRO.has(grupo[0].tipo)) return { id, angulo: 0 };
+    const enTrayecto = orientacionEnTrayecto(trayectosParaGiro.get(id), instanteMs);
+    const enCortes = orientacionEnFotogramas(historialOrientacion, indiceOrientacion, id);
+    return { id, angulo: enTrayecto ?? enCortes
+      ?? (enVivo ? angulosMostrados.current.get(id) : null) ?? 0 };
+  });
+  const firmaGiro = objetivosGiro.map(({ id, angulo }) => `${id}:${angulo.toFixed(2)}`).join('|');
+
+  useEffect(() => {
+    if (animacionGiro.current !== null) cancelAnimationFrame(animacionGiro.current);
+    animacionGiro.current = null;
+    const cambios = [];
+    for (const { id, angulo } of objetivosGiro) {
+      const nodo = iconosVehiculos.current.get(id);
+      if (!nodo) continue;
+      const anterior = angulosMostrados.current.get(id);
+      if (!Number.isFinite(anterior)) {
+        nodo.setAttribute('transform', `rotate(${angulo})`);
+        angulosMostrados.current.set(id, angulo);
+        continue;
+      }
+      const delta = giroMasCorto(anterior, angulo);
+      if (Math.abs(delta) < .01) continue;
+      cambios.push({ id, nodo, anterior, delta });
+    }
+    if (!cambios.length) return undefined;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      for (const { id, nodo, anterior, delta } of cambios) {
+        const angulo = anterior + delta;
+        nodo.setAttribute('transform', `rotate(${angulo})`);
+        angulosMostrados.current.set(id, angulo);
+      }
+      return undefined;
+    }
+    let inicio = null;
+    const girar = ahora => {
+      if (inicio === null) inicio = ahora;
+      const avance = Math.min(1, (ahora - inicio) / 220);
+      const suave = avance * avance * (3 - 2 * avance);
+      for (const { id, nodo, anterior, delta } of cambios) {
+        const angulo = anterior + delta * suave;
+        nodo.setAttribute('transform', `rotate(${angulo})`);
+        angulosMostrados.current.set(id, angulo);
+      }
+      animacionGiro.current = avance < 1 ? requestAnimationFrame(girar) : null;
+    };
+    animacionGiro.current = requestAnimationFrame(girar);
+    return () => {
+      if (animacionGiro.current !== null) cancelAnimationFrame(animacionGiro.current);
+      animacionGiro.current = null;
+    };
+  }, [firmaGiro]);
   const salidas = [...new Map(rutas.filter(ruta => ruta.origen && enFlota(ruta.tipoVehiculo))
     .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
   const vacio = rutas.length === 0 && vehiculosTodos.length === 0 && noAsignados.length === 0 && !mapaDatos;
@@ -224,12 +297,40 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
 
   // Ficha al pasar el cursor: el <title> nativo tarda en salir y no admite varias líneas.
-  function mostrarTip(evento, titulo, lineas) {
+  function mostrarTip(evento, titulo, lineas, vehiculoId = null) {
     const caja = lienzoRef.current?.getBoundingClientRect();
     if (!caja) return;
-    setTip({ titulo, lineas, x: evento.clientX - caja.left, y: evento.clientY - caja.top });
+    const xPuntero = evento.clientX - caja.left;
+    const yPuntero = evento.clientY - caja.top;
+    if (vehiculoId) {
+      const tipMedida = tipRef.current?.classList.contains('mapa-tip-vehiculo') ? tipRef.current : null;
+      const ancho = Math.min(tipMedida?.offsetWidth || (caja.width <= 500 ? 320 : 350),
+        Math.max(0, caja.width - 16));
+      const alto = tipMedida?.offsetHeight || 160;
+      const aLaIzquierda = xPuntero + ancho + 22 > caja.width;
+      const x = aLaIzquierda ? xPuntero - ancho - 14 : xPuntero + 14;
+      const y = limitar(yPuntero - 18, 8, Math.max(8, caja.height - alto - 8));
+      setTip(actual => actual?.fijo ? actual : {
+        titulo, lineas, vehiculoId, x: limitar(x, 8, Math.max(8, caja.width - ancho - 8)), y,
+        aLaIzquierda, puntaY: limitar(yPuntero - y - 5, 10, Math.max(10, alto - 20))
+      });
+      return;
+    }
+    setTip(actual => actual?.fijo ? actual
+      : { titulo, lineas, x: xPuntero, y: yPuntero });
   }
-  const ocultarTip = () => setTip(null);
+  const ocultarTip = () => setTip(actual => actual?.fijo ? actual : null);
+
+  function fijarDetalle(evento, grupo) {
+    const caja = lienzoRef.current?.getBoundingClientRect();
+    if (!caja) return;
+    const origen = evento.currentTarget.getBoundingClientRect();
+    const clientX = Number.isFinite(evento.clientX) ? evento.clientX : origen.left + origen.width / 2;
+    const clientY = Number.isFinite(evento.clientY) ? evento.clientY : origen.top + origen.height / 2;
+    setTip({ fijo: true, ids: grupo.map(v => v.id),
+      x: Math.max(10, Math.min(clientX - caja.left, caja.width - 310)),
+      y: Math.max(10, Math.min(clientY - caja.top, caja.height - 350)) });
+  }
 
   function fichaDeAlmacen(almacen) {
     const stock = stockDe(almacen);
@@ -245,14 +346,25 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   }
 
   const DETALLE_MAXIMO = 6;
-  function fichaDeUnidades(grupo) {
+  function fichaDeUnidades(grupo, detalleIndividual = false) {
+    if (detalleIndividual) return {
+      titulo: `${grupo.length} unidades seleccionadas`,
+      lineas: grupo.length ? grupo.map(v =>
+        `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo} · nodo (${v.ubicacion.x}, ${v.ubicacion.y}) · carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)} · ${estadoVehiculo(v.estado)}`)
+        .concat(`Carga al instante ${fecha(instante)}`) : ['Sin datos para este instante.']
+    };
     if (grupo.length === 1) {
       const v = grupo[0];
       return { titulo: `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo}`,
         lineas: [`Nodo (${v.ubicacion.x}, ${v.ubicacion.y})`,
           `Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`,
           ETIQUETAS_CARGA[estadoDeCarga(v)], estadoVehiculo(v.estado),
-          `Carga publicada hasta ${fecha(instante)}`] };
+          `Última publicación ${fecha(fotoObservada?.reloj)}`],
+        nodo: `Nodo (${v.ubicacion.x}, ${v.ubicacion.y})`,
+        estado: estadoVehiculo(v.estado), estadoClave: v.estado,
+        carga: `${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`,
+        estadoCarga: ETIQUETAS_CARGA[estadoDeCarga(v)],
+        publicacion: fecha(fotoObservada?.reloj) };
     }
     const titulo = `${grupo.length} unidades en (${grupo[0].ubicacion.x}, ${grupo[0].ubicacion.y})`;
     if (grupo.length <= DETALLE_MAXIMO) {
@@ -276,15 +388,19 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       `${t.n} × ${ETIQUETA_TIPO[tipo] || tipo} · carga ${numero(t.carga)} / ${numero(t.capacidad)}`)
       .concat([...porNivel].map(([nivel, cantidad]) =>
         `${cantidad} unidad(es): ${ETIQUETAS_CARGA[nivel]}`))
-      .concat(`Carga publicada hasta ${fecha(instante)}`) };
+      .concat('Clic para consultar cada unidad.', `Carga publicada hasta ${fecha(instante)}`) };
   }
+
+  const fichaFija = tip?.fijo ? fichaDeUnidades(tip.ids.map(id =>
+    vehiculosTodos.find(v => v.id === id)).filter(Boolean), true) : null;
+  const vehiculoTip = tip?.vehiculoId ? vehiculosTodos.find(v => v.id === tip.vehiculoId) : null;
+  const fichaVehiculo = vehiculoTip ? fichaDeUnidades([vehiculoTip]) : null;
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
     <div className="mapa-reloj-actual">
       <time dateTime={ahoraReal ? new Date(ahoraReal).toISOString() : undefined}>
         Ahora: {ahoraReal ? fecha(new Date(ahoraReal)) : '—'}
       </time>
-      {modoOperacion && ejecucion && <span>Real transcurrido: {duracion(transcurridoMs)}</span>}
     </div>
     <svg className="mapa-fondo-urbano"
       viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
@@ -299,11 +415,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
         <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
           fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
-      {trazos.flatMap(({ ruta, tramos }, indice) => tramos.map((tramo, n) => {
-        const coordenadas = tramo.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
+      {segmentosDibujados.map(({ ruta, camino, recorrido, terminada, clave }) => {
+        const coordenadas = camino.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
         const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
-        return <g key={`${ruta.id}-${indice}-${n}`} style={{ '--ruta-color': colorDeRuta(ruta) }} className={`trazo-ruta ${finalizada && !reproduciendo && indiceFotograma >= fotogramas.length - 1 ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
-          <polyline className="trazo-visible" points={coordenadas} fill="none" />
+        return <g key={clave} style={{ '--ruta-color': colorDeRuta(ruta) }} className={`trazo-ruta ${terminada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
+          <polyline className={`trazo-visible ${recorrido ? 'trazo-recorrido' : 'trazo-pendiente'}`}
+            points={coordenadas} fill="none" />
           <polyline className="trazo-interaccion" points={coordenadas} fill="none"
             tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
             onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
@@ -311,7 +428,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
             <title>{`${ruta.id} · ${ruta.vehiculoId} · ${ruta.paradas.length} parada(s)`}</title>
           </polyline>
         </g>;
-      }))}
+      })}
       {puntos.map(({ ruta, parada, estado, orden, ultima }, indice) => <g key={`p${ruta.id}-${indice}`}
         className={`mapa-parada-orden parada-${estado.toLowerCase()} ${ultima ? 'mapa-parada-final' : ''}`}
         transform={fijo(parada.destino.x, parada.destino.y)}
@@ -332,11 +449,39 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
         onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
         onPointerLeave={ocultarTip}>
-        {almacen.tipo === 'CENTRAL' ? <path d="M0 -11 11 0 0 11 -11 0Z" fill="#733e91" stroke="white" strokeWidth="2" />
-          : <rect x="-9" y="-9" width="18" height="18" rx="2" fill="#a366ae" stroke="white" strokeWidth="2" />}
-        <text x="0" y="4" textAnchor="middle" fontSize="10" fontWeight="800" fill="white">{almacen.tipo === 'CENTRAL' ? 'C' : 'I'}</text>
+        {almacen.tipo === 'CENTRAL' ? <svg x="-18" y="-20" width="36" height="40" viewBox="0 0 36 40"
+          overflow="visible" aria-hidden="true" focusable="false">
+          <defs><linearGradient id={`fondo-central-${almacen.id}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
+          </linearGradient></defs>
+          <path d="M18 1 Q19 1 20 2 L34.5 17 Q36 19 34.5 21 L20 37 Q18 39 16 37 L1.5 21 Q0 19 1.5 17 L16 2 Q17 1 18 1Z"
+            fill={`url(#fondo-central-${almacen.id})`} />
+          <path d="M6 19 18 9 30 19 V34 H6Z" fill="#8E24AA" />
+          <path d="M5.5 19 18 8 30.5 19 M5.5 19v15 M30.5 19v15"
+            fill="none" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <text x="18" y="25.5" textAnchor="middle" fontFamily="Archivo, sans-serif" fontSize="9.5"
+            fontWeight="900" fill="white">C</text>
+          <rect x="10" y="27" width="16" height="8" rx="1.2" fill="white" />
+          <rect x="12" y="30" width="9" height="4" rx=".6" fill="#6A1B9A" />
+          <path d="M21 31h2l2 2v1h-4Z" fill="#8E24AA" />
+          <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
+          <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
+        </svg> : <>
+          <svg x="-9" y="-9" width="18" height="18" viewBox="0 0 20 20"
+            overflow="visible" aria-hidden="true" focusable="false">
+            <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z"
+              fill="#9222B4" />
+            <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"
+              stroke="#9222B4" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M2.4 9.2 10 4l7.6 5.2" fill="none" stroke="white"
+              strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M8.5 10.5h3M10 10.5v5.2M8.5 15.7h3" fill="none"
+              stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </>}
         {modoOperacion && <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
-          cx="9" cy="-9" r="4.5" pointerEvents="none" />}
+          cx={almacen.tipo === 'CENTRAL' ? 14 : 9} cy={almacen.tipo === 'CENTRAL' ? -13 : -9}
+          r="4.5" pointerEvents="none" />}
       </g>)}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
         transform={fijo(punto.x, punto.y)}>
@@ -346,16 +491,33 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       </g>)}
       {gruposVehiculos.map(grupo => <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
-        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)} role="img"
+        transform={fijo(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
+        role={grupo.length > DETALLE_MAXIMO ? 'button' : 'img'}
+        tabIndex={grupo.length > DETALLE_MAXIMO ? 0 : undefined}
         aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}
-        onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
-        onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas); }}
-        onPointerLeave={ocultarTip}>
+        onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
+        onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
+        onPointerLeave={ocultarTip}
+        onPointerDown={e => { if (grupo.length > DETALLE_MAXIMO) e.stopPropagation(); }}
+        onClick={e => { if (grupo.length > DETALLE_MAXIMO) fijarDetalle(e, grupo); }}
+        onKeyDown={e => {
+          if (grupo.length > DETALLE_MAXIMO && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            fijarDetalle(e, grupo);
+          }
+        }}>
         {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
-        <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
-          <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
-          <DibujoVehiculo tipo={grupo[0].tipo} />
-        </svg>
+        <g ref={nodo => {
+          if (nodo) {
+            iconosVehiculos.current.set(grupo[0].id, nodo);
+            nodo.setAttribute('transform', `rotate(${angulosMostrados.current.get(grupo[0].id) ?? 0})`);
+          } else iconosVehiculos.current.delete(grupo[0].id);
+        }}>
+          <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
+            <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+            <DibujoVehiculo tipo={grupo[0].tipo} />
+          </svg>
+        </g>
         {modoOperacion && <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
           cx="9" cy="-9" r="4.5" pointerEvents="none" />}
         {grupo.length > 1 && <>
@@ -430,8 +592,6 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
           disabled={indiceFotograma >= fotogramas.length - 1}
           onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
-        {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo"
-          onClick={alVolverEnVivo}>En vivo</button>}
       </div>
       <div className="reproduccion-tiempos">
         <div className="reproduccion-tiempo reproduccion-momento">
@@ -468,11 +628,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <span className="reproduccion-contador" title={enVivo
           ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
           : !hayReproduccion ? 'Sin reproducción disponible'
-            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}`}>
+            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length}`}>
           {enVivo
             ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
-            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}` : 'Reproducción 0/0'}
+            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length}` : 'Reproducción 0/0'}
         </span>
+        <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
+          disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
+        <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
+          disabled={indiceFotograma >= fotogramas.length - 1}
+          onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
         {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo" onClick={alVolverEnVivo}>En vivo</button>}
       </div>
       <div className="reproduccion-tiempos">
@@ -519,9 +684,26 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       <b>{ejecucion?.estado === 'PENDIENTE' ? 'Preparando la corrida…' : 'Calculando rutas…'}</b>
       <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
     </div>}
-    {tip && <div className="mapa-tip" style={{ left: tip.x, top: tip.y }} role="tooltip">
-      <b>{tip.titulo}</b>
-      {tip.lineas.map(linea => <span key={linea}>{linea}</span>)}
+    {tip && <div ref={tipRef} className={`mapa-tip ${tip.fijo ? 'mapa-tip-fija' : ''} ${fichaVehiculo ? 'mapa-tip-vehiculo' : ''} ${tip.aLaIzquierda ? 'mapa-tip-izquierda' : ''}`}
+      style={{ left: tip.x, top: tip.y, '--punta-y': `${tip.puntaY ?? 18}px` }} role="tooltip">
+      {fichaVehiculo ? <>
+        <div className="mapa-tip-cabecera">
+          <div><strong>{fichaVehiculo.titulo}</strong><span className="mapa-tip-nodo">{fichaVehiculo.nodo}</span></div>
+          <span className={`mapa-tip-estado mapa-tip-estado-${({ DISPONIBLE: 'disponible', EN_RUTA: 'en-ruta', AVERIADO: 'averiado', EN_MANTENIMIENTO: 'mantenimiento' })[fichaVehiculo.estadoClave] || 'otro'}`}>
+            <i aria-hidden="true" />{fichaVehiculo.estado}
+          </span>
+        </div>
+        <div className="mapa-tip-filas">
+          <div className="mapa-tip-fila"><IconoUI nombre="caja" size={17} /><span>Carga actual</span><strong>{fichaVehiculo.carga}</strong></div>
+          <div className="mapa-tip-fila"><IconoUI nombre="pedidos" size={17} /><span>Estado de carga</span><strong>{fichaVehiculo.estadoCarga}</strong></div>
+          <div className="mapa-tip-fila"><span className="mapa-tip-calendario"><IconoUI nombre="calendario" size={17} /><IconoUI nombre="reloj" size={9} /></span><span>Última publicación</span><strong>{fichaVehiculo.publicacion}</strong></div>
+        </div>
+      </> : <>
+        {tip.fijo && <button type="button" aria-label="Cerrar detalle de unidades"
+          onClick={() => setTip(null)}>×</button>}
+        <b>{fichaFija?.titulo || tip.titulo}</b>
+        {(fichaFija?.lineas || tip.lineas).map((linea, indice) => <span key={`${indice}-${linea}`}>{linea}</span>)}
+      </>}
     </div>}
 
     {vacio && <div className="mapa-cartel"><b>Sin operación cargada</b>

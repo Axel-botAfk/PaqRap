@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { caminoEnGrilla, nodosBloqueados, posicionVisual, tramosDeRuta, planVigenteEn,
-  estadosDePedido, xEnMapa, yEnMapa, vehiculosObservadosEn } from './mapa.js';
+  estadosDePedido, xEnMapa, yEnMapa, vehiculosObservadosEn, anguloMovimiento,
+  orientacionEnFotogramas, giroMasCorto } from './mapa.js';
 import { aMs } from './reloj.js';
 
 test('las coordenadas publicadas por la API conservan el nodo al proyectarse en SVG', () => {
@@ -25,6 +26,27 @@ test('pausar, avanzar y retroceder muestran exactamente el fotograma elegido', (
     '2026-09-01T08:45:00', aMs), posterior);
   assert.equal(vehiculosObservadosEn(fotogramas, 0, ejecucion, true,
     '2026-09-01T08:33:00', aMs), anterior);
+});
+
+test('autos, motos y bicicletas conservan su orientación cronológica al pausar y retroceder', () => {
+  for (const tipo of ['AUTO', 'MOTO', 'BICICLETA']) {
+    const id = `unidad-${tipo}`;
+    const fotogramas = [
+      { vehiculos: [{ id, ubicacion: { x: 1, y: 1 } }] },
+      { vehiculos: [{ id, ubicacion: { x: 2, y: 1 } }] },
+      { vehiculos: [{ id, ubicacion: { x: 2, y: 2 } }] },
+      { vehiculos: [{ id, ubicacion: { x: 2, y: 2 } }] }
+    ];
+    assert.equal(orientacionEnFotogramas(fotogramas, 1, id), 0);
+    assert.equal(orientacionEnFotogramas(fotogramas, 2, id), -90);
+    assert.equal(orientacionEnFotogramas(fotogramas, 3, id), -90);
+    assert.equal(orientacionEnFotogramas(fotogramas, 1, id), 0);
+  }
+  assert.equal(anguloMovimiento({ x: 2, y: 2 }, { x: 1, y: 2 }), 180);
+  assert.equal(anguloMovimiento({ x: 2, y: 2 }, { x: 2, y: 1 }), 90);
+  assert.equal(anguloMovimiento({ x: 2, y: 2 }, { x: 2, y: 2 }), null);
+  assert.equal(giroMasCorto(170, -170), 20);
+  assert.equal(giroMasCorto(-170, 170), -20);
 });
 
 test('cada paso de la ruta es horizontal o vertical y de una arista', () => {

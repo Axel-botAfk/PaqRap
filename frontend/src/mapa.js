@@ -5,6 +5,29 @@ export const ALTO = 50;
 export const xEnMapa = valor => Math.max(0, Math.min(ANCHO * 10, (valor ?? 0) * 10));
 export const yEnMapa = valor => Math.max(0, Math.min(ALTO * 10, (ALTO - (valor ?? 0)) * 10));
 
+/** Los pictogramas miran originalmente a la derecha; el eje Y del SVG va hacia abajo. */
+export function anguloMovimiento(origen, destino) {
+  if (!origen || !destino) return null;
+  const dx = destino.x - origen.x;
+  const dy = origen.y - destino.y;
+  if (!Number.isFinite(dx) || !Number.isFinite(dy) || (dx === 0 && dy === 0)) return null;
+  return Math.atan2(dy, dx) * 180 / Math.PI;
+}
+
+export const giroMasCorto = (desde, hasta) => ((hasta - desde + 540) % 360) - 180;
+
+/** Orientación cronológica en los cortes de la API, independiente del sentido de reproducción. */
+export function orientacionEnFotogramas(fotogramas, indiceActual, vehiculoId) {
+  const actual = fotogramas[indiceActual]?.vehiculos?.find(v => v.id === vehiculoId)?.ubicacion;
+  if (!actual) return null;
+  for (let i = indiceActual - 1; i >= 0; i--) {
+    const anterior = fotogramas[i]?.vehiculos?.find(v => v.id === vehiculoId)?.ubicacion;
+    const angulo = anguloMovimiento(anterior, actual);
+    if (angulo !== null) return angulo;
+  }
+  return null;
+}
+
 /** El historial usa el corte elegido; en vivo nunca toma una instantánea futura. */
 export function fotogramaObservadoEn(fotogramas, indice, ejecucion, enVivo, instante, aMs) {
   const tiempo = aMs(instante);
@@ -138,26 +161,76 @@ export function prepararTrayectos(trayectos, aMs, bloqueados = new Set()) {
  * siempre encima de su línea. Las rutas de una unidad sin recorrido se trazan desde su almacén.
  */
 export function trazosConRecorrido(rutas, preparados, bloqueados = new Set()) {
-  const yaTrazadas = new Set();
+  const porVehiculo = new Map();
+  for (const ruta of rutas) {
+    if (!porVehiculo.has(ruta.vehiculoId)) porVehiculo.set(ruta.vehiculoId, []);
+    porVehiculo.get(ruta.vehiculoId).push(ruta);
+  }
+  const tramosObservados = new Map(rutas.map(ruta => [ruta.id, []]));
+  for (const [vehiculoId, rutasDeUnidad] of porVehiculo) {
+    const preparado = preparados?.get(vehiculoId);
+    if (!preparado) continue;
+    const rutaDePedido = new Map(rutasDeUnidad.flatMap(ruta =>
+      (ruta.paradas || []).map(parada => [parada.id, ruta])));
+    const entregas = preparado.tramos.flatMap((tramo, indice) =>
+      tramo.destino.hito === 'ENTREGA' && rutaDePedido.has(tramo.destino.pedidoId)
+        ? [{ indice, ruta: rutaDePedido.get(tramo.destino.pedidoId) }] : []);
+    let ultimaRuta = rutasDeUnidad[0];
+    for (let indice = 0; indice < preparado.tramos.length; indice++) {
+      const tramo = preparado.tramos[indice];
+      const ruta = entregas.find(entrega => entrega.indice >= indice)?.ruta || ultimaRuta;
+      ultimaRuta = ruta;
+      if (tramo.camino.length > 1) tramosObservados.get(ruta.id).push({
+        camino: tramo.camino, origenMs: tramo.origen.ms, destinoMs: tramo.destino.ms
+      });
+    }
+  }
   return rutas.map(ruta => {
     const preparado = preparados?.get(ruta.vehiculoId);
-    if (!preparado?.pasos.length) return { ruta, tramos: tramosDeRuta(ruta, bloqueados) };
+    if (!preparado?.pasos.length) {
+      const tramos = tramosDeRuta(ruta, bloqueados);
+      return { ruta, tramos, detalles: tramos.map(camino => ({ camino })) };
+    }
     const entregados = new Set(preparado.pasos
       .filter(paso => paso.hito === 'ENTREGA' && paso.pedidoId).map(paso => paso.pedidoId));
     const paradas = ruta.paradas || [];
-    const primeraDeLaUnidad = !yaTrazadas.has(ruta.vehiculoId);
-    yaTrazadas.add(ruta.vehiculoId);
-    const tramos = primeraDeLaUnidad
-      ? preparado.tramos.map(tramo => tramo.camino).filter(camino => camino.length > 1) : [];
-    const enCurso = primeraDeLaUnidad || paradas.some(parada => entregados.has(parada.id));
-    let origen = enCurso ? preparado.pasos[preparado.pasos.length - 1].ubicacion : ruta.origen;
+    const detalles = [...tramosObservados.get(ruta.id)];
+    let origen = detalles.at(-1)?.camino.at(-1) || ruta.origen;
     for (const parada of paradas) {
       if (entregados.has(parada.id)) continue;
       const tramo = caminoEnGrilla(origen, parada.destino, bloqueados);
-      if (tramo.length > 1) tramos.push(tramo);
+      if (tramo.length > 1) detalles.push({ camino: tramo });
       origen = parada.destino;
     }
-    return { ruta, tramos };
+    return { ruta, tramos: detalles.map(detalle => detalle.camino), detalles };
+  });
+}
+
+/** Divide una polilínea en aristas ya recorridas y pendientes con el mismo paso que el vehículo. */
+export function segmentosEnInstante(detalle, instanteMs) {
+  const { camino, origenMs, destinoMs } = detalle;
+  if (!Number.isFinite(origenMs) || !Number.isFinite(destinoMs)
+      || !Number.isFinite(instanteMs) || instanteMs < origenMs
+      || (instanteMs === origenMs && destinoMs > origenMs)) {
+    return [{ camino, recorrido: false }];
+  }
+  const duracion = destinoMs - origenMs;
+  const progreso = duracion > 0 ? (instanteMs - origenMs) / duracion : 1;
+  const paso = Math.min(camino.length - 1, Math.floor(Math.max(0, progreso) * (camino.length - 1)));
+  if (paso === 0) return [{ camino, recorrido: false }];
+  if (paso === camino.length - 1) return [{ camino, recorrido: true }];
+  return [{ camino: camino.slice(0, paso + 1), recorrido: true },
+    { camino: camino.slice(paso), recorrido: false }];
+}
+
+/** La ruta termina al concluir cada entrega; algunas no tienen tiempo de acondicionamiento. */
+export function rutaFinalizadaEn(ruta, preparado, instanteMs) {
+  if (!ruta.paradas?.length || !Number.isFinite(instanteMs)) return false;
+  const pasos = preparado?.pasos || [];
+  return ruta.paradas.every(parada => {
+    const fin = pasos.find(paso => paso.hito === 'FIN_ENTREGA' && paso.pedidoId === parada.id);
+    const entrega = fin || pasos.find(paso => paso.hito === 'ENTREGA' && paso.pedidoId === parada.id);
+    return entrega && entrega.ms <= instanteMs;
   });
 }
 
@@ -174,6 +247,27 @@ export function posicionEnTrayecto(preparado, instanteMs) {
     }
   }
   return pasos[pasos.length - 1].ubicacion;
+}
+
+/** Dirección de la arista recorrida en el instante; las esperas conservan la última válida. */
+export function orientacionEnTrayecto(preparado, instanteMs) {
+  if (!preparado?.pasos.length || !Number.isFinite(instanteMs)) return null;
+  if (instanteMs <= preparado.pasos[0].ms) return null;
+  let ultima = null;
+  for (const { origen, destino, camino } of preparado.tramos) {
+    if (instanteMs < origen.ms) break;
+    if (camino.length < 2) continue;
+    if (instanteMs >= destino.ms) {
+      ultima = anguloMovimiento(camino[camino.length - 2], camino.at(-1)) ?? ultima;
+      continue;
+    }
+    if (instanteMs === origen.ms) return ultima;
+    const duracion = destino.ms - origen.ms;
+    const progreso = duracion > 0 ? Math.max(0, (instanteMs - origen.ms) / duracion) : 1;
+    const paso = Math.min(camino.length - 2, Math.floor(progreso * (camino.length - 1)));
+    return anguloMovimiento(camino[paso], camino[paso + 1]) ?? ultima;
+  }
+  return ultima;
 }
 
 /** Última carga observada en un hito del trayecto, sin tomar eventos futuros. */

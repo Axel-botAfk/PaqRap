@@ -551,6 +551,7 @@ export default function App() {
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
+          trayectosDelInstante={planReproducido?.trayectos || LISTA_VACIA}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
           noAsignadosDelInstante={planReproducido?.noAsignados || null}
           alCambiarFotograma={indice => { setEnVivo(false); setReproduciendo(false); setIndiceFotograma(indice); }}

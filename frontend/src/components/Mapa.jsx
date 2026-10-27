@@ -24,6 +24,7 @@ const VISTA_INICIAL = { cx: LIENZO_ANCHO / 2, cy: LIENZO_ALTO / 2, z: 1 };
 
 const TIPOS_FLOTA = [['AUTO', 'Auto'], ['MOTO', 'Moto'], ['BICICLETA', 'Bicicleta'], ['CAMION', 'Camión']];
 const TIPOS_CON_GIRO = new Set(['AUTO', 'MOTO', 'BICICLETA']);
+const TIPOS_CENITALES = new Set(['AUTO', 'MOTO', 'BICICLETA']);
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
 
@@ -222,6 +223,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const hayReproduccion = fotogramas.length > 0 || enVivo;
+  const contadorOperacion = `Reproducción ${fotogramas.length ? (enVivo ? fotogramas.length : indiceFotograma + 1) : 0}-${fotogramas.length}`;
   const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
     if (!vehiculo.ubicacion) return grupos;
     const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
@@ -237,8 +239,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     if (!TIPOS_CON_GIRO.has(grupo[0].tipo)) return { id, angulo: 0 };
     const enTrayecto = orientacionEnTrayecto(trayectosParaGiro.get(id), instanteMs);
     const enCortes = orientacionEnFotogramas(historialOrientacion, indiceOrientacion, id);
-    return { id, angulo: enTrayecto ?? enCortes
-      ?? (enVivo ? angulosMostrados.current.get(id) : null) ?? 0 };
+    const direccion = enTrayecto ?? enCortes;
+    return { id, angulo: direccion === null
+      ? ((enVivo ? angulosMostrados.current.get(id) : null) ?? 0)
+      : direccion + (TIPOS_CENITALES.has(grupo[0].tipo) ? 90 : 0) };
   });
   const firmaGiro = objetivosGiro.map(({ id, angulo }) => `${id}:${angulo.toFixed(2)}`).join('|');
 
@@ -297,21 +301,25 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
 
   // Ficha al pasar el cursor: el <title> nativo tarda en salir y no admite varias líneas.
-  function mostrarTip(evento, titulo, lineas, vehiculoId = null) {
+  function mostrarTip(evento, titulo, lineas, vehiculoId = null, almacenId = null) {
     const caja = lienzoRef.current?.getBoundingClientRect();
     if (!caja) return;
     const xPuntero = evento.clientX - caja.left;
     const yPuntero = evento.clientY - caja.top;
-    if (vehiculoId) {
-      const tipMedida = tipRef.current?.classList.contains('mapa-tip-vehiculo') ? tipRef.current : null;
-      const ancho = Math.min(tipMedida?.offsetWidth || (caja.width <= 500 ? 320 : 350),
+    if (vehiculoId || almacenId) {
+      const claseTip = almacenId ? 'mapa-tip-almacen' : 'mapa-tip-vehiculo';
+      const tipMedida = tipRef.current?.classList.contains(claseTip) ? tipRef.current : null;
+      const anchoInicial = almacenId ? (window.innerWidth <= 600 ? 300 : 330)
+        : (window.innerWidth <= 600 ? 280 : 300);
+      const ancho = Math.min(tipMedida?.offsetWidth || anchoInicial,
         Math.max(0, caja.width - 16));
-      const alto = tipMedida?.offsetHeight || 160;
+      const alto = tipMedida?.offsetHeight || (almacenId ? 120 : 140);
       const aLaIzquierda = xPuntero + ancho + 22 > caja.width;
       const x = aLaIzquierda ? xPuntero - ancho - 14 : xPuntero + 14;
       const y = limitar(yPuntero - 18, 8, Math.max(8, caja.height - alto - 8));
       setTip(actual => actual?.fijo ? actual : {
-        titulo, lineas, vehiculoId, x: limitar(x, 8, Math.max(8, caja.width - ancho - 8)), y,
+        titulo, lineas, vehiculoId, almacenId,
+        x: limitar(x, 8, Math.max(8, caja.width - ancho - 8)), y,
         aLaIzquierda, puntaY: limitar(yPuntero - y - 5, 10, Math.max(10, alto - 20))
       });
       return;
@@ -336,13 +344,21 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     const stock = stockDe(almacen);
     const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
     const estado = estadoDeStock(stock, almacen.stockInicial);
-    const lineas = [`Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`, ETIQUETAS_STOCK[estado]];
+    const nodo = `Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`;
+    const lineas = [nodo, ETIQUETAS_STOCK[estado]];
     if (stock?.ilimitado) lineas.push('Stock ilimitadas');
     else if (stock && Number.isFinite(stock.disponible)) {
       lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}`);
       if (inventario?.reloj) lineas.push(`Último corte disponible: ${fecha(inventario.reloj)}`);
     }
-    return { titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`, lineas };
+    return {
+      titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`,
+      lineas, nodo, estado, estadoTexto: ETIQUETAS_STOCK[estado],
+      stockActual: stock?.ilimitado ? 'Ilimitado'
+        : Number.isFinite(stock?.disponible)
+          ? `${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}` : '—',
+      ultimoCorte: inventario?.reloj && stock ? fecha(inventario.reloj) : '—'
+    };
   }
 
   const DETALLE_MAXIMO = 6;
@@ -395,6 +411,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     vehiculosTodos.find(v => v.id === id)).filter(Boolean), true) : null;
   const vehiculoTip = tip?.vehiculoId ? vehiculosTodos.find(v => v.id === tip.vehiculoId) : null;
   const fichaVehiculo = vehiculoTip ? fichaDeUnidades([vehiculoTip]) : null;
+  const almacenTip = tip?.almacenId ? almacenes.find(a => a.id === tip.almacenId) : null;
+  const fichaAlmacen = almacenTip ? fichaDeAlmacen(almacenTip) : null;
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
     <div className="mapa-reloj-actual">
@@ -446,10 +464,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       {almacenes.map(almacen => <g key={almacen.id} className="mapa-almacen"
         transform={fijo(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
         aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
-        onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
-        onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas); }}
+        onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
+        onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
         onPointerLeave={ocultarTip}>
-        {almacen.tipo === 'CENTRAL' ? <svg x="-18" y="-20" width="36" height="40" viewBox="0 0 36 40"
+        {almacen.tipo === 'CENTRAL' ? <svg x="-22.5" y="-24.5" width="45" height="49" viewBox="0 0 36 40"
           overflow="visible" aria-hidden="true" focusable="false">
           <defs><linearGradient id={`fondo-central-${almacen.id}`} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
@@ -467,7 +485,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
           <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
         </svg> : <>
-          <svg x="-9" y="-9" width="18" height="18" viewBox="0 0 20 20"
+          <svg x="-20" y="-20" width="40" height="40" viewBox="0 0 20 20"
             overflow="visible" aria-hidden="true" focusable="false">
             <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z"
               fill="#9222B4" />
@@ -480,7 +498,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           </svg>
         </>}
         {modoOperacion && <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
-          cx={almacen.tipo === 'CENTRAL' ? 14 : 9} cy={almacen.tipo === 'CENTRAL' ? -13 : -9}
+          cx={almacen.tipo === 'CENTRAL' ? 17.5 : 15} cy={almacen.tipo === 'CENTRAL' ? -17.5 : -15}
           r="4.5" pointerEvents="none" />}
       </g>)}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
@@ -513,13 +531,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
             nodo.setAttribute('transform', `rotate(${angulosMostrados.current.get(grupo[0].id) ?? 0})`);
           } else iconosVehiculos.current.delete(grupo[0].id);
         }}>
-          <svg x="-13" y="-13" width="26" height="26" viewBox="0 0 32 32">
-            <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />
+          <svg x={TIPOS_CENITALES.has(grupo[0].tipo) ? -22 : -13} y={TIPOS_CENITALES.has(grupo[0].tipo) ? -22 : -13}
+            width={TIPOS_CENITALES.has(grupo[0].tipo) ? 44 : 26} height={TIPOS_CENITALES.has(grupo[0].tipo) ? 44 : 26} viewBox="0 0 32 32">
+            {!TIPOS_CENITALES.has(grupo[0].tipo) && <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />}
             <DibujoVehiculo tipo={grupo[0].tipo} />
           </svg>
         </g>
         {modoOperacion && <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
-          cx="9" cy="-9" r="4.5" pointerEvents="none" />}
+          cx={TIPOS_CENITALES.has(grupo[0].tipo) ? 11 : 9} cy={TIPOS_CENITALES.has(grupo[0].tipo) ? -17 : -9}
+          r="4.5" pointerEvents="none" />}
         {grupo.length > 1 && <>
           <circle className="grupo-contador" cx="12" cy="11" r="8" />
           <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
@@ -625,14 +645,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           style={{ '--progreso': `${Math.round(100 * (enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma) / Math.max(1, fotogramas.length - 1))}%` }}
           onChange={evento => alCambiarFotograma(Number(evento.target.value))}
           aria-label="Seleccionar instante de la reproducción" />
-        <span className="reproduccion-contador" title={enVivo
-          ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
-          : !hayReproduccion ? 'Sin reproducción disponible'
-            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length}`}>
-          {enVivo
-            ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
-            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length}` : 'Reproducción 0/0'}
-        </span>
+        <span className="reproduccion-contador" title={contadorOperacion}>{contadorOperacion}</span>
         <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
           disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
         <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
@@ -684,7 +697,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       <b>{ejecucion?.estado === 'PENDIENTE' ? 'Preparando la corrida…' : 'Calculando rutas…'}</b>
       <span>El planificador está trabajando. Mostraremos las rutas nuevas cuando estén listas.</span>
     </div>}
-    {tip && <div ref={tipRef} className={`mapa-tip ${tip.fijo ? 'mapa-tip-fija' : ''} ${fichaVehiculo ? 'mapa-tip-vehiculo' : ''} ${tip.aLaIzquierda ? 'mapa-tip-izquierda' : ''}`}
+    {tip && <div ref={tipRef} className={`mapa-tip ${tip.fijo ? 'mapa-tip-fija' : ''} ${fichaVehiculo ? 'mapa-tip-vehiculo' : ''} ${fichaAlmacen ? 'mapa-tip-almacen' : ''} ${tip.aLaIzquierda ? 'mapa-tip-izquierda' : ''}`}
       style={{ left: tip.x, top: tip.y, '--punta-y': `${tip.puntaY ?? 18}px` }} role="tooltip">
       {fichaVehiculo ? <>
         <div className="mapa-tip-cabecera">
@@ -697,6 +710,17 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <div className="mapa-tip-fila"><IconoUI nombre="caja" size={17} /><span>Carga actual</span><strong>{fichaVehiculo.carga}</strong></div>
           <div className="mapa-tip-fila"><IconoUI nombre="pedidos" size={17} /><span>Estado de carga</span><strong>{fichaVehiculo.estadoCarga}</strong></div>
           <div className="mapa-tip-fila"><span className="mapa-tip-calendario"><IconoUI nombre="calendario" size={17} /><IconoUI nombre="reloj" size={9} /></span><span>Última publicación</span><strong>{fichaVehiculo.publicacion}</strong></div>
+        </div>
+      </> : fichaAlmacen ? <>
+        <div className="mapa-tip-cabecera">
+          <div><strong>{fichaAlmacen.titulo}</strong><span className="mapa-tip-nodo">{fichaAlmacen.nodo}</span></div>
+          <span className={`mapa-tip-estado mapa-tip-stock-${fichaAlmacen.estado}`}>
+            <i aria-hidden="true" />{fichaAlmacen.estadoTexto}
+          </span>
+        </div>
+        <div className="mapa-tip-filas">
+          <div className="mapa-tip-fila"><IconoUI nombre="caja" size={17} /><span>Stock actual</span><strong>{fichaAlmacen.stockActual}</strong></div>
+          <div className="mapa-tip-fila"><span className="mapa-tip-calendario"><IconoUI nombre="calendario" size={17} /><IconoUI nombre="reloj" size={9} /></span><span>Último corte disponible</span><strong>{fichaAlmacen.ultimoCorte}</strong></div>
         </div>
       </> : <>
         {tip.fijo && <button type="button" aria-label="Cerrar detalle de unidades"

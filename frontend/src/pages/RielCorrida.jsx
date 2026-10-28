@@ -1,7 +1,8 @@
 import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
-  tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
+  tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria,
+  TIEMPO_REAL_DIA_A_DIA } from '../formato.js';
 
 const ESCENARIOS_SIMULACION = [
   ['PERIODO_5_DIAS', 'Semanal (5 días)', 'Cinco jornadas en 30 a 60 minutos reales.'],
@@ -18,6 +19,9 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
+  // La operación en tiempo real no se sitúa en el pasado, así que no pide fecha ni depende de
+  // que haya periodos cargados: su demanda entra mientras corre.
+  const enTiempoReal = TIEMPO_REAL_DIA_A_DIA && escenario === 'OPERACION_DIARIA';
   const inicialPorId = new Map((mapaDatos?.almacenes || [])
     .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial]));
 
@@ -39,19 +43,25 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           </label>)}
         </div>}
 
-        {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. */}
-        <div className="row">
-          <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
-            <input id="c-dia" className="input" name="dia" type="date" value={dia} required
-              min={limites.desde} max={limites.hasta}
-              onChange={e => cfg.setDia(e.target.value)} /></div>
-          <div className="field"><label htmlFor="c-hora">Hora inicial</label>
-            <input id="c-hora" className="input" name="hora" type="time" value={hora} required
-              onChange={e => cfg.setHora(e.target.value)} /></div>
-        </div>
-        {detalle
-          ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
-          : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
+        {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. En
+            tiempo real no hay fecha que elegir: la jornada es la de hoy y empieza ahora. */}
+        {enTiempoReal
+          ? <p className="dato-periodo">La operación arranca en el instante actual y sigue el reloj
+              real. Los pedidos se registran desde Pedidos mientras la jornada corre.</p>
+          : <>
+            <div className="row">
+              <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
+                <input id="c-dia" className="input" name="dia" type="date" value={dia} required
+                  min={limites.desde} max={limites.hasta}
+                  onChange={e => cfg.setDia(e.target.value)} /></div>
+              <div className="field"><label htmlFor="c-hora">Hora inicial</label>
+                <input id="c-hora" className="input" name="hora" type="time" value={hora} required
+                  onChange={e => cfg.setHora(e.target.value)} /></div>
+            </div>
+            {detalle
+              ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
+              : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
+          </>}
 
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
@@ -60,7 +70,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
 
         <div className="acciones">
-          <button className="btn btn-primary" type="submit" disabled={ocupado || !limites.desde}>
+          <button className="btn btn-primary" type="submit"
+            disabled={ocupado || (!enTiempoReal && !limites.desde)}>
             {ocupado ? 'Procesando…' : '▶ Iniciar'}</button>
         </div>
 

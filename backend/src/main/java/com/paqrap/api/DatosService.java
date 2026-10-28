@@ -82,7 +82,7 @@ final class DatosService implements DatosFuente {
 
     public List<Vehiculo> flota() { return DatosCaso.flota(); }
 
-    public DatosEntrada cargar(LocalDateTime inicio, int dias) {
+    public DatosEntrada cargar(LocalDateTime inicio, int dias, boolean exigirPedidos) {
         List<Pedido> ventas = new ArrayList<>();
         List<Bloqueo> bloqueos = new ArrayList<>();
         PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
@@ -96,10 +96,15 @@ final class DatosService implements DatosFuente {
                 mantenimiento = mantenimiento.mas(datos.mantenimiento());
             }
         } catch (IOException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "DATOS_INCOMPLETOS",
-                    "No hay datos de ventas y bloqueos para todo el horizonte solicitado.");
+            // En tiempo real el mes en curso puede no tener archivos todavía: la corrida arranca
+            // con la cola vacía y se llena con lo que entre por la API. Exigirlos impediría
+            // abrir la operación del día de hoy, que es justamente el escenario.
+            if (exigirPedidos) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "DATOS_INCOMPLETOS",
+                        "No hay datos de ventas y bloqueos para todo el horizonte solicitado.");
+            }
         }
-        if (ventas.stream().noneMatch(p -> !p.getFechaRegistro().isBefore(inicio)
+        if (exigirPedidos && ventas.stream().noneMatch(p -> !p.getFechaRegistro().isBefore(inicio)
                 && p.getFechaRegistro().isBefore(inicio.plusDays(dias)))) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SIN_PEDIDOS",
                     "No hay pedidos en las fechas seleccionadas.");

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { numero } from '../formato.js';
 import { comprobaciones, hayErrores, aRegistro, PLAZOS } from '../pedidos.js';
+import { api } from '../services/api.js';
 
 const NIVEL = { ok: ['CORRECTO', 'v'], aviso: ['AVISO', 'a'], error: ['ERROR', 'r'] };
 
@@ -10,23 +11,49 @@ const VACIO = { cliente: '', x: '', y: '', cantidad: '', plazo: '36', recepcion:
  * Alta de un pedido (imagen 09 del prototipo). Las validaciones del caso se muestran como
  * lista de comprobaciones y no como un mensaje suelto, según el estándar de GUI.
  *
- * El backend no tiene alta de pedidos: `POST /api/ejecuciones` inicia corridas y nada más.
- * Por eso lo que se registra aquí se queda en el navegador, en forma de líneas del archivo
- * mensual listas para pegar en él. El pie de la pantalla lo dice; conviene no disimularlo.
+ * Con una corrida activa el pedido se manda a `POST /api/ejecuciones/{id}/pedidos` y entra a la
+ * cola del simulador en el corte siguiente: es lo que permite que la operación en tiempo real
+ * muestre demanda que no existía al arrancar. La fecha de registro la pone el servidor con el
+ * reloj de la corrida, no el formulario, para que ningún pedido se cuele antes del instante ya
+ * publicado; el campo de recepción queda como dato del operador.
+ *
+ * Sin corrida activa no hay dónde registrarlo, así que se mantiene el comportamiento anterior:
+ * queda en el navegador como línea del archivo mensual lista para pegar. El pie lo dice.
  */
-export default function PedidoNuevo({ almacenes = [] }) {
+export default function PedidoNuevo({ almacenes = [], ejecucionId = null, corriendo = false }) {
   const [borrador, setBorrador] = useState(VACIO);
   const [registrados, setRegistrados] = useState([]);
+  const [error, setError] = useState('');
+  const [enviando, setEnviando] = useState(false);
   const lista = useMemo(() => comprobaciones(borrador), [borrador]);
   const bloqueado = hayErrores(lista);
+  const enVivo = !!ejecucionId && corriendo;
 
   const campo = (clave, valor) => setBorrador(previo => ({ ...previo, [clave]: valor }));
 
-  function registrar(evento) {
+  async function registrar(evento) {
     evento.preventDefault();
-    if (bloqueado) return;
-    setRegistrados(previos => [{ ...borrador, registro: aRegistro(borrador) }, ...previos]);
-    setBorrador(VACIO);
+    if (bloqueado || enviando) return;
+    setError('');
+    const linea = aRegistro(borrador);
+    if (!enVivo) {
+      setRegistrados(previos => [{ ...borrador, registro: linea, destino: null }, ...previos]);
+      setBorrador(VACIO);
+      return;
+    }
+    setEnviando(true);
+    try {
+      const creado = await api.registrarPedido(ejecucionId, {
+        cliente: borrador.cliente,
+        x: Number(borrador.x),
+        y: Number(borrador.y),
+        cantidad: Number(borrador.cantidad),
+        plazoHoras: Number(borrador.plazo)
+      });
+      setRegistrados(previos => [{ ...borrador, registro: linea, destino: creado }, ...previos]);
+      setBorrador(VACIO);
+    } catch (e) { setError(e.message); }
+    finally { setEnviando(false); }
   }
 
   return <div className="pedido-alta">
@@ -67,8 +94,12 @@ export default function PedidoNuevo({ almacenes = [] }) {
             {almacenes.map(a => <option key={a.id} value={a.id}>{a.id}</option>)}
           </select></div>
 
-        <button className="btn btn-primary btn-block" type="submit" disabled={bloqueado}>
-          Registrar pedido</button>
+        <button className="btn btn-primary btn-block" type="submit" disabled={bloqueado || enviando}>
+          {enviando ? 'Registrando…' : enVivo ? 'Registrar pedido en la operación' : 'Registrar pedido'}</button>
+        {error && <p className="nota nota-aviso" role="alert">{error}</p>}
+        <p className="nota">{enVivo
+          ? 'Entra a la cola del planificador en el siguiente corte; el servidor le pone la hora de la operación.'
+          : 'Sin corrida activa el pedido no se manda al servidor: queda como línea del archivo mensual.'}</p>
       </div>
     </form>
 

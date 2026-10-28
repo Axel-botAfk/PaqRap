@@ -89,14 +89,14 @@ final class MysqlDatosService implements DatosFuente {
     }
 
     @Override
-    public DatosEntrada cargar(LocalDateTime inicio, int dias) {
+    public DatosEntrada cargar(LocalDateTime inicio, int dias, boolean exigirPedidos) {
         LocalDateTime fin = inicio.plusDays(dias);
         LocalDateTime desdeMes = YearMonth.from(inicio).atDay(1).atStartOfDay();
         LocalDateTime hastaMes = YearMonth.from(fin.minusNanos(1))
                 .plusMonths(1).atDay(1).atStartOfDay();
         try (Connection conexion = dataSource.getConnection()) {
             List<Pedido> pedidos = pedidos(conexion, desdeMes, hastaMes);
-            if (pedidos.stream().noneMatch(p -> !p.getFechaRegistro().isBefore(inicio)
+            if (exigirPedidos && pedidos.stream().noneMatch(p -> !p.getFechaRegistro().isBefore(inicio)
                     && p.getFechaRegistro().isBefore(fin))) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "SIN_PEDIDOS",
                         "No hay pedidos en las fechas seleccionadas.");

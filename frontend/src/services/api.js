@@ -39,6 +39,10 @@ export const api = {
   registrarAveria: (id, datos) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/averias`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos)
   }),
+  /** Alta de un pedido en la corrida en curso; el servidor le pone la fecha de registro. */
+  registrarPedido: (id, datos) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/pedidos`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(datos)
+  }),
   fotogramas: (id, desde = 0) => solicitud(
     `/api/ejecuciones/${encodeURIComponent(id)}/fotogramas?desde=${encodeURIComponent(desde)}`),
   planes: (id, desde = 0) => solicitud(

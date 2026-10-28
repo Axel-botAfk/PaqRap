@@ -27,6 +27,7 @@ import com.paqrap.modelo.Averia;
 import com.paqrap.modelo.EstadoVehiculo;
 import com.paqrap.modelo.Pedido;
 import com.paqrap.modelo.Ruta;
+import com.paqrap.modelo.Ubicacion;
 import com.paqrap.modelo.Solucion;
 import com.paqrap.modelo.Vehiculo;
 import com.paqrap.planificador.Evaluador;
@@ -45,11 +46,13 @@ import com.paqrap.simulacion.AvanceDeLaOperacion;
 import com.paqrap.simulacion.Trayecto;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -85,9 +88,19 @@ final class EjecucionesService {
     private static final int MAX_PLANES = 2048;
     private static final int MAX_EVENTOS = 4096;
     private static final int PAGINA_FOTOGRAMAS = 100;
+    /** Velocidad del día a día cuando la operación va en tiempo real: K = 1. */
+    private static final int VELOCIDAD_TIEMPO_REAL = 1;
     private final DatosFuente datos;
     private final EventosWebSocket eventos;
     private final Marcapasos.Reloj reloj;
+    /**
+     * Interruptor de la operación en tiempo real ({@code paqrap.operacion.tiempo-real}).
+     *
+     * En falso el día a día se comporta como siempre: inicio elegido en la pantalla y 60×. En
+     * verdadero arranca en el minuto presente, avanza 1× y admite pedidos por la API mientras
+     * corre. Es el único punto del backend que hay que tocar para volver atrás.
+     */
+    private final boolean operacionEnTiempoReal;
     private final ConcurrentMap<UUID, Ejecucion> ejecuciones = new ConcurrentHashMap<>();
     private final ThreadPoolExecutor executor = new ThreadPoolExecutor(
             MAX_SIMULTANEAS, MAX_SIMULTANEAS, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(2),
@@ -98,19 +111,32 @@ final class EjecucionesService {
             }, new ThreadPoolExecutor.AbortPolicy());
 
     @Autowired
-    EjecucionesService(DatosFuente datos, EventosWebSocket eventos) {
-        this(datos, eventos, Marcapasos.SISTEMA);
+    EjecucionesService(DatosFuente datos, EventosWebSocket eventos,
+            @Value("${paqrap.operacion.tiempo-real:false}") boolean operacionEnTiempoReal) {
+        this(datos, eventos, Marcapasos.SISTEMA, operacionEnTiempoReal);
     }
 
     EjecucionesService(DatosFuente datos, EventosWebSocket eventos, Marcapasos.Reloj reloj) {
+        this(datos, eventos, reloj, false);
+    }
+
+    EjecucionesService(DatosFuente datos, EventosWebSocket eventos, Marcapasos.Reloj reloj,
+            boolean operacionEnTiempoReal) {
         this.datos = datos;
         this.eventos = eventos;
         this.reloj = reloj;
+        this.operacionEnTiempoReal = operacionEnTiempoReal;
     }
 
-    EjecucionVista crear(CrearEjecucionRequest request) {
-        if (request == null || request.escenario() == null || request.algoritmo() == null
-                || request.inicio() == null) {
+    EjecucionVista crear(CrearEjecucionRequest solicitud) {
+        if (solicitud == null || solicitud.escenario() == null || solicitud.algoritmo() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA",
+                    "Escenario y algoritmo son obligatorios.");
+        }
+        boolean tiempoReal = operacionEnTiempoReal
+                && solicitud.escenario() == Escenario.OPERACION_DIARIA;
+        CrearEjecucionRequest request = tiempoReal ? anclarAlPresente(solicitud) : solicitud;
+        if (request.inicio() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA",
                     "Escenario, algoritmo e inicio son obligatorios.");
         }
@@ -120,7 +146,9 @@ final class EjecucionesService {
                     "La pausa de demostración debe estar entre 0 y 500 ms.");
         }
         RitmoEscenario ritmo = RitmoEscenario.para(request, dias);
-        DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias);
+        // En tiempo real la jornada empieza ahora y su demanda todavía no existe: la cola vacía
+        // es el estado legítimo de arranque, no un error de selección de fechas.
+        DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias, !tiempoReal);
         limpiarAntiguas();
         if (ejecuciones.size() >= MAX_REGISTROS) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "CAPACIDAD_AGOTADA",
@@ -145,6 +173,60 @@ final class EjecucionesService {
                     "El servidor ya está procesando el máximo de simulaciones.");
         }
         return ejecucion.vista;
+    }
+
+    /**
+     * El día a día en tiempo real no elige su inicio: arranca en el minuto presente y a 1×.
+     *
+     * Se trunca al minuto porque es la precisión que piden los criterios de tiempo y porque el
+     * reloj de la operación se compara con fechas de registro al minuto. Lo que la pantalla haya
+     * mandado como inicio o velocidad se descarta: en tiempo real no son del usuario.
+     *
+     * Sa no cambia (20 s), así que el planificador se sigue invocando una vez cada 20 s reales
+     * igual que a 60×; lo único que se encoge es Sc, el tramo de operación que consume cada
+     * ventana, de 20 min a 20 s.
+     */
+    private CrearEjecucionRequest anclarAlPresente(CrearEjecucionRequest solicitud) {
+        LocalDateTime ahora = LocalDateTime.now().truncatedTo(ChronoUnit.MINUTES);
+        return new CrearEjecucionRequest(solicitud.escenario(), solicitud.algoritmo(), ahora,
+                solicitud.horizonteDias(), solicitud.semilla(), solicitud.pausaMs(),
+                solicitud.duracionObjetivoMin(), VELOCIDAD_TIEMPO_REAL,
+                solicitud.minutosPorVentana(), solicitud.segundosPorVentana());
+    }
+
+    /**
+     * Alta de un pedido en una corrida en curso.
+     *
+     * Es la puerta que le faltaba al día a día en tiempo real: sin ella la operación solo puede
+     * mostrar demanda que ya estaba en la fuente al arrancar, y un pedido hecho a las 10:05 no
+     * aparecería nunca. La fecha de registro la pone el reloj de la corrida, no el cliente, para
+     * que ningún pedido se cuele antes del instante ya publicado.
+     *
+     * El pedido no adelanta el corte: entra a la cola en la vuelta siguiente, igual que los
+     * leídos del archivo, de modo que K se sigue cumpliendo.
+     */
+    PedidoVista registrarPedido(UUID id, ApiModels.RegistrarPedidoRequest solicitud) {
+        Ejecucion ejecucion = obtener(id);
+        synchronized (ejecucion) {
+            Estado estado = ejecucion.vista.estado();
+            if ((estado != Estado.EN_CURSO && estado != Estado.PAUSADA)
+                    || ejecucion.simulador == null) {
+                throw new ApiException(HttpStatus.CONFLICT, "EJECUCION_NO_ACTIVA",
+                        "Solo se admiten pedidos durante una ejecución activa.");
+            }
+            LocalDateTime instante = ejecucion.inventario.reloj();
+            String codigo = "EV-" + (++ejecucion.pedidosEnVivo);
+            Pedido pedido = new Pedido(codigo, solicitud.cliente().trim(),
+                    new Ubicacion(solicitud.x(), solicitud.y()), solicitud.cantidad(),
+                    instante, solicitud.plazoHoras());
+            ejecucion.simulador.registrarPedidoEnVivo(pedido);
+            registrarEvento(ejecucion, "PEDIDO_REGISTRADO", instante, null, codigo, null,
+                    "Pedido " + codigo + " registrado en vivo; entra en el siguiente corte.");
+            // Todavía no tiene ruta: la tendrá recién cuando el planificador corra en el corte
+            // siguiente. Devolverlo como planificado sería anunciar una asignación inexistente.
+            return Vistas.pedido(pedido, "NO_ASIGNADO",
+                    "Registrado en vivo; entra al planificador en el siguiente corte.");
+        }
     }
 
     /** Estado actual con el ancla del reloj al día, para retomar tras recargar la página. */
@@ -767,6 +849,7 @@ final class EjecucionesService {
         long siguienteIndice;
         long siguientePlan;
         long siguienteEvento;
+        int pedidosEnVivo;
         long inicioRealMs;
         Long finRealMs;
         long limitesPublicados;

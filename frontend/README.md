@@ -103,14 +103,14 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
   columna «Situación»: a qué ruta y unidad quedó asignado en cada replanificación y qué
   hitos informó el simulador. Cada salida posterior a la primera se rotula «retoma la ruta»,
   porque es la unidad reanudando desde donde estaba y no una salida de almacén.
-- El **alta de pedidos** y la **carga masiva** no tienen endpoint: `POST /api/ejecuciones`
-  inicia corridas y nada más, y el backend lee sus TXT del disco al arrancar. Las dos
-  pantallas existen porque la parte que sí se puede hacer sin servidor es la que falla en la
-  práctica: validar contra las reglas del caso. El alta entrega la línea en el formato del
-  archivo mensual y la carga masiva valida el archivo entero —formato, día dentro del mes,
-  hora, nodo dentro de la retícula, cantidad y plazo— y lista todos los fallos de una vez,
-  mientras que el backend aborta en el primero. Ninguna de las dos manda nada al servidor y
-  cada una lo dice en su pie.
+- El **alta de pedidos** manda el pedido a la corrida cuando hay una activa
+  (`POST /api/ejecuciones/{id}/pedidos`): entra a la cola del planificador en el corte
+  siguiente y el servidor le pone la fecha de registro con el reloj de la operación. Es lo que
+  permite que el día a día en tiempo real reciba demanda que no existía al arrancar. Sin corrida
+  activa no hay dónde registrarlo y entrega la línea en el formato del archivo mensual, como
+  antes. La **carga masiva** sigue sin endpoint: valida el archivo entero —formato, día dentro
+  del mes, hora, nodo dentro de la retícula, cantidad y plazo— y lista todos los fallos de una
+  vez, mientras que el backend aborta en el primero. Cada pantalla dice en su pie qué hace.
 - Las averías se pierden al reiniciar el servidor; no hay historial persistente de
   incidencias.
 - La grilla dibuja segmentos esquemáticos entre puntos. No afirma reproducir
@@ -146,27 +146,41 @@ Es una deducción fiel a los hitos, pero depende de que el historial de planes e
 el cliente. Si el backend llega a publicar el estado real por pedido, conviene usarlo y dejar
 `estadosDePedido()` solo como respaldo.
 
-### 2. La jornada del día a día no cabe en los 30 a 60 min pedidos — **pendiente**
+### 2. La operación día a día va en tiempo real — **a confirmar con el docente**
 
-La pantalla ya no deja elegir velocidad y la corrida debería durar entre 30 y 60 min reales en
-todos los escenarios. En dos de los tres se cumple:
+`TIEMPO_REAL_DIA_A_DIA` en `src/formato.js` está en `true` y
+`paqrap.operacion.tiempo-real` en el backend también. Con eso la operación diaria:
 
-| Escenario | Duración real | ¿Entre 30 y 60 min? |
-|---|---|---|
-| Simulación de 5 días | `duracionObjetivoMin`, fijado en 40 | sí |
-| Colapso logístico | se corta en el primer pedido vencido, tope ~1 h para 30 días | por su naturaleza |
-| **Operación diaria** | **24 min** | **no** |
+- no pide fecha ni hora: el servidor la ancla al minuto presente (`anclarAlPresente()`);
+- avanza a 1× (K = 1), así que un minuto de pantalla es un minuto de operación;
+- arranca con la cola vacía si el mes en curso no tiene datos, en vez de rechazar el inicio;
+- recibe pedidos mientras corre por `POST /api/ejecuciones/{id}/pedidos`.
 
-En el día a día la duración real es `24 h / velocidad`, y `RitmoEscenario.VELOCIDADES` solo
-admite `{1, 10, 60, 240}`: 60× da 24 min y 10× da 144 min. Para caer dentro de la banda haría
-falta una velocidad entre 24 y 48 (1440/60 = 24 min … 1440/30 = 48 min), que el backend
-rechaza. `segundosPorVentana` no sirve: cambia el tamaño de la ventana, no la duración total.
+Sa no cambia (20 s): el planificador se sigue invocando una vez cada 20 s reales, igual que a
+60×. Lo único que se encoge es Sc, de 20 min a 20 s. Por eso el movimiento en pantalla se ve
+muy lento: es lo que se mueve una unidad en veinte segundos de realidad.
 
-Se usa 60× (24 min) por ser lo más cercano y quedarse corto en vez de pasarse.
+**Por qué está a confirmar.** Los ítems del docente apuntan a lo contrario: C02 («¿Pide fecha
+y hora hasta el nivel de minuto?») está dado como conforme, A18 y A19 registran K = 60 para el
+día a día como dato correcto, y la prueba del propio docente en B14 fue con fecha 15/01/2029.
+Además el concepto de evaluación del bloque C es «MAPA BASE – todos los escenarios», y C12/C13
+piden el *momento simulado* y el *tiempo simulado transcurrido* en todos ellos: una operación en
+tiempo real no tiene momento simulado. Se implementa igual porque es la lectura natural de
+«operación día a día» y porque el equipo decidió verificarla contra el docente con la pantalla
+funcionando delante.
 
-Arreglo pendiente, del lado del backend: añadir un valor entre 24 y 48 a
-`RitmoEscenario.VELOCIDADES` — por ejemplo `30`, que da 48 min. Es una línea. Cuando exista,
-cambiar `VELOCIDAD_DIA_A_DIA` en `src/formato.js` y borrar esta nota.
+**Rollback** (vuelve exactamente al comportamiento anterior, 60× con inicio elegido):
+
+1. `TIEMPO_REAL_DIA_A_DIA = false` en `src/formato.js`.
+2. `paqrap.operacion.tiempo-real=false`, o `PAQRAP_TIEMPO_REAL=false` en el entorno.
+
+Lo que queda puesto en los dos casos, porque no depende del interruptor y no estorba: el alta de
+pedidos contra una corrida activa y `Simulador.registrarPedidoEnVivo()`.
+
+Con el interruptor apagado vuelve el desajuste anterior: la jornada dura `24 h / velocidad` y
+`RitmoEscenario.VELOCIDADES` solo admite `{1, 10, 60, 240}`, así que 60× da 24 min y la banda de
+30 a 60 min exigiría una velocidad entre 24 y 48. El arreglo es una línea en el backend —añadir
+`30` a `VELOCIDADES`, que da 48 min— y cambiar `VELOCIDAD_DIA_A_DIA`.
 
 ### 3. Los cuatro indicadores de la barra superior
 

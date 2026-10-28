@@ -59,12 +59,28 @@ export function textoRitmo(ritmo) {
 export const VELOCIDAD_DIA_A_DIA = 60;
 export const DURACION_5_DIAS_MIN = 40;
 
+/**
+ * Interruptor de la operación día a día en tiempo real.
+ *
+ * En verdadero la operación no pide fecha ni hora: arranca en el instante presente, avanza 1×
+ * (un minuto de pantalla es un minuto de operación) y los pedidos se registran mientras corre.
+ *
+ * Rollback: poner `false` aquí y `paqrap.operacion.tiempo-real=false` en el backend. El día a
+ * día vuelve a 60× con inicio elegido en la pantalla, sin más cambios.
+ */
+export const TIEMPO_REAL_DIA_A_DIA = true;
+
+/** Velocidad que se pide al backend para el día a día, según el interruptor. */
+export const velocidadDiaADia = () => (TIEMPO_REAL_DIA_A_DIA ? 1 : VELOCIDAD_DIA_A_DIA);
+
 export function ritmoConfigurado(escenario) {
   if (escenario === 'PERIODO_5_DIAS') {
     return `Los 5 días se reproducen en unos ${DURACION_5_DIAS_MIN} min reales.`;
   }
   if (escenario === 'OPERACION_DIARIA') {
-    return `La jornada se reproduce en unos ${minutos(1440 / VELOCIDAD_DIA_A_DIA)} reales.`;
+    return TIEMPO_REAL_DIA_A_DIA
+      ? 'La operación avanza a tiempo real (1×): un minuto de pantalla es un minuto de operación.'
+      : `La jornada se reproduce en unos ${minutos(1440 / VELOCIDAD_DIA_A_DIA)} reales.`;
   }
   return 'Avanza 2 h simuladas cada 10 s y se detiene en el primer pedido vencido.';
 }

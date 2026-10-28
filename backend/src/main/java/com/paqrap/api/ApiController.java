@@ -6,7 +6,9 @@ import com.paqrap.api.ApiModels.FotogramasVista;
 import com.paqrap.api.ApiModels.PlanesVista;
 import com.paqrap.api.ApiModels.PeriodoVista;
 import com.paqrap.api.ApiModels.MapaDatosVista;
+import com.paqrap.api.ApiModels.PedidoVista;
 import com.paqrap.api.ApiModels.RegistrarAveriaRequest;
+import com.paqrap.api.ApiModels.RegistrarPedidoRequest;
 import com.paqrap.api.ApiModels.AveriaVista;
 import com.paqrap.api.ApiModels.InventarioVista;
 import com.paqrap.api.ApiModels.EventosOperacionVista;
@@ -91,6 +93,13 @@ class ApiController {
 
     @GetMapping("/ejecuciones/{id}/averias")
     List<AveriaVista> averias(@PathVariable UUID id) { return ejecuciones.averias(id); }
+
+    @PostMapping("/ejecuciones/{id}/pedidos")
+    ResponseEntity<PedidoVista> registrarPedido(@PathVariable UUID id,
+            @Valid @RequestBody RegistrarPedidoRequest solicitud) {
+        return ResponseEntity.status(HttpStatus.ACCEPTED)
+                .body(ejecuciones.registrarPedido(id, solicitud));
+    }
 
     @PostMapping("/ejecuciones/{id}/averias")
     ResponseEntity<AveriaVista> registrarAveria(@PathVariable UUID id,

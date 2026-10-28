@@ -4,7 +4,7 @@ import { planVigenteEn, estadosDePedido } from './mapa.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
+import { fecha, fechaConSegundos, numero, duracion, TIEMPO_REAL_DIA_A_DIA, velocidadDiaADia,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
@@ -164,8 +164,13 @@ export default function App() {
       guardarEjecucionDeVista(claveCorrida, id);
       if (!restaurado && datos.inicio) {
         restaurado = true;
-        setDia(datos.inicio.slice(0, 10));
-        setHora(datos.inicio.slice(11, 16));
+        // El inicio de una corrida en tiempo real es hoy, y el mes de hoy no suele estar en el
+        // catálogo: dejar que fije la fecha de la pantalla dejaría el mapa base sin almacenes,
+        // porque `periodo` sale de esa fecha. La corrida ya trae su propio reloj.
+        if (!(TIEMPO_REAL_DIA_A_DIA && datos.escenario === 'OPERACION_DIARIA')) {
+          setDia(datos.inicio.slice(0, 10));
+          setHora(datos.inicio.slice(11, 16));
+        }
         setEscenario(datos.escenario);
         if (datos.escenario !== 'OPERACION_DIARIA') escenarioSimulacion.current = datos.escenario;
         if (restaurarVistaInicial.current) {
@@ -478,22 +483,30 @@ export default function App() {
   async function iniciar(evento) {
     evento.preventDefault();
     setError('');
-    const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
-    const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
-    const periodoElegido = periodoDe(diaIngresado);
-    if (!periodoElegido || !periodos.includes(periodoElegido)) {
-      setError('Elige una fecha dentro de un mes con datos cargados.');
-      return;
+    // En tiempo real la operación no se sitúa en el pasado: el servidor la ancla al minuto
+    // presente y la pantalla no tiene fecha que validar contra los periodos cargados.
+    const enTiempoReal = TIEMPO_REAL_DIA_A_DIA && escenario === 'OPERACION_DIARIA';
+    const campoDia = evento.currentTarget.elements.namedItem('dia');
+    const campoHora = evento.currentTarget.elements.namedItem('hora');
+    const diaIngresado = campoDia ? campoDia.value : dia;
+    const horaIngresada = campoHora ? campoHora.value : hora;
+    if (!enTiempoReal) {
+      const periodoElegido = periodoDe(diaIngresado);
+      if (!periodoElegido || !periodos.includes(periodoElegido)) {
+        setError('Elige una fecha dentro de un mes con datos cargados.');
+        return;
+      }
+      setDia(diaIngresado);
+      setHora(horaIngresada);
     }
-    setDia(diaIngresado);
-    setHora(horaIngresada);
     setOcupado(true);
     try {
       const nueva = await api.iniciar({
-        escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
+        escenario, algoritmo: ALGORITMO,
+        ...(enTiempoReal ? {} : { inicio: `${diaIngresado}T${horaIngresada}:00` }),
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
         ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
-        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
+        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: velocidadDiaADia() } : {})
       });
       const claveCorrida = claveDeEscenario(nueva.escenario);
       ejecucionesPorVista.current[claveCorrida] = nueva.id;

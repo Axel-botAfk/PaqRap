@@ -17,7 +17,16 @@ interface DatosFuente {
     List<String> periodos();
     PeriodoVista periodo(String aaaamm);
     MapaDatosVista mapa(String aaaamm);
-    DatosEntrada cargar(LocalDateTime inicio, int dias);
+    /**
+     * Datos del horizonte. Con {@code exigirPedidos} en falso se admite un horizonte sin ventas
+     * registradas: es el caso del día a día en tiempo real, que arranca en el instante presente
+     * con la cola vacía y se va llenando con los pedidos que entran por la API mientras corre.
+     */
+    DatosEntrada cargar(LocalDateTime inicio, int dias, boolean exigirPedidos);
+
+    default DatosEntrada cargar(LocalDateTime inicio, int dias) {
+        return cargar(inicio, dias, true);
+    }
     List<Almacen> almacenes();
     List<Vehiculo> flota();
 

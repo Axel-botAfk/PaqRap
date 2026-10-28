@@ -335,6 +335,49 @@ class EjecucionesServiceTest {
         assertEquals(estado, servicio.consultar(id).estado());
     }
 
+    /**
+     * El día a día en tiempo real se sitúa solo: no recibe inicio desde la pantalla y arranca en
+     * el minuto presente, aunque el mes en curso no tenga datos cargados. La cola vacía es su
+     * estado legítimo de arranque porque la demanda del día entra mientras corre.
+     */
+    @Test
+    void diaADiaEnTiempoRealArrancaEnElPresenteSinDatosDelMes() {
+        servicio = crearServicioEnTiempoReal();
+        LocalDateTime antes = LocalDateTime.now().minusMinutes(1);
+
+        var creada = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, null, null, 7L));
+
+        assertNotNull(creada.inicio(), "la corrida en tiempo real debe fijar su propio inicio");
+        assertTrue(creada.inicio().isAfter(antes),
+                "el inicio no se ancló al presente: " + creada.inicio());
+        assertTrue(creada.inicio().isBefore(LocalDateTime.now().plusMinutes(1)));
+        assertEquals(0, creada.inicio().getSecond(), "el inicio se trunca al minuto");
+        assertEquals(1, creada.ritmo().velocidad(), "en tiempo real K debe ser 1");
+        // Sa no cambia: el planificador sigue corriendo una vez cada 20 s reales. Lo que se
+        // encoge es Sc, de 20 min a 20 s, y por eso la jornada pasa de 72 a 4320 ventanas.
+        assertEquals(20_000, creada.ritmo().saMs());
+        assertEquals(4320, creada.ritmo().ventanas());
+    }
+
+    /** Con el interruptor apagado el día a día sigue exigiendo su inicio, como antes. */
+    @Test
+    void sinTiempoRealElDiaADiaSigueExigiendoInicio() {
+        servicio = crearServicio();
+
+        assertThrows(ApiException.class, () -> servicio.crear(new CrearEjecucionRequest(
+                Escenario.OPERACION_DIARIA, Algoritmo.GRASP, null, null, 7L)));
+    }
+
+    /** Un pedido solo se admite sobre una corrida viva; fuera de eso es un conflicto, no un 500. */
+    @Test
+    void noSeAdmitenPedidosSobreUnaEjecucionDesconocida() {
+        servicio = crearServicioEnTiempoReal();
+
+        assertThrows(ApiException.class, () -> servicio.registrarPedido(UUID.randomUUID(),
+                new ApiModels.RegistrarPedidoRequest("c0497", 20, 18, 4, 36)));
+    }
+
     private void prepararDatosMinimos() throws Exception {
         Files.writeString(datosTemporales.resolve("ventas.202609.txt"),
                 "01d00h26m:26,15,c0497,06,36\n");
@@ -344,6 +387,11 @@ class EjecucionesServiceTest {
     private EjecucionesService crearServicio() {
         return new EjecucionesService(new DatosService(datosTemporales.toString()),
                 new EventosWebSocket(new ObjectMapper()), reloj);
+    }
+
+    private EjecucionesService crearServicioEnTiempoReal() {
+        return new EjecucionesService(new DatosService(datosTemporales.toString()),
+                new EventosWebSocket(new ObjectMapper()), reloj, true);
     }
 
     private ApiModels.EjecucionVista esperar(UUID id) throws Exception {

@@ -157,6 +157,7 @@ public final class Simulador {
     private PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
     private PlanAverias averias = PlanAverias.vacio();
     private final List<Averia> averiasRegistradasEnVivo = new ArrayList<>();
+    private final List<Pedido> pedidosRegistradosEnVivo = new ArrayList<>();
     private boolean permiteEntregasParciales = true;
 
     /** Hasta dónde ya se revisaron las averías; evita aplicar dos veces la misma. */
@@ -271,6 +272,33 @@ public final class Simulador {
     }
 
     /**
+     * Recibe un pedido durante la corrida; entra a la cola en la vuelta siguiente del reloj.
+     *
+     * Es la contraparte de {@link #registrarAveriaEnVivo(Averia)} para la demanda: el día a día
+     * en tiempo real no puede conocer de antemano los pedidos del día, así que alguien los va
+     * registrando mientras la operación corre. El pedido no salta el corte —entra por la misma
+     * puerta que los leídos del archivo— de modo que K se sigue cumpliendo.
+     *
+     * Un pedido cuya fecha de registro ya pasó se incorpora en el corte inmediato; uno futuro
+     * espera a que el reloj lo alcance, igual que los de la fuente de datos.
+     */
+    public synchronized void registrarPedidoEnVivo(Pedido pedido) {
+        pedidosRegistradosEnVivo.add(Objects.requireNonNull(pedido));
+    }
+
+    /** Pasa a la cola de llegadas lo registrado desde la pantalla desde el último corte. */
+    private void incorporarPedidosEnVivo(List<Pedido> porLlegar) {
+        List<Pedido> nuevos;
+        synchronized (this) {
+            if (pedidosRegistradosEnVivo.isEmpty()) return;
+            nuevos = List.copyOf(pedidosRegistradosEnVivo);
+            pedidosRegistradosEnVivo.clear();
+        }
+        porLlegar.addAll(nuevos);
+        porLlegar.sort((uno, otro) -> uno.getFechaRegistro().compareTo(otro.getFechaRegistro()));
+    }
+
+    /**
      * Ritmo de reloj de la corrida.
      *
      * El salto del consumo del ritmo reemplaza al latido: es el tiempo de operación que avanza
@@ -365,6 +393,10 @@ public final class Simulador {
 
         while (reloj.isBefore(fin)) {
             long arranqueDelSalto = System.currentTimeMillis();
+
+            // Lo registrado desde la pantalla se suma a la cola de llegadas antes de mirarla: a
+            // partir de aquí un pedido en vivo es indistinguible de uno leído de la fuente.
+            incorporarPedidosEnVivo(porLlegar);
 
             // Primero entran los pedidos que ya llegaron: recién entonces la cabeza de la cola
             // es la próxima llegada de verdad, que es el evento que dispara el corte siguiente.

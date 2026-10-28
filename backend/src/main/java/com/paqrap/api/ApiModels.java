@@ -1,5 +1,7 @@
 package com.paqrap.api;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.NotBlank;
 import com.paqrap.modelo.TipoAveria;
@@ -46,6 +48,22 @@ public final class ApiModels {
     }
 
     public record RegistrarAveriaRequest(@NotBlank String unidadId, @NotNull TipoAveria tipo) { }
+
+    /**
+     * Alta de un pedido durante una corrida en curso.
+     *
+     * No lleva fecha de registro: la pone el servidor con el reloj de la corrida, porque un
+     * pedido que dijera llegar antes del instante visible reescribiría una operación ya
+     * publicada. Las validaciones del caso —retícula de 70 × 50 y plazos admitidos— se repiten
+     * aquí porque la pantalla no es la única puerta de entrada.
+     */
+    public record RegistrarPedidoRequest(
+            @NotBlank String cliente,
+            @NotNull @Min(0) @Max(70) Integer x,
+            @NotNull @Min(0) @Max(50) Integer y,
+            @NotNull @Min(1) Integer cantidad,
+            @NotNull @Min(1) @Max(168) Integer plazoHoras
+    ) { }
     public record AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,
                              String estado, int pedidosAfectados) {
         public AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,

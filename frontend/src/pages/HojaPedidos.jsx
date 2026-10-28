@@ -53,7 +53,9 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
         onClick={() => { setPestana(clave); setSeguido(null); }}>{titulo}</button>)}
     </div>
 
-    {pestana === 'nuevo' && <PedidoNuevo almacenes={mapaDatos?.almacenes || []} />}
+    {pestana === 'nuevo' && <PedidoNuevo almacenes={mapaDatos?.almacenes || []}
+      ejecucionId={ejecucion?.id || null}
+      corriendo={ejecucion?.estado === 'EN_CURSO' || ejecucion?.estado === 'PAUSADA'} />}
     {pestana === 'masiva' && <PedidoCargaMasiva periodo={periodo} />}
 
     {pestana === 'registrados' && (enSeguimiento

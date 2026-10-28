@@ -22,7 +22,13 @@ public final class ApiModels {
     public record CrearEjecucionRequest(
             @NotNull Escenario escenario,
             @NotNull Algoritmo algoritmo,
-            @NotNull LocalDateTime inicio,
+            /**
+             * Instante de arranque. No lleva {@code @NotNull} porque el día a día en tiempo real
+             * lo fija el servidor y la solicitud llega sin él; que falte cuando sí hace falta lo
+             * comprueba {@code EjecucionesService.crear()}, que es quien sabe si el escenario se
+             * ancla al presente.
+             */
+            LocalDateTime inicio,
             Integer horizonteDias,
             Long semilla,
             Integer pausaMs,

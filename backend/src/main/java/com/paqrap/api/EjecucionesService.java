@@ -148,7 +148,9 @@ final class EjecucionesService {
         RitmoEscenario ritmo = RitmoEscenario.para(request, dias);
         // En tiempo real la jornada empieza ahora y su demanda todavía no existe: la cola vacía
         // es el estado legítimo de arranque, no un error de selección de fechas.
-        DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias, !tiempoReal);
+        DatosFuente.DatosEntrada cargada = datos.cargar(request.inicio(), dias, !tiempoReal);
+        DatosFuente.DatosEntrada entrada = tiempoReal
+                ? sinColaHeredada(cargada, request.inicio()) : cargada;
         limpiarAntiguas();
         if (ejecuciones.size() >= MAX_REGISTROS) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "CAPACIDAD_AGOTADA",
@@ -192,6 +194,29 @@ final class EjecucionesService {
                 solicitud.horizonteDias(), solicitud.semilla(), solicitud.pausaMs(),
                 solicitud.duracionObjetivoMin(), VELOCIDAD_TIEMPO_REAL,
                 solicitud.minutosPorVentana(), solicitud.segundosPorVentana());
+    }
+
+    /**
+     * La jornada en tiempo real no hereda la cola del pasado.
+     *
+     * El simulador admite como «ya llegado» todo pedido cuya fecha de registro no sea posterior
+     * al reloj, y la fuente entrega el mes completo. Arrancando a las 22:36 del día 28, los
+     * pedidos de los días 1 al 27 —cinco mil en los datos del curso— entraban todos de una vez
+     * en la primera vuelta, como si acabaran de llegar: el planificador se quedaba moliendo esa
+     * cola y la operación no publicaba ni una ventana.
+     *
+     * A las 22:36 lo que está en reparto desde la mañana es estado en vuelo que la fuente no
+     * guarda, así que no hay nada que heredar: la jornada empieza en cero y se llena con lo que
+     * llegue desde el inicio, de la fuente o por la API.
+     */
+    private static DatosFuente.DatosEntrada sinColaHeredada(
+            DatosFuente.DatosEntrada entrada, LocalDateTime inicio) {
+        List<Pedido> desdeElInicio = entrada.ventas().stream()
+                .filter(pedido -> !pedido.getFechaRegistro().isBefore(inicio))
+                .toList();
+        if (desdeElInicio.size() == entrada.ventas().size()) return entrada;
+        return new DatosFuente.DatosEntrada(desdeElInicio, entrada.bloqueos(),
+                entrada.mantenimiento());
     }
 
     /**
@@ -398,6 +423,9 @@ final class EjecucionesService {
                         DatosFuente.DatosEntrada entrada) {
         try {
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
+            boolean tiempoReal = operacionEnTiempoReal
+                    && request.escenario() == Escenario.OPERACION_DIARIA;
+            RitmoEscenario ritmo = ejecucion.ritmo;
             MapaBloqueos mapa = new MapaBloqueos(entrada.bloqueos());
             EnrutadorBloqueos ruteo = new EnrutadorBloqueos(mapa);
             Evaluador evaluador = new Evaluador(ruteo);
@@ -416,12 +444,20 @@ final class EjecucionesService {
             ejecucion.inicioRealMs = reloj.ahoraMs();
             registrarFotograma(ejecucion, request.inicio(),
                     flota.stream().map(Vistas::vehiculo).toList(), ejecucion.inventario);
+            // El ritmo (Sa/Sc/K) es solo presentación: el simulador replanifica con su propia
+            // cadencia. Con el latido de 30 min simulados, una sola vuelta cruza 90 ventanas de
+            // 20 s, así que a 1× el reloj daba un salto de media hora y se quedaba quieto media
+            // hora real. Para que la operación avance de verdad al ritmo del reloj, la cadencia
+            // del simulador baja a Sc: una vuelta por ventana, una planificación cada 20 s
+            // reales —la misma frecuencia de pared que a 60×, porque Sa no cambia—.
+            Duration latido = tiempoReal ? ritmo.saltoDelConsumo() : Duration.ofMinutes(30);
+            Duration latidoMinimo = tiempoReal ? ritmo.saltoDelConsumo() : Duration.ofMinutes(15);
             Simulador simulador = new Simulador(planificador, ruteo,
-                    datos.almacenes(), parametros, Duration.ofMinutes(30),
+                    datos.almacenes(), parametros, latido,
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
-                    .conIntervaloMinimo(Duration.ofMinutes(15))
+                    .conIntervaloMinimo(latidoMinimo)
                     .observadoPor(new Observador() {
                     @Override
                     public void alIniciarPlanificacion(LocalDateTime reloj) {

@@ -360,6 +360,36 @@ class EjecucionesServiceTest {
         assertEquals(4320, creada.ritmo().ventanas());
     }
 
+    /**
+     * La jornada en tiempo real no hereda la cola del pasado.
+     *
+     * El mes del archivo trae pedidos anteriores al instante de arranque y el simulador admite
+     * como «ya llegado» todo lo que no sea posterior al reloj: sin filtrar, los pedidos de los
+     * días anteriores entraban de golpe en la primera vuelta y el planificador se quedaba
+     * moliendo esa cola sin publicar ninguna ventana.
+     */
+    @Test
+    void diaADiaEnTiempoRealNoHeredaLosPedidosDeDiasAnteriores() throws Exception {
+        // Dos pedidos del mes en curso, los dos muy anteriores a este instante.
+        Files.writeString(datosTemporales.resolve(
+                        "ventas." + LocalDateTime.now().format(
+                                java.time.format.DateTimeFormatter.ofPattern("yyyyMM")) + ".txt"),
+                "01d00h26m:26,15,c0497,06,36\n01d02h10m:30,20,c0498,04,12\n");
+        Files.writeString(datosTemporales.resolve("bloqueo."
+                + LocalDateTime.now().format(
+                        java.time.format.DateTimeFormatter.ofPattern("yyMM")) + ".txt"), "");
+        servicio = crearServicioEnTiempoReal();
+
+        var creada = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
+                Algoritmo.GRASP, null, null, 7L));
+
+        // Si la cola heredada entrara, la corrida arrancaría con esos dos pedidos en el avance.
+        // Arranca vacía: lo del día 1 no pertenece a la jornada que empieza ahora.
+        var estado = servicio.consultar(creada.id());
+        assertTrue(estado.noAsignados().isEmpty(),
+                "la jornada en tiempo real heredó pedidos anteriores a su inicio");
+    }
+
     /** Con el interruptor apagado el día a día sigue exigiendo su inicio, como antes. */
     @Test
     void sinTiempoRealElDiaADiaSigueExigiendoInicio() {

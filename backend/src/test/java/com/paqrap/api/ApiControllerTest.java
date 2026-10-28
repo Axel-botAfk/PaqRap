@@ -39,6 +39,29 @@ class ApiControllerTest {
                 .andExpect(jsonPath("$.codigo").value("PERIODO_INVALIDO"));
     }
 
+    /**
+     * El día a día en tiempo real se manda sin inicio y lo fija el servidor.
+     *
+     * Va por el controlador y no por `EjecucionesService` porque el fallo que cubre estaba en la
+     * validación del contrato: con `@NotNull` en `inicio`, la solicitud se rechazaba con 400
+     * antes de llegar al servicio, de modo que la pantalla no podía abrir la operación. Las
+     * pruebas que llaman al servicio directamente no lo veían.
+     */
+    @Test
+    void elDiaADiaSinInicioLoFijaElServidor() throws Exception {
+        String cuerpo = mvc.perform(post("/api/ejecuciones")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"escenario\":\"OPERACION_DIARIA\",\"algoritmo\":\"TABU\"}"))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.inicio").isNotEmpty())
+                .andExpect(jsonPath("$.ritmo.velocidad").value(1))
+                .andReturn().getResponse().getContentAsString();
+
+        // La corrida en tiempo real dura 24 h: se cancela para no dejarla corriendo tras la prueba.
+        mvc.perform(post("/api/ejecuciones/"
+                + com.jayway.jsonpath.JsonPath.read(cuerpo, "$.id") + "/cancelar"));
+    }
+
     @Test
     void rechazaAlgoritmoNoPermitido() throws Exception {
         mvc.perform(post("/api/ejecuciones")

@@ -46,7 +46,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   enVivo = false, trayectosEnVivo = null,
   trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
-  modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null }) {
+  modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
+  pedidosDelInstante = [] }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -219,7 +220,22 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       ultima: indice === ruta.paradas.length - 1
     })))
     .filter(punto => enEstado(punto.estado));
-  const sinAsignar = enEstado('NO_ASIGNADO') && !flota ? noAsignados : LISTA_VACIA;
+  const idsDelPlan = new Set(rutas.flatMap(r => r.paradas.map(p => p.id)));
+  // Los cortes pueden omitir pedidos todavía activos de planes anteriores. Conservar
+  // sus destinos, sin reconstruir ni afirmar que su ruta anterior continúa vigente.
+  const adicionales = pedidosDelInstante.filter(p => !idsDelPlan.has(p.id)
+    && p.situacion !== 'NO_ASIGNADO' && p.destino
+    && enFlota(p.tipoVehiculo) && enEstado(p.situacion)
+    && (p.situacion !== 'ENTREGADO' || estadoPedido === 'ENTREGADO'));
+  const coincidentes = new Map();
+  for (const pedido of [...puntos.map(p => p.parada), ...adicionales]) {
+    const clave = `${pedido.destino.x},${pedido.destino.y}`;
+    if (!coincidentes.has(clave)) coincidentes.set(clave, new Map());
+    coincidentes.get(clave).set(pedido.id, pedido);
+  }
+  const sinAsignar = enEstado('NO_ASIGNADO') && !flota
+    ? pedidosDelInstante.length ? pedidosDelInstante.filter(p => p.situacion === 'NO_ASIGNADO') : noAsignados
+    : LISTA_VACIA;
   const hayFiltro = !!flota || !!estadoPedido;
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
@@ -464,6 +480,28 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         cx={x(pedido.destino?.x)} cy={y(pedido.destino?.y)} r={5 * escala} strokeWidth={1.5 * escala}>
         <title>{`${pedido.id} · sin asignar`}</title>
       </circle>)}
+      {adicionales.map(pedido => <g key={`activo-${pedido.id}`}
+        transform={fijo(pedido.destino.x, pedido.destino.y)} className="mapa-pedido-activo"
+        role="img" aria-label={`Pedido ${pedido.id}, ${pedido.situacion}, unidad ${pedido.vehiculo || 'sin asignar'}`}
+        onPointerEnter={e => mostrarTip(e, `Pedido ${pedido.id}`,
+          [`${pedido.cantidad} productos · ${pedido.situacion}`, `Unidad ${pedido.vehiculo || 'sin asignar'}`])}
+        onPointerLeave={ocultarTip}>
+        <title>{`${pedido.id} · ${pedido.situacion} · ${pedido.vehiculo || 'sin asignar'}`}</title>
+        <circle r="9" fill="#ffffff" stroke="#087f8c" strokeWidth="2" />
+        <text y="4" textAnchor="middle" fontSize="10" fill="#07515d">P</text>
+      </g>)}
+      {[...coincidentes.entries()].filter(([, grupo]) => grupo.size > 1).map(([clave, grupo]) => {
+        const pedidos = [...grupo.values()];
+        const destino = pedidos[0].destino;
+        return <g key={`coincidentes-${clave}`} transform={fijo(destino.x, destino.y)}
+          role="img" aria-label={`${pedidos.length} pedidos en este destino: ${pedidos.map(p => p.id).join(', ')}`}
+          onPointerEnter={e => mostrarTip(e, `${pedidos.length} pedidos en el mismo destino`,
+            pedidos.map(p => `${p.id} · ${p.cantidad} productos`))}
+          onPointerLeave={ocultarTip}>
+          <circle cx="13" cy="-12" r="8" fill="#073b4c" stroke="white" strokeWidth="1.5" />
+          <text x="13" y="-9" textAnchor="middle" fill="white" fontSize="9">{pedidos.length}</text>
+        </g>;
+      })}
       {almacenes.map(almacen => <g key={almacen.id} className="mapa-almacen"
         transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
         aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
@@ -553,7 +591,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           className={estadoPedido === valor ? 'activo' : ''} onClick={() => setEstadoPedido(valor)}>{texto}</button>)}
       </div></div>
       <div className="filtro-pie">
-        <span>{numero(vehiculos.length)} unidad(es) · {numero(puntos.length + sinAsignar.length)} pedido(s) a la vista</span>
+        <span>{numero(vehiculos.length)} unidad(es) · {numero(puntos.length + adicionales.length + sinAsignar.length)} pedido(s) a la vista</span>
         <button type="button" disabled={!hayFiltro} onClick={() => { setFlota(''); setEstadoPedido(''); }}>Limpiar filtros</button>
       </div>
     </div>}

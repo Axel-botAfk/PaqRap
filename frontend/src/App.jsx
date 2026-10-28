@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
 import { planVigenteEn, estadosDePedido } from './mapa.js';
+import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
 import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
@@ -392,31 +393,32 @@ export default function App() {
   const enInstanteActual = modoVivo || !fotogramas.length || indiceFotograma >= fotogramas.length - 1;
   const calculandoRutas = !!ejecucion && (ejecucion.estado === 'PENDIENTE'
     || (ejecucion.estado === 'EN_CURSO' && ejecucion.calculandoRutas && enInstanteActual));
-  const rutasVisibles = calculandoRutas ? LISTA_VACIA : rutasReproducidas;
+  const rutasVisibles = calculandoRutas ? LISTA_VACIA : rutasReproducidas.map(ruta => ({
+    ...ruta, paradas: ruta.paradas.filter(p => !p.fechaRegistro
+      || aMs(p.fechaRegistro) <= aMs(instanteReproducido))
+  })).filter(ruta => ruta.paradas.length > 0);
 
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
     [planes, instanteReproducido]);
-  // Las cuatro situaciones de la barra superior. En ruta, planificados y por planificar se
-  // cuentan sobre el plan vigente, igual que la hoja de Pedidos. Los entregados no: al
-  // entregarse el pedido sale del plan, así que el único conteo que no se pierde al
-  // replanificar es el acumulado de `avance`.
+  const pedidosDelInstante = useMemo(() => pedidosEnInstante(
+    planes, aMs(instanteReproducido), aMs, estadosPedido),
+  [planes, instanteReproducido, estadosPedido]);
+  // Las cuatro situaciones usan la misma colección temporal que el mapa y la tabla.
+  // Cada ID de fracción se conserva: no equivale al número de originales completos.
   const resumenPedidos = useMemo(() => {
     if (!ejecucion) return { entregados: null, enRuta: null, planificados: null, porPlanificar: null };
     let enRuta = 0, planificados = 0;
-    for (const ruta of ejecucion.rutas || LISTA_VACIA) {
-      for (const parada of ruta.paradas || LISTA_VACIA) {
-        const estado = estadosPedido.get(parada.id);
-        if (estado === 'EN_RUTA') enRuta += 1;
-        else if (!estado) planificados += 1;
-      }
+    for (const pedido of pedidosDelInstante) {
+      if (pedido.situacion === 'EN_RUTA') enRuta += 1;
+      else if (pedido.situacion === 'PLANIFICADO') planificados += 1;
     }
     return {
-      entregados: ejecucion.avance?.pedidosEntregados ?? 0,
+      entregados: pedidosDelInstante.filter(p => p.situacion === 'ENTREGADO').length,
       enRuta, planificados,
-      porPlanificar: ejecucion.noAsignados?.length || 0
+      porPlanificar: pedidosDelInstante.filter(p => p.situacion === 'NO_ASIGNADO').length
     };
-  }, [ejecucion, estadosPedido]);
+  }, [ejecucion, pedidosDelInstante]);
 
   // Duración de reproducción de Simulación: ventanas publicadas más la ventana actual.
   const ritmo = ejecucion?.ritmo;
@@ -527,14 +529,14 @@ export default function App() {
   const numeroMetrica = valor => numero(valor ?? 0);
   const chips = ES_MAPA(vista) ? [
     { etiqueta: 'ENTREGADOS', valor: numeroMetrica(resumenPedidos.entregados),
-      titulo: 'Acumulado de la corrida: incluye los que ya salieron del plan vigente.' },
+      titulo: 'Pedidos/fracciones conocidos con entrega observada hasta el reloj visible.' },
     { etiqueta: 'EN RUTA', valor: numeroMetrica(resumenPedidos.enRuta),
       titulo: 'Su unidad ya salió y el pedido sigue pendiente. Deducido de los hitos del simulador.' },
     { etiqueta: 'PLANIFICADOS', valor: numeroMetrica(resumenPedidos.planificados),
       titulo: 'Con ruta en el plan vigente, pero su unidad todavía no sale.' },
     { etiqueta: 'POR PLANIFICAR', valor: numeroMetrica(resumenPedidos.porPlanificar),
       alerta: !!resumenPedidos.porPlanificar,
-      titulo: 'Sin ruta asignada en el plan vigente.' }
+      titulo: 'Pedidos/fracciones conocidos sin ruta en el instante visible.' }
   ] : [];
 
   const meta = vista === 'simulacion' ? [
@@ -574,6 +576,7 @@ export default function App() {
           reproduciendo={reproduciendo} pasoMs={pasoMs}
           velocidadHabilitada={reproduccionIniciada && !modoVivo}
           estadosPedido={estadosPedido}
+          pedidosDelInstante={pedidosDelInstante}
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
@@ -601,6 +604,7 @@ export default function App() {
 
     {vista === 'pedidos' && <div className="sheet sheet-pedidos">
       <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
+        pedidosDelInstante={pedidosDelInstante}
         periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
     </div>}
     {vista === 'averias' && <div className="sheet sheet-averias">

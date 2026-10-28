@@ -26,12 +26,13 @@ const LIMITE = 100;
  * La tabla muestra lo que publica el backend. El alta y la carga masiva no tienen endpoint:
  * cada una dice en su pie hasta dónde llega.
  */
-export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo, mapaDatos, fuente }) {
+export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo, mapaDatos, fuente,
+  pedidosDelInstante = null }) {
   const [pestana, setPestana] = useState('registrados');
   const [filtro, setFiltro] = useState('');
   const [seguido, setSeguido] = useState(null);
 
-  const filas = useMemo(() => [
+  const filas = useMemo(() => pedidosDelInstante ?? [
     ...(ejecucion?.rutas || []).flatMap(ruta => ruta.paradas.map(pedido => ({
       ...pedido, ruta: ruta.id, vehiculo: ruta.vehiculoId,
       situacion: estadosPedido?.get(pedido.id) || 'PLANIFICADO'
@@ -39,7 +40,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
     ...(ejecucion?.noAsignados || []).map(pedido => ({
       ...pedido, ruta: '—', vehiculo: '—', situacion: 'NO_ASIGNADO'
     }))
-  ], [ejecucion, estadosPedido]);
+  ], [ejecucion, estadosPedido, pedidosDelInstante]);
 
   const visibles = filtro ? filas.filter(f => f.situacion === filtro) : filas;
   const cuenta = situacion => filas.filter(f => f.situacion === situacion).length;
@@ -60,15 +61,15 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
         situacion={enSeguimiento.situacion} alVolver={() => setSeguido(null)} />
       : <>
         <div className="kpis">
-          <div className="kpi" style={{ '--k': 'var(--navy)' }}><span>EN EL PLAN VIGENTE</span><b>{numero(filas.length)}</b><IconoUI nombre="caja" className="kpi-icono" size={32} /></div>
-          <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS (ACUMULADO)</span><b>{numero(ejecucion?.avance?.pedidosEntregados ?? 0)}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--navy)' }}><span>CONOCIDOS HASTA ESTE INSTANTE</span><b>{numero(filas.length)}</b><IconoUI nombre="caja" className="kpi-icono" size={32} /></div>
+          <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS HASTA ESTE INSTANTE</span><b>{numero(cuenta('ENTREGADO'))}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>
           <div className="kpi" style={{ '--k': 'var(--warning)' }}><span>EN RUTA</span><b>{numero(cuenta('EN_RUTA'))}</b><IconoUI nombre="enviar" className="kpi-icono" size={32} /></div>
           <div className="kpi" style={{ '--k': 'var(--brand-red)' }}><span>SIN ASIGNAR</span><b>{numero(cuenta('NO_ASIGNADO'))}</b><IconoUI nombre="persona" className="kpi-icono" size={32} /></div>
         </div>
 
         <div className="card">
           <header>
-            <h2>PEDIDOS DEL PLAN VIGENTE</h2>
+            <h2>PEDIDOS DEL INSTANTE</h2>
             <div className="filtro-opciones">
               <button type="button" className={filtro === '' ? 'activo' : ''} onClick={() => setFiltro('')}>Todos</button>
               {Object.entries(ETIQUETA).map(([valor, [texto]]) => <button key={valor} type="button"
@@ -94,7 +95,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
           <div className="card-pie">
             {visibles.length > LIMITE && <span>Se muestran los primeros {LIMITE} de {numero(visibles.length)} registros.</span>}
             <span>Los pedidos se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}: esta
-              beta no registra ni cancela pedidos. Los estados «En ruta» y «Entregado» dependen del simulador. Los pedidos entregados que ya no aparecen en el plan actual solo se cuentan en el total superior.</span>
+              beta no registra ni cancela pedidos. Se conservan los pedidos y fracciones conocidos hasta el reloj visible, incluidos los de planes anteriores. Cada ID de fracción ocupa una fila; no equivale a un original completo. El historial disponible limita la cobertura de corridas muy largas.</span>
           </div>
         </div>
       </>)}

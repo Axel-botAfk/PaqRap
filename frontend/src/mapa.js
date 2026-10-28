@@ -297,6 +297,7 @@ export function estadosDePedido(planes, instanteMs, aMs) {
   const estados = new Map();
   if (!Number.isFinite(instanteMs)) return estados;
   for (const plan of planes || []) {
+    if (plan.reloj && aMs(plan.reloj) > instanteMs) continue;
     const salidas = new Map();
     for (const trayecto of plan.trayectos || []) {
       for (const paso of trayecto.pasos || []) {

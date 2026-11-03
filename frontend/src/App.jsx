@@ -578,7 +578,7 @@ export default function App() {
           estadosPedido={estadosPedido}
           pedidosDelInstante={pedidosDelInstante}
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
-          ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante}
+          ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante} averias={averias}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           trayectosDelInstante={planReproducido?.trayectos || LISTA_VACIA}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}

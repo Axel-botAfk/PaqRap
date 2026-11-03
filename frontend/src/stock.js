@@ -32,3 +32,7 @@ export const ETIQUETAS_STOCK = {
   vacio: 'Almacén vacío',
   'sin-datos': 'Stock no disponibles para este instante'
 };
+
+/** Niveles ofrecidos por el filtro del mapa (D07), en el orden del semáforo. */
+export const NIVELES_STOCK = [['suficiente', 'Suficiente'], ['advertencia', 'Advertencia'],
+  ['critico', 'Crítico'], ['vacio', 'Vacío']];

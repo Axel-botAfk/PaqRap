@@ -23,3 +23,7 @@ export const ETIQUETAS_CARGA = {
   'sin-datos': 'Carga no disponible',
   mixto: 'Unidades con distintos niveles de carga'
 };
+
+/** Niveles ofrecidos por el filtro del mapa (D06), en el orden del semáforo. */
+export const NIVELES_CARGA = [['alta', 'Alta'], ['intermedia', 'Media'], ['baja', 'Baja'],
+  ['vacio', 'Vacía']];

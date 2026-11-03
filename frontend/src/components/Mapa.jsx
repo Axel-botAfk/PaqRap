@@ -9,8 +9,10 @@ import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
 import FondoUrbano from './FondoUrbano.jsx';
 import IconoUI from './IconoUI.jsx';
-import { estadoDeStock, ETIQUETAS_STOCK } from '../stock.js';
-import { estadoDeCarga, estadoDeGrupo, ETIQUETAS_CARGA } from '../carga.js';
+import { estadoDeStock, ETIQUETAS_STOCK, NIVELES_STOCK } from '../stock.js';
+import { estadoDeCarga, estadoDeGrupo, ETIQUETAS_CARGA, NIVELES_CARGA } from '../carga.js';
+import { averiasEn, averiaDeGrupo, ETIQUETAS_AVERIA } from '../averias.js';
+import { ocupacionDeFlota, ocupacionDeAlmacenes } from '../indicadores.js';
 
 const LISTA_VACIA = [];
 
@@ -47,13 +49,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
-  pedidosDelInstante = [] }) {
+  pedidosDelInstante = [], averias = LISTA_VACIA }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
   const [filtros, setFiltros] = useState(false);
   const [flota, setFlota] = useState('');
   const [estadoPedido, setEstadoPedido] = useState('');
+  const [nivelCarga, setNivelCarga] = useState('');
+  const [nivelStock, setNivelStock] = useState('');
   // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
   const [pieAbierto, setPieAbierto] = useState(false);
   const svgRef = useRef(null);
@@ -204,17 +208,24 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const estadoDe = pedido => estadosPedido?.get(pedido.id) || 'PLANIFICADO';
   const enFlota = tipo => !flota || tipo === flota;
   const enEstado = valor => !estadoPedido || valor === estadoPedido;
+  // El filtro de semáforo (D06) se aplica a la unidad; una ruta se oculta con su unidad para no
+  // dejar trazos huérfanos en el mapa, igual que ya ocurre al filtrar por tipo de flota.
+  const enNivelCarga = vehiculo => !nivelCarga || estadoDeCarga(vehiculo) === nivelCarga;
+  const enNivelCargaDeRuta = ruta => !nivelCarga
+    || enNivelCarga(vehiculosTodos.find(v => v.id === ruta.vehiculoId));
+  const enNivelStock = almacen => !nivelStock
+    || estadoDeStock(stockDe(almacen), almacen.stockInicial) === nivelStock;
 
-  const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo));
+  const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo) && enNivelCarga(v));
   const trazos = estadoPedido === 'NO_ASIGNADO' ? LISTA_VACIA
-    : trazosTodos.filter(({ ruta }) => enFlota(ruta.tipoVehiculo));
+    : trazosTodos.filter(({ ruta }) => enFlota(ruta.tipoVehiculo) && enNivelCargaDeRuta(ruta));
   const segmentosDibujados = trazos.flatMap(({ ruta, detalles }) => {
     const terminada = rutaFinalizadaEn(ruta, trayectosParaGiro.get(ruta.vehiculoId), instanteMs);
     return detalles.flatMap((detalle, indice) => segmentosEnInstante(detalle, instanteMs)
       .map((segmento, parte) => ({ ...segmento, ruta, terminada,
         clave: `${ruta.id}-${indice}-${parte}` })));
   }).sort((a, b) => Number(b.recorrido) - Number(a.recorrido));
-  const puntos = rutas.filter(ruta => enFlota(ruta.tipoVehiculo))
+  const puntos = rutas.filter(ruta => enFlota(ruta.tipoVehiculo) && enNivelCargaDeRuta(ruta))
     .flatMap(ruta => ruta.paradas.map((parada, indice) => ({
       ruta, parada, estado: estadoDe(parada), orden: indice + 1,
       ultima: indice === ruta.paradas.length - 1
@@ -236,7 +247,22 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const sinAsignar = enEstado('NO_ASIGNADO') && !flota
     ? pedidosDelInstante.length ? pedidosDelInstante.filter(p => p.situacion === 'NO_ASIGNADO') : noAsignados
     : LISTA_VACIA;
-  const hayFiltro = !!flota || !!estadoPedido;
+  const almacenesVisibles = almacenes.filter(enNivelStock);
+  const hayFiltro = !!flota || !!estadoPedido || !!nivelCarga || !!nivelStock;
+
+  // Averías del instante mostrado: el tipo lo da el registro y la permanencia, el caso.
+  const averiasVigentes = useMemo(() => averiasEn(averias, instante), [averias, instante]);
+  const inicialPorAlmacen = useMemo(() => new Map(almacenes
+    .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial])), [mapaDatos]);
+  const flotaGlobal = ocupacionDeFlota(vehiculosTodos);
+  // Con una corrida en marcha y sin corte publicado para el instante no se estima la ocupación:
+  // el stock inicial declararía almacenes llenos que nadie ha medido. El caso sin corrida sí lo
+  // usa, igual que los marcadores del mapa, porque ahí el inicial es el dato del caso.
+  const almacenesGlobal = ocupacionDeAlmacenes(
+    stockDelInstante ? inventario?.almacenes
+      : ejecucion ? null : almacenes.map(almacen => ({
+        id: almacen.id, disponible: almacen.stockInicial, ilimitado: almacen.tipo === 'CENTRAL' })),
+    inicialPorAlmacen);
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const hayReproduccion = fotogramas.length > 0 || enVivo;
@@ -390,10 +416,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     };
     if (grupo.length === 1) {
       const v = grupo[0];
+      const averiaDeLaUnidad = averiasVigentes.get(v.id);
       return { titulo: `${v.id} · ${ETIQUETA_TIPO[v.tipo] || v.tipo}`,
         lineas: [`Nodo (${v.ubicacion.x}, ${v.ubicacion.y})`,
           `Carga ${numero(v.cargaAbordo)} / ${numero(v.capacidad)}`,
           ETIQUETAS_CARGA[estadoDeCarga(v)], estadoVehiculo(v.estado),
+          ...(averiaDeLaUnidad ? [`${ETIQUETAS_AVERIA[averiaDeLaUnidad.tipo]} · ${averiaDeLaUnidad.fase === 'en-sitio' ? 'en el lugar hasta ' + fecha(new Date(averiaDeLaUnidad.fin)) : 'permanencia cumplida'}`] : []),
           `Última publicación ${fecha(fotoObservada?.reloj)}`],
         nodo: `Nodo (${v.ubicacion.x}, ${v.ubicacion.y})`,
         estado: estadoVehiculo(v.estado), estadoClave: v.estado,
@@ -434,6 +462,26 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const fichaAlmacen = almacenTip ? fichaDeAlmacen(almacenTip) : null;
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
+    {/* Indicadores globales (G01-G04): el llenado del conjunto, con el mismo semáforo que cada
+        elemento individual. Sin corte publicado se declara, no se estima. */}
+    <div className="mapa-indicadores">
+      <div className="mapa-indicador">
+        <span className="mapa-indicador-titulo">Flota</span>
+        <b>{flotaGlobal.porcentaje === null ? '—' : `${flotaGlobal.porcentaje} %`}</b>
+        <span className={`mapa-indicador-luz mapa-carga-${flotaGlobal.estado}`}
+          title={ETIQUETAS_CARGA[flotaGlobal.estado]} />
+        <small>{flotaGlobal.porcentaje === null ? 'Sin datos del instante'
+          : `${numero(flotaGlobal.carga)} / ${numero(flotaGlobal.capacidad)} en ${numero(flotaGlobal.unidades)} unidad(es)`}</small>
+      </div>
+      <div className="mapa-indicador">
+        <span className="mapa-indicador-titulo">Almacenes</span>
+        <b>{almacenesGlobal.porcentaje === null ? '—' : `${almacenesGlobal.porcentaje} %`}</b>
+        <span className={`mapa-indicador-luz mapa-stock-${almacenesGlobal.estado}`}
+          title={ETIQUETAS_STOCK[almacenesGlobal.estado]} />
+        <small>{almacenesGlobal.porcentaje === null ? 'Sin corte de inventario'
+          : `${numero(almacenesGlobal.carga)} / ${numero(almacenesGlobal.capacidad)} disponibles${almacenesGlobal.ilimitados ? ' · central ilimitado' : ''}`}</small>
+      </div>
+    </div>
     <div className="mapa-reloj-actual">
       <time dateTime={ahoraReal ? new Date(ahoraReal).toISOString() : undefined}>
         Ahora: {ahoraReal ? fecha(new Date(ahoraReal)) : '—'}
@@ -502,7 +550,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <text x="13" y="-9" textAnchor="middle" fill="white" fontSize="9">{pedidos.length}</text>
         </g>;
       })}
-      {almacenes.map(almacen => <g key={almacen.id} className="mapa-almacen"
+      {almacenesVisibles.map(almacen => <g key={almacen.id} className="mapa-almacen"
         transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
         aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
         onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
@@ -552,6 +600,20 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
           cx={TIPOS_CENITALES.has(grupo[0].tipo) ? 11 : 9} cy={TIPOS_CENITALES.has(grupo[0].tipo) ? -17 : -9}
           r="4.5" pointerEvents="none" />
+        {/* Avería por tipo (D10-D12): triángulo en el hombro izquierdo, para no confundirse con
+            el semáforo de carga —que es un círculo, al otro lado— ni con el color de la ruta. */}
+        {(() => {
+          const averia = averiaDeGrupo(grupo, averiasVigentes);
+          if (!averia) return null;
+          const cenital = TIPOS_CENITALES.has(grupo[0].tipo);
+          return <g className={`mapa-averia mapa-averia-${averia.tipo.toLowerCase()}`}
+            transform={`translate(${cenital ? -12 : -10}, ${cenital ? -17 : -10})`}
+            pointerEvents="none">
+            <title>{ETIQUETAS_AVERIA[averia.tipo]}</title>
+            <path d="M0 -6.2 L5.6 4 H-5.6 Z" />
+            <text y="3" textAnchor="middle">{averia.tipo.slice(-1)}</text>
+          </g>;
+        })()}
         {grupo.length > 1 && <>
           <circle className="grupo-contador" cx="12" cy="11" r="8" />
           <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
@@ -590,9 +652,25 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         {ESTADOS_PEDIDO.map(([valor, texto]) => <button key={valor} type="button"
           className={estadoPedido === valor ? 'activo' : ''} onClick={() => setEstadoPedido(valor)}>{texto}</button>)}
       </div></div>
+      <div><span className="filtro-titulo"><IconoUI nombre="camion" size={19} className="filtro-encabezado-icono" />Carga de la unidad</span><div className="filtro-opciones">
+        <button type="button" className={nivelCarga === '' ? 'activo' : ''} onClick={() => setNivelCarga('')}>Todas</button>
+        {NIVELES_CARGA.map(([valor, texto]) => <button key={valor} type="button"
+          className={nivelCarga === valor ? 'activo' : ''} onClick={() => setNivelCarga(valor)}
+          title={ETIQUETAS_CARGA[valor]}>
+          <i className={`filtro-luz mapa-carga-${valor}`} aria-hidden="true" />{texto}</button>)}
+      </div></div>
+      <div><span className="filtro-titulo"><IconoUI nombre="caja" size={19} className="filtro-encabezado-icono" />Stock del almacén</span><div className="filtro-opciones">
+        <button type="button" className={nivelStock === '' ? 'activo' : ''} onClick={() => setNivelStock('')}>Todos</button>
+        {NIVELES_STOCK.map(([valor, texto]) => <button key={valor} type="button"
+          className={nivelStock === valor ? 'activo' : ''} onClick={() => setNivelStock(valor)}
+          title={ETIQUETAS_STOCK[valor]}>
+          <i className={`filtro-luz mapa-stock-${valor}`} aria-hidden="true" />{texto}</button>)}
+      </div></div>
       <div className="filtro-pie">
-        <span>{numero(vehiculos.length)} unidad(es) · {numero(puntos.length + adicionales.length + sinAsignar.length)} pedido(s) a la vista</span>
-        <button type="button" disabled={!hayFiltro} onClick={() => { setFlota(''); setEstadoPedido(''); }}>Limpiar filtros</button>
+        <span>{numero(vehiculos.length)} unidad(es) · {numero(almacenesVisibles.length)} almacén(es) · {numero(puntos.length + adicionales.length + sinAsignar.length)} pedido(s) a la vista</span>
+        <button type="button" disabled={!hayFiltro} onClick={() => {
+          setFlota(''); setEstadoPedido(''); setNivelCarga(''); setNivelStock('');
+        }}>Limpiar filtros</button>
       </div>
     </div>}
 
@@ -693,6 +771,11 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <span><i className="punto punto-ruta" /> Rutas simultáneas por color</span>
           <span><i className="punto punto-alerta" /> Sin asignar</span>
           <span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span>
+          {['TIPO_1', 'TIPO_2', 'TIPO_3'].map(tipo => <span key={tipo} title={ETIQUETAS_AVERIA[tipo]}>
+            <svg className={`leyenda-averia mapa-averia mapa-averia-${tipo.toLowerCase()}`}
+              viewBox="-8 -8 16 16" aria-hidden="true" focusable="false">
+              <path d="M0 -6.2 L5.6 4 H-5.6 Z" /><text y="3" textAnchor="middle">{tipo.slice(-1)}</text>
+            </svg> Avería tipo {tipo.slice(-1)}</span>)}
           <span className="leyenda-almacen"><DibujoAlmacen tipo="CENTRAL" leyenda /> Central</span>
           <span className="leyenda-almacen"><DibujoAlmacen tipo="INTERMEDIO" leyenda /> Intermedio</span>
           <IconoLeyenda tipo="AUTO" texto="Auto" />

@@ -1209,3 +1209,14 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .unidades-busqueda .field label { font: 800 9px Archivo; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
 .unidades-limpiar { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; padding: 0; font: 800 10.5px Archivo; color: var(--red-d); }
 .ut-horarios { gap: 10px; }
+
+/* Lista de almacenes con semáforo y envíos en tránsito (E18-E20). */
+.alm { border-bottom: 1px solid var(--line); }
+.alm:last-child { border-bottom: 0; }
+.alm-activo { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
+.alm-cabecera { width: 100%; display: grid; gap: 5px; padding: 8px; margin: 0; border: 0;
+  background: transparent; text-align: left; }
+.alm-cabecera:hover { background: var(--ground); }
+.alm-cabecera .almacen-linea span { display: inline-flex; align-items: center; gap: 6px; }
+.almacen-pie { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.almacen-pie .sub { font-size: 10.5px; color: var(--suave); }

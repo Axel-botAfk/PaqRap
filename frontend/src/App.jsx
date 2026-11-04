@@ -624,7 +624,7 @@ export default function App() {
             : planReproducido?.trayectos || ejecucion?.trayectos || LISTA_VACIA}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
-          umbrales={umbrales}
+          umbrales={umbrales} estadosPedido={estadosPedido}
           alGuardarUmbrales={valores => setUmbrales(guardarUmbrales(valores))}
           alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())} />
       </Riel>

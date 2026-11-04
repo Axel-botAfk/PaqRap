@@ -2,6 +2,7 @@ import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
 import PanelUnidades from './PanelUnidades.jsx';
 import PanelUmbrales from './PanelUmbrales.jsx';
+import PanelAlmacenes from './PanelAlmacenes.jsx';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
@@ -21,13 +22,10 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
   almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {},
-  alRestablecerUmbrales = () => {} }) {
+  alRestablecerUmbrales = () => {}, estadosPedido = null }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
-  const inicialPorId = new Map((mapaDatos?.almacenes || [])
-    .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial]));
-
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
   // resumen con el costo total solo llega al terminar la corrida, y esto se ve mientras corre.
   const totalRutas = rutas.reduce((acumulado, ruta) => ({
@@ -127,31 +125,11 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </form>
     </Acordeon>
 
-    <Acordeon titulo="Inventario de almacenes" abierto={false}>
-      {!inventario ? <p className="vacio">{ejecucion
-        ? 'No hay un corte de inventario disponible para este instante.'
-        : 'Sin una corrida seleccionada, se muestran el Stock inicial.'}</p>
-        : <>
-          <div className="almacenes">{inventario.almacenes.map(almacen => {
-            // La API no publica capacidad; el llenado se mide contra el stock inicial del caso.
-            const inicial = inicialPorId.get(almacen.id);
-            const porcentaje = almacen.ilimitado || !inicial ? 100
-              : Math.max(0, Math.min(100, Math.round((almacen.disponible / inicial) * 100)));
-            const activo = almacenSeleccionado === almacen.id;
-            return <button key={almacen.id} type="button" aria-pressed={activo}
-              className={`almacen ${activo ? 'almacen-elegido' : ''}`}
-              onClick={() => alSeleccionarAlmacen(activo ? null : almacen.id)}>
-              <div className="almacen-linea">
-                <span>{almacen.id} <em>({almacen.ubicacion.x}, {almacen.ubicacion.y})</em></span>
-                <b>{almacen.ilimitado ? '∞' : `${numero(almacen.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`}</b>
-              </div>
-              <div className="bar"><i className={porcentaje < umbrales.stock.critico ? 'bajo'
-                : porcentaje < umbrales.stock.advertencia ? 'medio' : ''}
-                style={{ width: `${porcentaje}%` }} /></div>
-            </button>;
-          })}</div>
-          <p className="nota">Inventario del último corte disponible, a las {fecha(inventario.reloj)}.</p>
-        </>}
+    <Acordeon titulo="Inventario de almacenes" abierto={false}
+      nota={mapaDatos?.almacenes?.length ? numero(mapaDatos.almacenes.length) : null}>
+      <PanelAlmacenes inventario={inventario} mapaDatos={mapaDatos} rutas={rutas}
+        estadosPedido={estadosPedido} seleccionado={almacenSeleccionado}
+        alSeleccionar={alSeleccionarAlmacen} umbrales={umbrales} ejecucion={ejecucion} />
     </Acordeon>
 
     {ejecucion?.colapso && <Acordeon titulo="Colapso logístico">

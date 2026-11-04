@@ -582,7 +582,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         {activo && <circle className="almacen-halo" r="24" />}
         <DibujoAlmacen tipo={almacen.tipo} />
         <circle className={`mapa-stock mapa-stock-${estadoDeStockCon(stockDe(almacen), almacen.stockInicial)}`}
-          cx={almacen.tipo === 'CENTRAL' ? 17.5 : 15} cy={almacen.tipo === 'CENTRAL' ? -17.5 : -15}
+          cx={almacen.tipo === 'CENTRAL' ? 21 : 17} cy={almacen.tipo === 'CENTRAL' ? -21 : -17}
           r="4.5" pointerEvents="none" />
       </g>;
       })}
@@ -865,8 +865,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
 function DibujoAlmacen({ tipo, leyenda = false }) {
   const gradiente = useId();
-  if (tipo === 'CENTRAL') return <svg x={leyenda ? undefined : -22.5}
-    y={leyenda ? undefined : -24.5} width={leyenda ? 20 : 45} height={leyenda ? 20 : 49}
+  if (tipo === 'CENTRAL') return <svg x={leyenda ? undefined : -26}
+    y={leyenda ? undefined : -28} width={leyenda ? 20 : 52} height={leyenda ? 20 : 56}
     viewBox="0 0 36 40" overflow="visible" aria-hidden="true" focusable="false">
     <defs><linearGradient id={gradiente} x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
@@ -884,8 +884,8 @@ function DibujoAlmacen({ tipo, leyenda = false }) {
     <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
     <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
   </svg>;
-  return <svg x={leyenda ? undefined : -20} y={leyenda ? undefined : -20}
-    width={leyenda ? 20 : 40} height={leyenda ? 20 : 40} viewBox="0 0 20 20"
+  return <svg x={leyenda ? undefined : -22} y={leyenda ? undefined : -22}
+    width={leyenda ? 20 : 44} height={leyenda ? 20 : 44} viewBox="0 0 20 20"
     overflow="visible" aria-hidden="true" focusable="false">
     <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z" fill="#9222B4" />
     <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"

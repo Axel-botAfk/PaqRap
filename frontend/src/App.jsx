@@ -99,6 +99,7 @@ export default function App() {
   const [unidadAveriada, setUnidadAveriada] = useState('');
   // Unidad resaltada: la comparten el panel de unidades y el mapa, en los dos sentidos (F01).
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
+  const [almacenSeleccionado, setAlmacenSeleccionado] = useState(null);
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
   const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
@@ -452,6 +453,7 @@ export default function App() {
         setInventario(null);
         setAverias([]);
         setUnidadSeleccionada(null);
+        setAlmacenSeleccionado(null);
         setRutaSeleccionada(null);
         idActual.current = siguienteId;
         setId(siguienteId);
@@ -478,6 +480,7 @@ export default function App() {
       setInventario(null);
       setAverias([]);
       setUnidadSeleccionada(null);
+      setAlmacenSeleccionado(null);
       setRutaSeleccionada(null);
       idActual.current = siguienteId;
       setId(siguienteId);
@@ -592,6 +595,7 @@ export default function App() {
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante} averias={averias}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
+          almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           trayectosDelInstante={planReproducido?.trayectos || LISTA_VACIA}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
@@ -613,7 +617,8 @@ export default function App() {
           inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
           progreso={progreso} vehiculos={vehiculosDelInstante}
           averiasDelInstante={averiasDelInstante} instante={instanteReproducido}
-          unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada} />
+          unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
+          almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado} />
       </Riel>
     </>}
 

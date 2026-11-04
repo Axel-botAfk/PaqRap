@@ -16,7 +16,8 @@ const ESCENARIOS_SIMULACION = [
 export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado, rutas,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
   aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
-  unidadSeleccionada = null, alSeleccionarUnidad = () => {} }) {
+  unidadSeleccionada = null, alSeleccionarUnidad = () => {},
+  almacenSeleccionado = null, alSeleccionarAlmacen = () => {} }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
@@ -131,14 +132,17 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
             const inicial = inicialPorId.get(almacen.id);
             const porcentaje = almacen.ilimitado || !inicial ? 100
               : Math.max(0, Math.min(100, Math.round((almacen.disponible / inicial) * 100)));
-            return <div key={almacen.id} className="almacen">
+            const activo = almacenSeleccionado === almacen.id;
+            return <button key={almacen.id} type="button" aria-pressed={activo}
+              className={`almacen ${activo ? 'almacen-elegido' : ''}`}
+              onClick={() => alSeleccionarAlmacen(activo ? null : almacen.id)}>
               <div className="almacen-linea">
                 <span>{almacen.id} <em>({almacen.ubicacion.x}, {almacen.ubicacion.y})</em></span>
                 <b>{almacen.ilimitado ? '∞' : `${numero(almacen.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`}</b>
               </div>
               <div className="bar"><i className={porcentaje < 20 ? 'bajo' : porcentaje < 60 ? 'medio' : ''}
                 style={{ width: `${porcentaje}%` }} /></div>
-            </div>;
+            </button>;
           })}</div>
           <p className="nota">Inventario del último corte disponible, a las {fecha(inventario.reloj)}.</p>
         </>}

@@ -1194,3 +1194,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .ut-lista-envios li b { color: var(--navy); font: 800 10.5px Archivo; }
 .unidad-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
 .mapa-unidad.unidad-activa { cursor: pointer; }
+
+/* Enlace bidireccional entre la lista de inventario y el mapa (F05). */
+.almacenes .almacen { width: 100%; display: grid; gap: 5px; padding: 6px 8px; margin: 0 -8px;
+  width: calc(100% + 16px); border: 1px solid transparent; border-radius: 9px;
+  background: transparent; text-align: left; }
+.almacenes .almacen:hover { background: var(--ground); }
+.almacenes .almacen-elegido { background: var(--red-100); border-color: var(--red); }
+.almacen-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
+.mapa-almacen[role="button"] { cursor: pointer; }

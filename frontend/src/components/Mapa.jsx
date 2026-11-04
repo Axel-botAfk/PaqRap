@@ -50,7 +50,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
   pedidosDelInstante = [], averias = LISTA_VACIA,
-  unidadSeleccionada = null, alSeleccionarUnidad = null }) {
+  unidadSeleccionada = null, alSeleccionarUnidad = null,
+  almacenSeleccionado = null, alSeleccionarAlmacen = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -551,17 +552,32 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <text x="13" y="-9" textAnchor="middle" fill="white" fontSize="9">{pedidos.length}</text>
         </g>;
       })}
-      {almacenesVisibles.map(almacen => <g key={almacen.id} className="mapa-almacen"
-        transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)} role="img"
+      {almacenesVisibles.map(almacen => {
+        const activo = almacen.id === almacenSeleccionado;
+        return <g key={almacen.id} className={`mapa-almacen ${activo ? 'almacen-activo' : ''}`}
+        transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)}
+        role={alSeleccionarAlmacen ? 'button' : 'img'}
+        tabIndex={alSeleccionarAlmacen ? 0 : undefined}
+        aria-pressed={alSeleccionarAlmacen ? activo : undefined}
         aria-label={`${almacen.id}. ${fichaDeAlmacen(almacen).lineas.join('. ')}`}
         onPointerEnter={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
         onPointerMove={e => { const f = fichaDeAlmacen(almacen); mostrarTip(e, f.titulo, f.lineas, null, almacen.id); }}
-        onPointerLeave={ocultarTip}>
+        onPointerLeave={ocultarTip}
+        onPointerDown={e => { if (alSeleccionarAlmacen) e.stopPropagation(); }}
+        onClick={() => alSeleccionarAlmacen?.(activo ? null : almacen.id)}
+        onKeyDown={e => {
+          if (!alSeleccionarAlmacen || (e.key !== 'Enter' && e.key !== ' ')) return;
+          e.preventDefault();
+          alSeleccionarAlmacen(activo ? null : almacen.id);
+        }}>
+        {/* Resalte del almacén elegido, en el mapa o en la lista de inventario (F05). */}
+        {activo && <circle className="almacen-halo" r="24" />}
         <DibujoAlmacen tipo={almacen.tipo} />
         <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
           cx={almacen.tipo === 'CENTRAL' ? 17.5 : 15} cy={almacen.tipo === 'CENTRAL' ? -17.5 : -15}
           r="4.5" pointerEvents="none" />
-      </g>)}
+      </g>;
+      })}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
         transform={fijo(punto.x, punto.y)}>
         <title>{`Salida de ruta desde el nodo (${punto.x}, ${punto.y})`}</title>

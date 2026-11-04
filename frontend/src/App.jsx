@@ -618,7 +618,7 @@ export default function App() {
           ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
           rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={setRutaSeleccionada}
           inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
-          progreso={progreso} vehiculos={vehiculosDelInstante}
+          progreso={progreso} vehiculos={vehiculosDelInstante} planes={planes}
           averiasDelInstante={averiasDelInstante} instante={instanteReproducido}
           trayectos={modoVivo ? ejecucion?.trayectos || LISTA_VACIA
             : planReproducido?.trayectos || ejecucion?.trayectos || LISTA_VACIA}
@@ -632,6 +632,7 @@ export default function App() {
 
     {vista === 'pedidos' && <div className="sheet sheet-pedidos">
       <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
+        instante={instanteReproducido}
         pedidosDelInstante={pedidosDelInstante}
         periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
     </div>}

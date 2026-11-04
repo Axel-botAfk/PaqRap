@@ -16,7 +16,9 @@ export function horariosDeTrayecto(trayecto, instante) {
   const pasos = trayecto?.pasos || [];
   const momento = aMs(instante);
   if (!pasos.length) return { salida: null, llegada: null, minutosAlDestino: null, minutosDesdeSalida: null };
-  const salida = (pasos.find(paso => paso.hito === 'SALIDA') || pasos[0])?.instante || null;
+  const salidas = pasos.filter(paso => paso.hito === 'SALIDA');
+  const salida = (salidas.filter(p => aMs(p.instante) <= momento).at(-1)
+    || salidas[0] || pasos[0])?.instante || null;
   const entregas = pasos.filter(paso => ENTREGAS.has(paso.hito));
   const siguiente = Number.isFinite(momento)
     ? entregas.find(paso => aMs(paso.instante) >= momento) : null;
@@ -31,7 +33,7 @@ export function horariosDeTrayecto(trayecto, instante) {
     llegada,
     // Solo hacia adelante: una entrega ya cumplida no son «minutos para llegar».
     minutosAlDestino: siguiente ? minutos(instante, siguiente.instante) : null,
-    minutosDesdeSalida: Number.isFinite(momento) ? minutos(salida, instante) : null
+    minutosDesdeSalida: Number.isFinite(momento) && aMs(salida) <= momento ? minutos(salida, instante) : null
   };
 }
 
@@ -45,12 +47,19 @@ export function horariosDeTrayecto(trayecto, instante) {
  */
 export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = null,
   umbrales = undefined) {
-  const rutaPorVehiculo = new Map((rutas || []).map(ruta => [ruta.vehiculoId, ruta]));
   const trayectoPorVehiculo = new Map((trayectos || []).map(t => [t.vehiculoId, t]));
   return (vehiculos || []).filter(v => v?.id).map(vehiculo => {
-    const ruta = rutaPorVehiculo.get(vehiculo.id) || null;
-    const pedidos = ruta?.paradas || [];
-    const horarios = horariosDeTrayecto(trayectoPorVehiculo.get(vehiculo.id), instante);
+    const viajes = (rutas || []).filter(r => r.vehiculoId === vehiculo.id);
+    const pedidos = [...new Map(viajes.flatMap(r => (r.paradas || []).map(p =>
+      [p.id, { ...p, ruta: r.id }]))).values()];
+    const previstos = viajes.flatMap(r => [
+      ...(r.salidaPrevista ? [{ hito: 'SALIDA', instante: r.salidaPrevista }] : []),
+      ...Object.entries(r.llegadasPrevistas || {}).map(([pedidoId, instante]) =>
+        ({ hito: 'ENTREGA', instante, pedidoId }))
+    ]);
+    const pasos = [...(trayectoPorVehiculo.get(vehiculo.id)?.pasos || []), ...previstos]
+      .sort((a, b) => aMs(a.instante) - aMs(b.instante));
+    const horarios = horariosDeTrayecto({ pasos }, instante);
     const medible = Number.isFinite(vehiculo.cargaAbordo) && Number.isFinite(vehiculo.capacidad)
       && vehiculo.capacidad > 0;
     return {
@@ -58,13 +67,15 @@ export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = n
       tipo: vehiculo.tipo,
       estado: vehiculo.estado,
       ubicacion: vehiculo.ubicacion,
+      origenId: vehiculo.origenId || null,
+      minutosAlOrigen: Number.isFinite(vehiculo.minutosAlOrigen) ? vehiculo.minutosAlOrigen : null,
       cargaAbordo: medible ? vehiculo.cargaAbordo : null,
       capacidad: medible ? vehiculo.capacidad : null,
       porcentaje: medible ? Math.round((vehiculo.cargaAbordo / vehiculo.capacidad) * 100) : null,
       nivel: estadoDeCarga(vehiculo, umbrales),
-      ruta: ruta?.id || null,
+      ruta: viajes.map(r => r.id).join(', ') || null,
       ...horarios,
-      pedidos: pedidos.map(p => ({ id: p.id, cantidad: p.cantidad })),
+      pedidos: pedidos.map(p => ({ id: p.id, cantidad: p.cantidad, ruta: p.ruta })),
       productos: pedidos.reduce((total, p) => total + (Number.isFinite(p.cantidad) ? p.cantidad : 0), 0)
     };
   });
@@ -119,12 +130,15 @@ export function ordenarUnidades(filas, criterio) {
  * cuánto falta para la próxima entrega y «desde el origen» cuánto pasó desde que salió. Una
  * unidad sin ese dato no se cuela en el resultado de una búsqueda que sí lo exige.
  */
-export function filtrarUnidades(filas, { minutosAlDestino = null, minutosDesdeSalida = null } = {}) {
+export function filtrarUnidades(filas, { minutosAlDestino = null, minutosDesdeSalida = null,
+  minutosAlOrigen = null } = {}) {
   return (filas || []).filter(fila => {
     if (Number.isFinite(minutosAlDestino)
       && !(Number.isFinite(fila.minutosAlDestino) && fila.minutosAlDestino <= minutosAlDestino)) return false;
     if (Number.isFinite(minutosDesdeSalida)
       && !(Number.isFinite(fila.minutosDesdeSalida) && fila.minutosDesdeSalida <= minutosDesdeSalida)) return false;
+    if (Number.isFinite(minutosAlOrigen)
+      && !(Number.isFinite(fila.minutosAlOrigen) && fila.minutosAlOrigen <= minutosAlOrigen)) return false;
     return true;
   });
 }

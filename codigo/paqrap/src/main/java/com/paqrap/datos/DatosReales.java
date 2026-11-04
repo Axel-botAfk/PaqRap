@@ -80,7 +80,7 @@ public record DatosReales(
      */
     public static List<YearMonth> mesesQueCubren(LocalDateTime inicio, int dias) {
         YearMonth primero = YearMonth.from(inicio);
-        YearMonth ultimo = YearMonth.from(inicio.plusDays(dias));
+        YearMonth ultimo = YearMonth.from(inicio.plusDays(dias).minusNanos(1));
         List<YearMonth> meses = new ArrayList<>();
         for (YearMonth mes = primero; !mes.isAfter(ultimo); mes = mes.plusMonths(1)) {
             meses.add(mes);

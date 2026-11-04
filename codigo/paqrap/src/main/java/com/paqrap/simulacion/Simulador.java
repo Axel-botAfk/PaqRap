@@ -379,9 +379,16 @@ public final class Simulador {
             }
 
             aplicarAverias(reloj, unidades, cargaDeLaUnidad, averiadas, averiasOcurridas);
+            trasladarAveriadas(reloj, unidades, cargaDeLaUnidad, averiadas);
             reincorporarReparadas(reloj, unidades, averiadas);
 
             LocalDateTime corte = proximoCorte(reloj, fin, porLlegar);
+            for (Averia averia : averiadas.values()) {
+                for (LocalDateTime limite : List.of(averia.instante().plus(
+                        averia.tipo().permanenciaEnElLugar()), averia.reingreso())) {
+                    if (limite.isAfter(reloj) && limite.isBefore(corte)) corte = limite;
+                }
+            }
 
             // Con lectura por bloques entran además los pedidos que se registrarán durante el
             // tramo que está por ejecutarse. No se admite nada más allá del fin de la corrida:
@@ -409,9 +416,9 @@ public final class Simulador {
                 );
 
                 observador.alIniciarPlanificacion(reloj);
-                long antes = System.currentTimeMillis();
+                long antes = System.nanoTime();
                 Solucion plan = planificador.planificar(estado, parametros);
-                long ta = System.currentTimeMillis() - antes;
+                long ta = (System.nanoTime() - antes) / 1_000_000L;
                 computo += ta;
                 iteraciones++;
 
@@ -465,6 +472,8 @@ public final class Simulador {
 
             colaAlCierreDelDia.put(corte.toLocalDate(), pendientes.size());
             reloj = corte;
+            trasladarAveriadas(reloj, unidades, cargaDeLaUnidad, averiadas);
+            reincorporarReparadas(reloj, unidades, averiadas);
             observador.alAvanzar(reloj, List.copyOf(unidades.values()));
             observador.alActualizarInventario(reloj, almacenesEn(reloj, inventario));
             esperarElSalto(arranqueDelSalto);
@@ -793,9 +802,8 @@ public final class Simulador {
      * trasvase publicado ni regla sobre qué unidad acude ni si continúa su ruta o se devuelve.
      *
      * La unidad queda donde se averió durante su permanencia y, en los tipos 2 y 3, aparece
-     * después en el central. Como en esos dos casos el reingreso siempre cae más tarde que el
-     * fin de la permanencia, basta con dejarla ya en el central: nadie puede usarla mientras
-     * tanto.
+     * después en el central. La fase de traslado se procesa al alcanzar el fin de permanencia;
+     * el reingreso se procesa por separado para conservar posición y disponibilidad reales.
      */
     private void aplicarAverias(
             LocalDateTime reloj,
@@ -819,21 +827,11 @@ public final class Simulador {
                 continue;
             }
 
-            boolean alCentral = averia.tipo().regresaAlCentral();
-            Ubicacion donde = alCentral
-                    ? almacenes.get(0).getUbicacion()
-                    : unidad.getUbicacion();
+            Ubicacion donde = unidad.getUbicacion();
 
-            // Los paquetes que no alcanzaron a trasvasarse se van con la unidad al central, así
-            // que deja de llevarlos encima. No se acreditan a ningún almacén: salieron del que
-            // los despachó y terminan en el central, que tiene inventario infinito.
-            //
-            // En la avería menor no hay traslado: la unidad se arregla donde está, sigue con su
-            // carga y retoma el reparto.
-            int carga = alCentral ? 0 : unidad.getCargaABordo();
-            if (alCentral) {
-                cargaDeLaUnidad.remove(averia.unidadId());
-            }
+            // La carga permanece físicamente a bordo hasta el traslado al central. En el tipo
+            // menor la reparación ocurre en el sitio, sin traslado ni descarga ficticia.
+            int carga = unidad.getCargaABordo();
 
             unidades.put(averia.unidadId(), unidad.con(EstadoVehiculo.AVERIADO)
                     .tras(donde, averia.reingreso(), carga));
@@ -841,6 +839,19 @@ public final class Simulador {
             ocurridas.add(averia);
         }
         ultimoCorteAplicado = reloj;
+    }
+
+    /** El traslado ocurre al finalizar la permanencia, nunca al registrar la incidencia. */
+    private void trasladarAveriadas(LocalDateTime reloj, Map<String, Vehiculo> unidades,
+            Map<String, CargaEnAlmacen> cargas, Map<String, Averia> averiadas) {
+        for (Averia averia : averiadas.values()) {
+            if (!averia.tipo().regresaAlCentral() || reloj.isBefore(
+                    averia.instante().plus(averia.tipo().permanenciaEnElLugar()))) continue;
+            Vehiculo unidad = unidades.get(averia.unidadId());
+            unidades.put(unidad.getId(), unidad.con(EstadoVehiculo.AVERIADO)
+                    .tras(almacenes.get(0).getUbicacion(), averia.reingreso(), 0));
+            cargas.remove(unidad.getId());
+        }
     }
 
     /** Devuelve al servicio a las unidades cuya avería ya venció. */

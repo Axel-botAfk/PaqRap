@@ -57,6 +57,11 @@ class EjecucionesServiceTest {
         assertEquals(LocalDateTime.of(2026, 9, 6, 0, 0), fin.reloj());
         assertNotNull(fin.resumen());
         assertEquals(1, fin.resumen().pedidosRecibidos());
+        assertEquals(fin.resumen().pedidosPendientes(), fin.avance().pedidosEnCola());
+        assertEquals(fin.resumen().pedidosOriginalesCompletos(), fin.avance().pedidosEntregados());
+        var rendimiento = servicio.rendimiento(id);
+        assertEquals(fin.resumen().iteracionesPlanificacion(), rendimiento.cantidad());
+        assertEquals(rendimiento, servicio.rendimiento(id));
         var historial = new ArrayList<ApiModels.FotogramaVista>();
         long desde = 0;
         ApiModels.FotogramasVista pagina;
@@ -80,6 +85,9 @@ class EjecucionesServiceTest {
         var planes = servicio.planes(id, 0);
         assertTrue(planes.completo());
         assertTrue(planes.planes().size() > 0);
+        assertTrue(planes.planes().stream().flatMap(p -> p.rutas().stream()).anyMatch(r ->
+                r.salidaPrevista() != null && !r.llegadasPrevistas().isEmpty()),
+                "los planes publican horarios evaluados incluso fuera del trayecto ya ejecutado");
         assertTrue(planes.planes().stream().allMatch(p ->
                 !p.reloj().isBefore(fin.inicio()) && !p.reloj().isAfter(fin.reloj())));
         for (int i = 1; i < planes.planes().size(); i++) {

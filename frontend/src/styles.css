@@ -1220,3 +1220,5 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .alm-cabecera .almacen-linea span { display: inline-flex; align-items: center; gap: 6px; }
 .almacen-pie { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .almacen-pie .sub { font-size: 10.5px; color: var(--suave); }
+:root .envio-original { padding: 12px 16px; border-bottom: 1px solid var(--line, #dce5ea); }
+:root .envio-original summary { cursor: pointer; font-weight: 600; padding: 8px 0; }

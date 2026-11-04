@@ -30,6 +30,7 @@ export function averiasEn(averias, instante) {
   for (const averia of averias || []) {
     const inicio = aMs(averia?.instante);
     if (!averia?.unidadId || !Number.isFinite(inicio) || inicio > momento) continue;
+    if (averia.estado === 'NO_APLICADA' || averia.estado === 'REGISTRADA') continue;
     const permanencia = PERMANENCIA_HORAS[averia.tipo];
     if (!Number.isFinite(permanencia)) continue;
     const fin = inicio + permanencia * HORA_MS;

@@ -9,8 +9,7 @@ import { estadoDeStock } from './stock.js';
  * los pedidos ya entregados según los hitos del trayecto; no se inventa un estado que el
  * servidor no haya informado.
  *
- * La API no publica la capacidad de cada almacén, así que el llenado se mide contra el
- * `stockInicial` del caso y se dice de dónde sale.
+ * Usa capacidad publicada; si un servidor anterior la omite conserva la referencia inicial.
  */
 export function filasDeAlmacenes(inventario, almacenesDelMapa, rutas, estadosPedido = null,
   umbrales = undefined) {
@@ -20,12 +19,14 @@ export function filasDeAlmacenes(inventario, almacenesDelMapa, rutas, estadosPed
   return (almacenesDelMapa || []).map(almacen => {
     const stock = stockPorId.get(almacen.id) || null;
     const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
+    const capacidad = stock?.capacidad ?? null;
+    const referencia = capacidad ?? inicial;
     const rutasDelAlmacen = (rutas || []).filter(ruta => ruta.almacenId === almacen.id);
     const pedidos = rutasDelAlmacen.flatMap(ruta => (ruta.paradas || [])
       .filter(pedido => !entregado(pedido))
       .map(pedido => ({ id: pedido.id, cantidad: pedido.cantidad,
         unidad: ruta.vehiculoId, ruta: ruta.id })));
-    const medible = !stock?.ilimitado && Number.isFinite(stock?.disponible) && inicial;
+    const medible = !stock?.ilimitado && Number.isFinite(stock?.disponible) && referencia;
 
     return {
       id: almacen.id,
@@ -35,8 +36,9 @@ export function filasDeAlmacenes(inventario, almacenesDelMapa, rutas, estadosPed
       disponible: stock?.ilimitado ? null
         : Number.isFinite(stock?.disponible) ? stock.disponible : null,
       inicial,
+      capacidad,
       porcentaje: medible
-        ? Math.max(0, Math.min(100, Math.round((stock.disponible / inicial) * 100))) : null,
+        ? Math.max(0, Math.min(100, Math.round((stock.disponible / referencia) * 100))) : null,
       estado: estadoDeStock(stock, almacen.stockInicial, umbrales),
       enTransito: {
         pedidos,

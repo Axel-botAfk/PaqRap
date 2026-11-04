@@ -59,6 +59,9 @@ class ApiController {
     @GetMapping("/ejecuciones/{id}")
     EjecucionVista consultar(@PathVariable UUID id) { return ejecuciones.consultar(id); }
 
+    @GetMapping("/ejecuciones/{id}/rendimiento")
+    RendimientoVista rendimiento(@PathVariable UUID id) { return ejecuciones.rendimiento(id); }
+
     @GetMapping("/ejecuciones/{id}/fotogramas")
     FotogramasVista fotogramas(@PathVariable UUID id,
                               @RequestParam(defaultValue = "0") long desde) {

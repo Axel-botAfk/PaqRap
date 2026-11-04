@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
-import { planVigenteEn, estadosDePedido } from './mapa.js';
+import { planVigenteEn, estadosDePedido, vehiculosObservadosEn } from './mapa.js';
+import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
@@ -96,6 +97,8 @@ export default function App() {
   const [inventario, setInventario] = useState(null);
   const [averias, setAverias] = useState([]);
   const [unidadAveriada, setUnidadAveriada] = useState('');
+  // Unidad resaltada: la comparten el panel de unidades y el mapa, en los dos sentidos (F01).
+  const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
   const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
@@ -384,6 +387,13 @@ export default function App() {
   const instanteVivo = Number.isFinite(instanteVivoMs) ? aIso(instanteVivoMs) : null;
   const instanteReproducido = modoVivo ? instanteVivo || ejecucion.reloj
     : fotogramas[indiceFotograma]?.reloj || ejecucion?.reloj || null;
+  // Las unidades del corte publicado que corresponde al instante mostrado: la misma fuente que
+  // usa el mapa, para que el panel y la ficha del mapa no digan cifras distintas.
+  const vehiculosDelInstante = useMemo(() => vehiculosObservadosEn(
+    fotogramas, indiceFotograma, ejecucion, modoVivo, instanteReproducido, aMs),
+  [fotogramas, indiceFotograma, ejecucion, modoVivo, instanteReproducido]);
+  const averiasDelInstante = useMemo(() => averiasEn(averias, instanteReproducido),
+    [averias, instanteReproducido]);
   const inventarioDelInstante = useMemo(() => ejecucion
     ? inventarioEn(fotogramas, inventario, instanteReproducido) : null,
   [ejecucion?.id, fotogramas, inventario, instanteReproducido]);
@@ -441,6 +451,7 @@ export default function App() {
         setPlanes([]);
         setInventario(null);
         setAverias([]);
+        setUnidadSeleccionada(null);
         setRutaSeleccionada(null);
         idActual.current = siguienteId;
         setId(siguienteId);
@@ -466,6 +477,7 @@ export default function App() {
       setPlanes([]);
       setInventario(null);
       setAverias([]);
+      setUnidadSeleccionada(null);
       setRutaSeleccionada(null);
       idActual.current = siguienteId;
       setId(siguienteId);
@@ -579,6 +591,7 @@ export default function App() {
           pedidosDelInstante={pedidosDelInstante}
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante} averias={averias}
+          unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
           enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           trayectosDelInstante={planReproducido?.trayectos || LISTA_VACIA}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
@@ -598,7 +611,9 @@ export default function App() {
           ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
           rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={setRutaSeleccionada}
           inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
-          progreso={progreso} />
+          progreso={progreso} vehiculos={vehiculosDelInstante}
+          averiasDelInstante={averiasDelInstante} instante={instanteReproducido}
+          unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada} />
       </Riel>
     </>}
 

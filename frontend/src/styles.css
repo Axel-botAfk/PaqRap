@@ -1168,3 +1168,29 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .mapa-averia-tipo_2 path { fill: #fb5607; } .mapa-averia-tipo_2 text { fill: #ffffff; }
 .mapa-averia-tipo_3 path { fill: #1d1d2b; } .mapa-averia-tipo_3 text { fill: #ffffff; }
 .leyenda-averia { width: 18px; height: 18px; flex: none; }
+
+/* ── Panel de unidades de transporte (E02-E05, E13) y su enlace con el mapa (F01) ────────── */
+.unidades-orden { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.unidades-orden label { font: 800 9.5px Archivo; letter-spacing: .11em; text-transform: uppercase; color: var(--suave); white-space: nowrap; }
+.unidades-orden select { flex: 1; }
+.lista-unidades { display: flex; flex-direction: column; gap: 1px; margin: 0 -16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-height: 340px; overflow-y: auto; }
+.ut { border-bottom: 1px solid var(--line); background: #fff; }
+.ut-activa { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
+.ut-cabecera { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 8px 16px; background: transparent; border: 0; text-align: left; }
+.ut-cabecera:hover { background: var(--ground); }
+.ut .l1 { display: flex; align-items: center; gap: 7px; }
+.ut .l1 b { font: 800 12.5px Archivo; }
+.ut .l2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ut .sub { font-size: 10.5px; color: var(--suave); }
+.ut .num { margin-left: auto; font: 800 11.5px Archivo; white-space: nowrap; }
+.unidad-luz { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--luz, #8f9aac); box-shadow: 0 0 0 1px rgba(10, 29, 58, .18); }
+.ut-averia { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font: 700 9.5px Archivo; background: var(--luz-averia, #1d1d2b); color: #fff; }
+.mapa-averia-tipo_1 { --luz-averia: #ffb703; } .ut-averia.mapa-averia-tipo_1 { color: #3d2b00; }
+.mapa-averia-tipo_2 { --luz-averia: #fb5607; }
+.mapa-averia-tipo_3 { --luz-averia: #1d1d2b; }
+.ut-envios { width: 100%; padding: 0 16px 8px; border: 0; background: transparent; text-align: left; font: 800 10.5px Archivo; color: var(--red-d); }
+.ut-lista-envios { margin: 0; padding: 0 16px 9px; list-style: none; display: grid; gap: 4px; }
+.ut-lista-envios li { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--suave); }
+.ut-lista-envios li b { color: var(--navy); font: 800 10.5px Archivo; }
+.unidad-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
+.mapa-unidad.unidad-activa { cursor: pointer; }

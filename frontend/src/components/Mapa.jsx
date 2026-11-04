@@ -49,7 +49,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
-  pedidosDelInstante = [], averias = LISTA_VACIA }) {
+  pedidosDelInstante = [], averias = LISTA_VACIA,
+  unidadSeleccionada = null, alSeleccionarUnidad = null }) {
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -567,23 +568,30 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         <path d="M0 -10 V-25" /><circle cx="0" cy="-29" r="10" />
         <text x="0" y="-25" textAnchor="middle">S</text>
       </g>)}
-      {gruposVehiculos.map(grupo => <g key={grupo[0].id}
-        className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''}`}
+      {gruposVehiculos.map(grupo => {
+        const elegible = grupo.length === 1 && !!alSeleccionarUnidad;
+        const activa = grupo.some(v => v.id === unidadSeleccionada);
+        return <g key={grupo[0].id}
+        className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''} ${activa ? 'unidad-activa' : ''}`}
         transform={icono(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
-        role={grupo.length > DETALLE_MAXIMO ? 'button' : 'img'}
-        tabIndex={grupo.length > DETALLE_MAXIMO ? 0 : undefined}
+        role={grupo.length > DETALLE_MAXIMO || elegible ? 'button' : 'img'}
+        tabIndex={grupo.length > DETALLE_MAXIMO || elegible ? 0 : undefined}
         aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}
         onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
         onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
         onPointerLeave={ocultarTip}
-        onPointerDown={e => { if (grupo.length > DETALLE_MAXIMO) e.stopPropagation(); }}
-        onClick={e => { if (grupo.length > DETALLE_MAXIMO) fijarDetalle(e, grupo); }}
+        onPointerDown={e => { if (grupo.length > DETALLE_MAXIMO || elegible) e.stopPropagation(); }}
+        onClick={e => {
+          if (grupo.length > DETALLE_MAXIMO) fijarDetalle(e, grupo);
+          else if (elegible) alSeleccionarUnidad(activa ? null : grupo[0].id);
+        }}
         onKeyDown={e => {
-          if (grupo.length > DETALLE_MAXIMO && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            fijarDetalle(e, grupo);
-          }
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          if (grupo.length > DETALLE_MAXIMO) { e.preventDefault(); fijarDetalle(e, grupo); }
+          else if (elegible) { e.preventDefault(); alSeleccionarUnidad(activa ? null : grupo[0].id); }
         }}>
+        {/* Resalte de la unidad elegida, en el mapa o en la lista del riel (F01). */}
+        {activa && <circle className="unidad-halo" r={TIPOS_CENITALES.has(grupo[0].tipo) ? 25 : 18} />}
         {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
         <g ref={nodo => {
           if (nodo) {
@@ -618,7 +626,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <circle className="grupo-contador" cx="12" cy="11" r="8" />
           <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
         </>}
-      </g>)}
+      </g>;
+      })}
     </svg>
 
     <div className="mapa-herramientas">

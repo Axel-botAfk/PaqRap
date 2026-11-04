@@ -1,5 +1,6 @@
 import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
+import PanelUnidades from './PanelUnidades.jsx';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
@@ -14,7 +15,8 @@ const ESCENARIOS_SIMULACION = [
  */
 export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado, rutas,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
-  aviso, progreso }) {
+  aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
+  unidadSeleccionada = null, alSeleccionarUnidad = () => {} }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
@@ -87,6 +89,12 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       {rutas.length > 0 && !calculandoRutas && <p className="nota nota-total">
         <span>Total del instante</span>
         <b>{decimal(totalRutas.km, ' km')} · S/ {decimal(totalRutas.costo)}</b></p>}
+    </Acordeon>
+
+    <Acordeon titulo="Unidades de transporte" abierto={false}
+      nota={vehiculos.length ? numero(vehiculos.length) : null}>
+      <PanelUnidades vehiculos={vehiculos} rutas={rutas} averias={averiasDelInstante}
+        seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante} />
     </Acordeon>
 
     <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>

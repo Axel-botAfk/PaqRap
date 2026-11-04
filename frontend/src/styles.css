@@ -174,7 +174,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .grid-major { stroke: #c8bfbc; stroke-width: 1; }
 
 .trazo-visible { stroke: var(--ruta-color, #27889a); stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; opacity: .82; pointer-events: none; vector-effect: non-scaling-stroke; transition: opacity .2s, stroke-width .2s, stroke .2s; }
-.trazo-recorrido { stroke: #aebacc; stroke-dasharray: 4 5; opacity: .38; stroke-width: 2.2; }
+.trazo-recorrido { stroke: #64748B; stroke-dasharray: 4 5; opacity: .38; stroke-width: 2.2; }
 .trazo-final .trazo-recorrido { opacity: .22; }
 .trazo-resaltado .trazo-pendiente, .trazo-ruta:hover .trazo-pendiente, .trazo-ruta:focus-within .trazo-pendiente { stroke: var(--red); stroke-width: 4.2; opacity: 1; }
 .trazo-resaltado .trazo-recorrido, .trazo-ruta:hover .trazo-recorrido, .trazo-ruta:focus-within .trazo-recorrido { stroke: #71839c; stroke-width: 3.4; opacity: .85; }

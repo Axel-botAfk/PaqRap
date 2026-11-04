@@ -617,6 +617,8 @@ export default function App() {
           inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
           progreso={progreso} vehiculos={vehiculosDelInstante}
           averiasDelInstante={averiasDelInstante} instante={instanteReproducido}
+          trayectos={modoVivo ? ejecucion?.trayectos || LISTA_VACIA
+            : planReproducido?.trayectos || ejecucion?.trayectos || LISTA_VACIA}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado} />
       </Riel>

@@ -1203,3 +1203,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .almacenes .almacen-elegido { background: var(--red-100); border-color: var(--red); }
 .almacen-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
 .mapa-almacen[role="button"] { cursor: pointer; }
+
+/* Búsqueda por minutos en la lista de unidades (E06, E07). */
+.unidades-busqueda { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; align-items: end; }
+.unidades-busqueda .field label { font: 800 9px Archivo; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+.unidades-limpiar { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; padding: 0; font: 800 10.5px Archivo; color: var(--red-d); }
+.ut-horarios { gap: 10px; }

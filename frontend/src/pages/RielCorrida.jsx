@@ -17,7 +17,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
   aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
-  almacenSeleccionado = null, alSeleccionarAlmacen = () => {} }) {
+  almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
@@ -95,7 +95,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
     <Acordeon titulo="Unidades de transporte" abierto={false}
       nota={vehiculos.length ? numero(vehiculos.length) : null}>
       <PanelUnidades vehiculos={vehiculos} rutas={rutas} averias={averiasDelInstante}
-        seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante} />
+        seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante}
+        trayectos={trayectos} />
     </Acordeon>
 
     <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>

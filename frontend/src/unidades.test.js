@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { filasDeUnidades, ordenarUnidades } from './unidades.js';
+import { filasDeUnidades, ordenarUnidades, filtrarUnidades } from './unidades.js';
 
 const flota = [
   { id: 'TA02', tipo: 'MOTO', estado: 'EN_RUTA', capacidad: 8, cargaAbordo: 4, ubicacion: { x: 1, y: 1 } },
@@ -69,4 +69,75 @@ test('ordenar no muta la lista original', () => {
   const antes = filas.map(f => f.id);
   ordenarUnidades(filas, 'ocupacion-desc');
   assert.deepEqual(filas.map(f => f.id), antes);
+});
+
+const trayectos = [
+  { vehiculoId: 'TA01', pasos: [
+    { instante: '2029-01-15T10:00:00', hito: 'SALIDA' },
+    { instante: '2029-01-15T10:30:00', hito: 'ENTREGA', pedidoId: 'P-1' },
+    { instante: '2029-01-15T11:15:00', hito: 'ENTREGA', pedidoId: 'P-2' }
+  ] },
+  { vehiculoId: 'TA02', pasos: [
+    { instante: '2029-01-15T09:40:00', hito: 'SALIDA' },
+    { instante: '2029-01-15T10:50:00', hito: 'ENTREGA', pedidoId: 'P-3' }
+  ] }
+];
+const INSTANTE = '2029-01-15T10:40:00';
+
+test('la salida es el hito SALIDA y la llegada, la próxima entrega', () => {
+  const ta01 = filasDeUnidades(flota, rutas, trayectos, INSTANTE).find(f => f.id === 'TA01');
+  assert.equal(ta01.salida, '2029-01-15T10:00:00');
+  assert.equal(ta01.llegada, '2029-01-15T11:15:00');
+});
+
+test('los minutos al destino miran hacia adelante y los de salida hacia atrás', () => {
+  const ta01 = filasDeUnidades(flota, rutas, trayectos, INSTANTE).find(f => f.id === 'TA01');
+  assert.equal(ta01.minutosAlDestino, 35);
+  assert.equal(ta01.minutosDesdeSalida, 40);
+});
+
+test('sin entregas por delante no se inventan minutos para llegar', () => {
+  const tarde = filasDeUnidades(flota, rutas, trayectos, '2029-01-15T12:00:00').find(f => f.id === 'TA01');
+  assert.equal(tarde.minutosAlDestino, null);
+  assert.equal(tarde.llegada, '2029-01-15T11:15:00');
+});
+
+test('una unidad sin trayecto publicado no declara horarios', () => {
+  const ta10 = filasDeUnidades(flota, rutas, trayectos, INSTANTE).find(f => f.id === 'TA10');
+  assert.equal(ta10.salida, null);
+  assert.equal(ta10.llegada, null);
+  assert.equal(ta10.minutosAlDestino, null);
+});
+
+test('ordena por hora de salida y por hora de llegada', () => {
+  const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
+  assert.deepEqual(ordenarUnidades(filas, 'salida-asc').slice(0, 2).map(f => f.id), ['TA02', 'TA01']);
+  assert.deepEqual(ordenarUnidades(filas, 'salida-desc').slice(0, 2).map(f => f.id), ['TA01', 'TA02']);
+  assert.deepEqual(ordenarUnidades(filas, 'llegada-asc').slice(0, 2).map(f => f.id), ['TA02', 'TA01']);
+});
+
+test('las unidades sin horario quedan al final en los dos sentidos', () => {
+  const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
+  assert.equal(ordenarUnidades(filas, 'salida-asc').at(-1).id, 'TA10');
+  assert.equal(ordenarUnidades(filas, 'salida-desc').at(-1).id, 'TA10');
+});
+
+test('busca por minutos al destino inmediato', () => {
+  const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
+  assert.deepEqual(filtrarUnidades(filas, { minutosAlDestino: 15 }).map(f => f.id), ['TA02']);
+  assert.deepEqual(filtrarUnidades(filas, { minutosAlDestino: 40 }).map(f => f.id).sort(), ['TA01', 'TA02']);
+});
+
+test('busca por minutos desde la salida, sin colar unidades sin dato', () => {
+  const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
+  // TA02 salió 60 min antes del instante, así que el límite de 45 min la deja fuera.
+  assert.deepEqual(filtrarUnidades(filas, { minutosDesdeSalida: 45 }).map(f => f.id), ['TA01']);
+  assert.deepEqual(filtrarUnidades(filas, { minutosDesdeSalida: 60 }).map(f => f.id), ['TA02', 'TA01']);
+  assert.ok(!filtrarUnidades(filas, { minutosDesdeSalida: 1000 }).some(f => f.id === 'TA10'));
+});
+
+test('sin criterios de búsqueda la lista no se recorta', () => {
+  const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
+  assert.equal(filtrarUnidades(filas, {}).length, filas.length);
+  assert.equal(filtrarUnidades(filas).length, filas.length);
 });

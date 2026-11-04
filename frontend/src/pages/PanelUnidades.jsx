@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { numero, tipoVehiculo, estadoVehiculo, fecha } from '../formato.js';
-import { filasDeUnidades, ordenarUnidades, ORDENES } from '../unidades.js';
+import { numero, tipoVehiculo, estadoVehiculo, fecha, hora } from '../formato.js';
+import { filasDeUnidades, ordenarUnidades, filtrarUnidades, ORDENES } from '../unidades.js';
 import { ETIQUETAS_CARGA } from '../carga.js';
 import { ETIQUETAS_AVERIA } from '../averias.js';
 
@@ -14,12 +14,19 @@ import { ETIQUETAS_AVERIA } from '../averias.js';
  * inventa esa interpolación y declara de cuándo es el dato.
  */
 export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada, alSeleccionar,
-  reloj }) {
+  reloj, trayectos = null }) {
   const [orden, setOrden] = useState('ocupacion-desc');
   const [abierta, setAbierta] = useState(null);
+  const [alDestino, setAlDestino] = useState('');
+  const [desdeSalida, setDesdeSalida] = useState('');
   const filaRef = useRef(new Map());
 
-  const filas = ordenarUnidades(filasDeUnidades(vehiculos, rutas), orden);
+  const todas = filasDeUnidades(vehiculos, rutas, trayectos, reloj);
+  const limite = valor => (valor === '' ? null : Number(valor));
+  const filas = ordenarUnidades(filtrarUnidades(todas, {
+    minutosAlDestino: limite(alDestino), minutosDesdeSalida: limite(desdeSalida)
+  }), orden);
+  const hayBusqueda = alDestino !== '' || desdeSalida !== '';
 
   // Al llegar la selección desde el mapa, traer la fila a la vista sin mover el resto del riel.
   useEffect(() => {
@@ -27,7 +34,7 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
     filaRef.current.get(seleccionada)?.scrollIntoView({ block: 'nearest' });
   }, [seleccionada]);
 
-  if (!filas.length) {
+  if (!todas.length) {
     return <p className="vacio">No hay unidades publicadas para este instante.</p>;
   }
 
@@ -38,6 +45,20 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         {ORDENES.map(([valor, texto]) => <option key={valor} value={valor}>{texto}</option>)}
       </select>
     </div>
+
+    {/* Búsqueda por minutos (E06 y E07): el caso pide distinguir la llegada de la salida. */}
+    <div className="unidades-busqueda">
+      <div className="field"><label htmlFor="u-destino">Al destino ≤ (min)</label>
+        <input id="u-destino" className="input" type="number" min="0" step="5" value={alDestino}
+          placeholder="—" onChange={e => setAlDestino(e.target.value)} /></div>
+      <div className="field"><label htmlFor="u-origen">Desde la salida ≤ (min)</label>
+        <input id="u-origen" className="input" type="number" min="0" step="5" value={desdeSalida}
+          placeholder="—" onChange={e => setDesdeSalida(e.target.value)} /></div>
+      {hayBusqueda && <button type="button" className="unidades-limpiar"
+        onClick={() => { setAlDestino(''); setDesdeSalida(''); }}>Limpiar búsqueda</button>}
+    </div>
+
+    {!filas.length && <p className="vacio">Ninguna unidad cumple la búsqueda en este instante.</p>}
 
     <div className="lista-unidades">{filas.map(fila => {
       const averia = averias?.get(fila.id);
@@ -59,6 +80,12 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
               ? `${numero(fila.pedidos.length)} pedido(s) · ${numero(fila.productos)} producto(s)`
               : 'Sin pedidos asignados'}</span>
           </span>
+          {(fila.salida || fila.llegada) && <span className="l2 ut-horarios">
+            <span className="sub">Salida {hora(fila.salida)}{Number.isFinite(fila.minutosDesdeSalida)
+              ? ` · hace ${numero(fila.minutosDesdeSalida)} min` : ''}</span>
+            <span className="sub">Llegada {hora(fila.llegada)}{Number.isFinite(fila.minutosAlDestino)
+              ? ` · en ${numero(fila.minutosAlDestino)} min` : ''}</span>
+          </span>}
           {averia && <span className={`ut-averia mapa-averia-${averia.tipo.toLowerCase()}`}>
             {ETIQUETAS_AVERIA[averia.tipo]}
           </span>}
@@ -76,6 +103,6 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         </>}
       </div>;
     })}</div>
-    <p className="nota">{numero(filas.length)} unidad(es) del último corte publicado{reloj ? `, a las ${fecha(reloj)}` : ''}.</p>
+    <p className="nota">{numero(filas.length)}{hayBusqueda ? ` de ${numero(todas.length)}` : ''} unidad(es) del último corte publicado{reloj ? `, a las ${fecha(reloj)}` : ''}. Los horarios salen del trayecto publicado para la ventana.</p>
   </>;
 }

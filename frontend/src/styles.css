@@ -870,7 +870,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .mapview .mapa-filtrar-icono { display: block; flex: none; width: 16px; height: 16px; }
 .mapview .mapa-filtros { top: 56px; right: 10px; z-index: 24; width: 300px; max-width: calc(100% - 20px); max-height: calc(100% - 68px); overflow-y: auto; gap: 0; padding: 14px; border: 1px solid var(--border); border-radius: 15px; background: var(--surface); box-shadow: 0 10px 28px rgba(26, 52, 105, .10); }
 .mapview .mapa-filtros > div:first-child { padding-bottom: 11px; }
-.mapview .mapa-filtros > div:nth-child(2) { padding-top: 11px; border-top: 1px solid var(--border-soft); }
+.mapview .mapa-filtros > div:nth-child(n+2):not(.filtro-pie) { padding: 11px 0; border-top: 1px solid var(--border-soft); }
 .mapview .filtro-titulo { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; color: var(--brand-red); font-size: 13px; font-weight: 700; letter-spacing: 0; }
 .mapview .filtro-encabezado-icono { display: block; flex: none; width: 16px; height: 16px; }
 .mapview .filtro-opciones { gap: 6px; }
@@ -1133,3 +1133,90 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 @container (max-width: 360px) {
   .mapview.vista-operacion .reproduccion-momento svg { display: none; }
 }
+
+/* ── Semáforos en HTML: la luz reusa los colores del mapa, sin duplicar los cortes ───────── */
+.mapa-carga-alta, .mapa-stock-suficiente { --luz: #098c50; }
+.mapa-carga-intermedia, .mapa-stock-advertencia { --luz: #f1b800; }
+.mapa-carga-baja, .mapa-stock-critico { --luz: #e3262a; }
+.mapa-carga-vacio, .mapa-stock-vacio { --luz: #8f9aac; }
+.mapa-carga-sin-datos, .mapa-stock-sin-datos, .mapa-carga-mixto { --luz: #ffffff; }
+.mapa-indicador-luz, .filtro-luz {
+  /* En bloque: dentro de un botón, un elemento en línea ignora ancho y alto. */
+  display: inline-block; flex: none; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--luz, #8f9aac); box-shadow: 0 0 0 1px rgba(10, 29, 58, .18);
+}
+.filtro-luz { vertical-align: middle; margin-right: 5px; }
+
+/* Indicadores globales de flota y almacenes (G01-G04). */
+.mapa-indicadores { display: none; }
+/* Debajo de los botones de zoom, que ocupan la columna izquierda del mapa. */
+.mapview .mapa-indicadores {
+  position: absolute; left: 12px; top: 104px; z-index: 20; display: grid; gap: 7px;
+  padding: 9px 11px; border: 1px solid var(--border-soft); border-radius: 11px;
+  background: var(--surface); box-shadow: var(--shadow-card); pointer-events: none;
+  min-width: 186px; max-width: 220px;
+}
+.mapa-indicador { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 4px 7px; }
+.mapa-indicador-titulo { font: 800 9.5px Archivo; letter-spacing: .11em; text-transform: uppercase; color: var(--suave); }
+.mapa-indicador b { font: 800 15px Archivo; color: var(--navy); }
+.mapa-indicador small { grid-column: 1 / -1; font: 400 9.5px Archivo; line-height: 1.35; color: var(--suave); }
+
+/* Avería por tipo sobre el ícono de la unidad (D10-D13): se distingue por forma y por número. */
+.mapa-averia path { stroke: #ffffff; stroke-width: 1.6; paint-order: stroke; }
+.mapa-averia text { font: 700 6px Archivo; }
+.mapa-averia-tipo_1 path { fill: #ffb703; } .mapa-averia-tipo_1 text { fill: #3d2b00; }
+.mapa-averia-tipo_2 path { fill: #fb5607; } .mapa-averia-tipo_2 text { fill: #ffffff; }
+.mapa-averia-tipo_3 path { fill: #1d1d2b; } .mapa-averia-tipo_3 text { fill: #ffffff; }
+.leyenda-averia { width: 18px; height: 18px; flex: none; }
+
+/* ── Panel de unidades de transporte (E02-E05, E13) y su enlace con el mapa (F01) ────────── */
+.unidades-orden { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.unidades-orden label { font: 800 9.5px Archivo; letter-spacing: .11em; text-transform: uppercase; color: var(--suave); white-space: nowrap; }
+.unidades-orden select { flex: 1; }
+.lista-unidades { display: flex; flex-direction: column; gap: 1px; margin: 0 -16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-height: 340px; overflow-y: auto; }
+.ut { border-bottom: 1px solid var(--line); background: #fff; }
+.ut-activa { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
+.ut-cabecera { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 8px 16px; background: transparent; border: 0; text-align: left; }
+.ut-cabecera:hover { background: var(--ground); }
+.ut .l1 { display: flex; align-items: center; gap: 7px; }
+.ut .l1 b { font: 800 12.5px Archivo; }
+.ut .l2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ut .sub { font-size: 10.5px; color: var(--suave); }
+.ut .num { margin-left: auto; font: 800 11.5px Archivo; white-space: nowrap; }
+.unidad-luz { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--luz, #8f9aac); box-shadow: 0 0 0 1px rgba(10, 29, 58, .18); }
+.ut-averia { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font: 700 9.5px Archivo; background: var(--luz-averia, #1d1d2b); color: #fff; }
+.mapa-averia-tipo_1 { --luz-averia: #ffb703; } .ut-averia.mapa-averia-tipo_1 { color: #3d2b00; }
+.mapa-averia-tipo_2 { --luz-averia: #fb5607; }
+.mapa-averia-tipo_3 { --luz-averia: #1d1d2b; }
+.ut-envios { width: 100%; padding: 0 16px 8px; border: 0; background: transparent; text-align: left; font: 800 10.5px Archivo; color: var(--red-d); }
+.ut-lista-envios { margin: 0; padding: 0 16px 9px; list-style: none; display: grid; gap: 4px; }
+.ut-lista-envios li { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--suave); }
+.ut-lista-envios li b { color: var(--navy); font: 800 10.5px Archivo; }
+.unidad-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
+.mapa-unidad.unidad-activa { cursor: pointer; }
+
+/* Enlace bidireccional entre la lista de inventario y el mapa (F05). */
+.almacenes .almacen { width: 100%; display: grid; gap: 5px; padding: 6px 8px; margin: 0 -8px;
+  width: calc(100% + 16px); border: 1px solid transparent; border-radius: 9px;
+  background: transparent; text-align: left; }
+.almacenes .almacen:hover { background: var(--ground); }
+.almacenes .almacen-elegido { background: var(--red-100); border-color: var(--red); }
+.almacen-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
+.mapa-almacen[role="button"] { cursor: pointer; }
+
+/* Búsqueda por minutos en la lista de unidades (E06, E07). */
+.unidades-busqueda { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; align-items: end; }
+.unidades-busqueda .field label { font: 800 9px Archivo; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+.unidades-limpiar { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; padding: 0; font: 800 10.5px Archivo; color: var(--red-d); }
+.ut-horarios { gap: 10px; }
+
+/* Lista de almacenes con semáforo y envíos en tránsito (E18-E20). */
+.alm { border-bottom: 1px solid var(--line); }
+.alm:last-child { border-bottom: 0; }
+.alm-activo { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
+.alm-cabecera { width: 100%; display: grid; gap: 5px; padding: 8px; margin: 0; border: 0;
+  background: transparent; text-align: left; }
+.alm-cabecera:hover { background: var(--ground); }
+.alm-cabecera .almacen-linea span { display: inline-flex; align-items: center; gap: 6px; }
+.almacen-pie { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.almacen-pie .sub { font-size: 10.5px; color: var(--suave); }

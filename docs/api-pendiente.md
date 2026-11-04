@@ -5,22 +5,26 @@ ya existe en el frontend y que hoy muestra un aviso «Pendiente» en lugar de in
 
 Mientras no existan, la interfaz no se rompe: degrada a un estado declarado.
 
-## 1. Stock por almacén, en vivo
+Los puntos 1 y 4 ya están implementados y se conservan marcados como resueltos, con el
+endpoint que los cubre, para no volver a levantarlos como faltantes.
+
+## 1. Stock por almacén, en vivo — RESUELTO
 
 **Para:** panel «Inventario de almacenes» en Operación diaria.
 
-`GET /api/datos/mapa/{aaaamm}` ya devuelve los almacenes con su `stockInicial`, y el mapa lo
-usa. Lo que falta es el stock **durante** la corrida: el motor lo lleva en `Inventario`
-(central ilimitado, intermedios con tope de 1000 unidades y recarga cada 24 h a las
-23:59:59), pero no viaja en `EjecucionVista`. Solo hay que copiarlo a la vista, como ya se
-hace con vehículos y rutas en `Vistas`.
+Lo cubre `GET /api/ejecuciones/{id}/inventario` (`ApiController`), que devuelve
+`InventarioVista`: el reloj del corte y, por almacén, `disponible` e `ilimitado`. El frontend
+lo consume en `services/api.js` y elige el corte que corresponde al instante mostrado en
+`stock.js`, sin adelantar un inventario futuro.
 
 ```
-EjecucionVista.Stock: [
-  { "almacenId": "ALM-CENTRAL",   "disponible": 0, "reservado": 0, "ilimitado": true  },
-  { "almacenId": "ALM-NOR-OESTE", "disponible": 812, "reservado": 40, "ilimitado": false }
-]
+GET /api/ejecuciones/{id}/inventario
+-> 200 { "reloj": "2029-01-15T10:40:00",
+         "almacenes": [ { "id", "tipo", "ubicacion", "disponible", "ilimitado" } ] }
 ```
+
+Sigue sin publicarse la **capacidad** de cada almacén: el llenado se mide contra el
+`stockInicial` que da `GET /api/datos/mapa/{aaaamm}`.
 
 ## 2. Listado de ejecuciones
 
@@ -56,19 +60,23 @@ Ojo con dos cosas al implementarlo: `client_max_body_size` en
 archivo mensual de ventas; y el nombre del archivo no debe usarse para construir una ruta en
 disco a partir de lo que mande el cliente.
 
-## 4. Registro de avería
+## 4. Registro de avería — RESUELTO
 
 **Para:** la sección «Registrar una avería» en Averías de la flota.
-**Acordado:** no entra en este avance, se deja anotado.
+
+Lo cubren `POST /api/ejecuciones/{id}/averias`, que acepta la avería solo en una corrida
+`EN_CURSO`, y `GET /api/ejecuciones/{id}/averias`, que lista las registradas con su estado y
+la cantidad de pedidos replanificados.
 
 ```
 POST /api/ejecuciones/{id}/averias
-     { "vehiculoId": "TA03", "tipo": 1|2|3, "nodo": {"x":31,"y":12}, "instante": "..." }
--> 202  (la reasignación la aplica el planificador en la siguiente iteración)
+     { "unidadId": "TA03", "tipo": "TIPO_1" | "TIPO_2" | "TIPO_3" }
+-> 201 { "unidadId", "tipo", "instante", "estado", "pedidosAfectados" }
 ```
 
-El motor ya distingue los tres tipos y calcula la ventana de indisponibilidad con los turnos
-oficiales (07:00, 15:00, 23:00); lo que falta es inyectar el evento en una corrida viva.
+El motor distingue los tres tipos y calcula la ventana de indisponibilidad con los turnos
+oficiales (07:00, 15:00, 23:00). Queda por confirmar contra el motor la permanencia de 4 h en
+el lugar de los tipos 2 y 3, que el mapa ya usa para retirar la marca cuando vence.
 
 ## 5. Seguimiento de un pedido con entregas parciales
 
@@ -77,6 +85,8 @@ oficiales (07:00, 15:00, 23:00); lo que falta es inyectar el evento en una corri
 
 `PedidoVista` describe un pedido dentro de una ruta. Falta la vista contraria: dado un pedido,
 sus fracciones repartidas entre unidades y viajes, que el motor ya modela en `RepartoParcial`.
+Mientras tanto, «Seguimiento del pedido» la reconstruye en el cliente recorriendo el historial
+de planes; por eso depende de los planes que ya se descargaron y no de un endpoint propio.
 
 ```
 GET /api/ejecuciones/{id}/pedidos/{pedidoId}

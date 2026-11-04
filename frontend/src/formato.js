@@ -10,6 +10,15 @@ const FORMATO_HORA = new Intl.DateTimeFormat('es-PE', {
   hour: '2-digit', minute: '2-digit', second: '2-digit'
 });
 
+/** Solo hora y minuto: en la lista de unidades el día ya lo da el reloj de la corrida. */
+const FORMATO_SOLO_HORA = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit' });
+
+export function hora(valor) {
+  if (!valor) return '—';
+  const fechaLocal = new Date(valor);
+  return Number.isNaN(fechaLocal.getTime()) ? valor : FORMATO_SOLO_HORA.format(fechaLocal);
+}
+
 export function fecha(valor) {
   if (!valor) return '—';
   const fechaLocal = new Date(valor);

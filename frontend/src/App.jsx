@@ -15,6 +15,7 @@ import RielCorrida from './pages/RielCorrida.jsx';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
 import { inventarioEn } from './stock.js';
+import { leerUmbrales, guardarUmbrales, olvidarUmbrales } from './umbrales.js';
 
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
 const CLAVE_POR_VISTA = vista => `${CLAVE_EJECUCION}.${vista}`;
@@ -100,6 +101,8 @@ export default function App() {
   // Unidad resaltada: la comparten el panel de unidades y el mapa, en los dos sentidos (F01).
   const [unidadSeleccionada, setUnidadSeleccionada] = useState(null);
   const [almacenSeleccionado, setAlmacenSeleccionado] = useState(null);
+  // Cortes del semáforo configurables (B06); se recuerdan en este navegador.
+  const [umbrales, setUmbrales] = useState(leerUmbrales);
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
   const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
@@ -596,7 +599,7 @@ export default function App() {
           ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante} averias={averias}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
-          enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
+          umbrales={umbrales} enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}
           trayectosDelInstante={planReproducido?.trayectos || LISTA_VACIA}
           alVolverEnVivo={corriendo && !enVivo ? () => setEnVivo(true) : null}
           noAsignadosDelInstante={planReproducido?.noAsignados || null}
@@ -620,7 +623,10 @@ export default function App() {
           trayectos={modoVivo ? ejecucion?.trayectos || LISTA_VACIA
             : planReproducido?.trayectos || ejecucion?.trayectos || LISTA_VACIA}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
-          almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado} />
+          almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
+          umbrales={umbrales}
+          alGuardarUmbrales={valores => setUmbrales(guardarUmbrales(valores))}
+          alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())} />
       </Riel>
     </>}
 

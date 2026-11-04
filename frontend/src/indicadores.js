@@ -15,7 +15,7 @@ function sinDatos(extra = {}) {
 }
 
 /** Ocupación de toda la flota: suma de cargas contra suma de capacidades. */
-export function ocupacionDeFlota(vehiculos) {
+export function ocupacionDeFlota(vehiculos, umbrales = undefined) {
   const medibles = (vehiculos || []).filter(v => Number.isFinite(v?.cargaAbordo)
     && Number.isFinite(v?.capacidad) && v.capacidad > 0
     && v.cargaAbordo >= 0 && v.cargaAbordo <= v.capacidad);
@@ -23,11 +23,11 @@ export function ocupacionDeFlota(vehiculos) {
   const carga = medibles.reduce((total, v) => total + v.cargaAbordo, 0);
   const capacidad = medibles.reduce((total, v) => total + v.capacidad, 0);
   return { carga, capacidad, porcentaje: Math.round((carga / capacidad) * 100),
-    estado: estadoDeCarga({ cargaAbordo: carga, capacidad }), unidades: medibles.length };
+    estado: estadoDeCarga({ cargaAbordo: carga, capacidad }, umbrales), unidades: medibles.length };
 }
 
 /** Ocupación de los almacenes con tope: disponible contra stock inicial del caso. */
-export function ocupacionDeAlmacenes(almacenes, inicialPorId) {
+export function ocupacionDeAlmacenes(almacenes, inicialPorId, umbrales = undefined) {
   const lista = almacenes || [];
   const ilimitados = lista.filter(almacen => almacen?.ilimitado).length;
   const medibles = lista.filter(almacen => !almacen?.ilimitado
@@ -37,6 +37,6 @@ export function ocupacionDeAlmacenes(almacenes, inicialPorId) {
   const carga = medibles.reduce((total, almacen) => total + almacen.disponible, 0);
   const capacidad = medibles.reduce((total, almacen) => total + inicialPorId.get(almacen.id), 0);
   return { carga, capacidad, porcentaje: Math.round((carga / capacidad) * 100),
-    estado: estadoDeStock({ disponible: carga }, capacidad), unidades: medibles.length,
+    estado: estadoDeStock({ disponible: carga }, capacidad, umbrales), unidades: medibles.length,
     ilimitados };
 }

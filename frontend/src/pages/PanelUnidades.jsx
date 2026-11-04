@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { numero, tipoVehiculo, estadoVehiculo, fecha, hora } from '../formato.js';
 import { filasDeUnidades, ordenarUnidades, filtrarUnidades, ORDENES } from '../unidades.js';
-import { ETIQUETAS_CARGA } from '../carga.js';
+import { etiquetasDeCarga } from '../carga.js';
+import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { ETIQUETAS_AVERIA } from '../averias.js';
 
 /**
@@ -14,14 +15,15 @@ import { ETIQUETAS_AVERIA } from '../averias.js';
  * inventa esa interpolación y declara de cuándo es el dato.
  */
 export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada, alSeleccionar,
-  reloj, trayectos = null }) {
+  reloj, trayectos = null, umbrales = UMBRALES_POR_OMISION }) {
+  const ETIQUETAS_CARGA = etiquetasDeCarga(umbrales.carga);
   const [orden, setOrden] = useState('ocupacion-desc');
   const [abierta, setAbierta] = useState(null);
   const [alDestino, setAlDestino] = useState('');
   const [desdeSalida, setDesdeSalida] = useState('');
   const filaRef = useRef(new Map());
 
-  const todas = filasDeUnidades(vehiculos, rutas, trayectos, reloj);
+  const todas = filasDeUnidades(vehiculos, rutas, trayectos, reloj, umbrales.carga);
   const limite = valor => (valor === '' ? null : Number(valor));
   const filas = ordenarUnidades(filtrarUnidades(todas, {
     minutosAlDestino: limite(alDestino), minutosDesdeSalida: limite(desdeSalida)

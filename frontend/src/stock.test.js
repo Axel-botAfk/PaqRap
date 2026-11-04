@@ -25,3 +25,10 @@ test('vacío, ilimitado y stock desconocido no se confunden', () => {
   assert.equal(estadoDeStock(null, 100), 'sin-datos');
   assert.equal(estadoDeStock({ disponible: 10 }, 0), 'sin-datos');
 });
+
+test('con otros umbrales configurados el stock cambia de banda', () => {
+  const stock = { disponible: 300 };
+  assert.equal(estadoDeStock(stock, 1000), 'advertencia');
+  assert.equal(estadoDeStock(stock, 1000, { critico: 40, advertencia: 80 }), 'critico');
+  assert.equal(estadoDeStock(stock, 1000, { critico: 10, advertencia: 20 }), 'suficiente');
+});

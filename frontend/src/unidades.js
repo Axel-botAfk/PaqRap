@@ -43,7 +43,8 @@ export function horariosDeTrayecto(trayecto, instante) {
  * traslada con su cantidad de productos. No se inventa ocupación para una unidad sin datos: se
  * deja en nulo y el panel lo dice.
  */
-export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = null) {
+export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = null,
+  umbrales = undefined) {
   const rutaPorVehiculo = new Map((rutas || []).map(ruta => [ruta.vehiculoId, ruta]));
   const trayectoPorVehiculo = new Map((trayectos || []).map(t => [t.vehiculoId, t]));
   return (vehiculos || []).filter(v => v?.id).map(vehiculo => {
@@ -60,7 +61,7 @@ export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = n
       cargaAbordo: medible ? vehiculo.cargaAbordo : null,
       capacidad: medible ? vehiculo.capacidad : null,
       porcentaje: medible ? Math.round((vehiculo.cargaAbordo / vehiculo.capacidad) * 100) : null,
-      nivel: estadoDeCarga(vehiculo),
+      nivel: estadoDeCarga(vehiculo, umbrales),
       ruta: ruta?.id || null,
       ...horarios,
       pedidos: pedidos.map(p => ({ id: p.id, cantidad: p.cantidad })),

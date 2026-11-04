@@ -1,6 +1,8 @@
 import React from 'react';
 import Acordeon from '../components/Acordeon.jsx';
 import PanelUnidades from './PanelUnidades.jsx';
+import PanelUmbrales from './PanelUmbrales.jsx';
+import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
@@ -17,7 +19,9 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
   aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
-  almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null }) {
+  almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
+  umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {},
+  alRestablecerUmbrales = () => {} }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
@@ -96,7 +100,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       nota={vehiculos.length ? numero(vehiculos.length) : null}>
       <PanelUnidades vehiculos={vehiculos} rutas={rutas} averias={averiasDelInstante}
         seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante}
-        trayectos={trayectos} />
+        trayectos={trayectos} umbrales={umbrales} />
     </Acordeon>
 
     <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>
@@ -141,7 +145,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
                 <span>{almacen.id} <em>({almacen.ubicacion.x}, {almacen.ubicacion.y})</em></span>
                 <b>{almacen.ilimitado ? '∞' : `${numero(almacen.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`}</b>
               </div>
-              <div className="bar"><i className={porcentaje < 20 ? 'bajo' : porcentaje < 60 ? 'medio' : ''}
+              <div className="bar"><i className={porcentaje < umbrales.stock.critico ? 'bajo'
+                : porcentaje < umbrales.stock.advertencia ? 'medio' : ''}
                 style={{ width: `${porcentaje}%` }} /></div>
             </button>;
           })}</div>
@@ -165,6 +170,11 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <div><dt>Replanificaciones por averías</dt><dd>{numero(ejecucion.colapso.replanificaciones)}</dd></div>
       </dl>
     </Acordeon>}
+
+    <Acordeon titulo="Umbrales del semáforo" abierto={false}>
+      <PanelUmbrales umbrales={umbrales} alGuardar={alGuardarUmbrales}
+        alRestablecer={alRestablecerUmbrales} />
+    </Acordeon>
 
     <Acordeon titulo="Resumen de la corrida" abierto={false}>
       {!ejecucion?.resumen ? <p className="vacio">El servidor publica el resumen al terminar la corrida o al detectar el colapso.</p>

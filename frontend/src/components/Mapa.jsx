@@ -10,7 +10,9 @@ import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
 import FondoUrbano from './FondoUrbano.jsx';
 import IconoUI from './IconoUI.jsx';
 import { estadoDeStock, ETIQUETAS_STOCK, NIVELES_STOCK } from '../stock.js';
-import { estadoDeCarga, estadoDeGrupo, ETIQUETAS_CARGA, NIVELES_CARGA } from '../carga.js';
+import { estadoDeCarga as nivelDeCarga, estadoDeGrupo as nivelDeGrupo, etiquetasDeCarga,
+  NIVELES_CARGA } from '../carga.js';
+import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { averiasEn, averiaDeGrupo, ETIQUETAS_AVERIA } from '../averias.js';
 import { ocupacionDeFlota, ocupacionDeAlmacenes } from '../indicadores.js';
 
@@ -51,7 +53,13 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
   pedidosDelInstante = [], averias = LISTA_VACIA,
   unidadSeleccionada = null, alSeleccionarUnidad = null,
-  almacenSeleccionado = null, alSeleccionarAlmacen = null }) {
+  almacenSeleccionado = null, alSeleccionarAlmacen = null,
+  umbrales = UMBRALES_POR_OMISION }) {
+  // Los cortes del semáforo salen de la configuración del sistema (B06).
+  const estadoDeCarga = vehiculo => nivelDeCarga(vehiculo, umbrales.carga);
+  const estadoDeGrupo = grupo => nivelDeGrupo(grupo, umbrales.carga);
+  const estadoDeStockCon = (stock, inicial) => estadoDeStock(stock, inicial, umbrales.stock);
+  const ETIQUETAS_CARGA = etiquetasDeCarga(umbrales.carga);
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
@@ -216,7 +224,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const enNivelCargaDeRuta = ruta => !nivelCarga
     || enNivelCarga(vehiculosTodos.find(v => v.id === ruta.vehiculoId));
   const enNivelStock = almacen => !nivelStock
-    || estadoDeStock(stockDe(almacen), almacen.stockInicial) === nivelStock;
+    || estadoDeStockCon(stockDe(almacen), almacen.stockInicial) === nivelStock;
 
   const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo) && enNivelCarga(v));
   const trazos = estadoPedido === 'NO_ASIGNADO' ? LISTA_VACIA
@@ -256,7 +264,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const averiasVigentes = useMemo(() => averiasEn(averias, instante), [averias, instante]);
   const inicialPorAlmacen = useMemo(() => new Map(almacenes
     .filter(a => a.stockInicial > 0).map(a => [a.id, a.stockInicial])), [mapaDatos]);
-  const flotaGlobal = ocupacionDeFlota(vehiculosTodos);
+  const flotaGlobal = ocupacionDeFlota(vehiculosTodos, umbrales.carga);
   // Con una corrida en marcha y sin corte publicado para el instante no se estima la ocupación:
   // el stock inicial declararía almacenes llenos que nadie ha medido. El caso sin corrida sí lo
   // usa, igual que los marcadores del mapa, porque ahí el inicial es el dato del caso.
@@ -264,7 +272,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     stockDelInstante ? inventario?.almacenes
       : ejecucion ? null : almacenes.map(almacen => ({
         id: almacen.id, disponible: almacen.stockInicial, ilimitado: almacen.tipo === 'CENTRAL' })),
-    inicialPorAlmacen);
+    inicialPorAlmacen, umbrales.stock);
 
   const finalizada = ejecucion && esFinal(ejecucion.estado);
   const hayReproduccion = fotogramas.length > 0 || enVivo;
@@ -390,7 +398,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   function fichaDeAlmacen(almacen) {
     const stock = stockDe(almacen);
     const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
-    const estado = estadoDeStock(stock, almacen.stockInicial);
+    const estado = estadoDeStockCon(stock, almacen.stockInicial);
     const nodo = `Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`;
     const lineas = [nodo, ETIQUETAS_STOCK[estado]];
     if (stock?.ilimitado) lineas.push('Stock ilimitadas');
@@ -573,7 +581,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         {/* Resalte del almacén elegido, en el mapa o en la lista de inventario (F05). */}
         {activo && <circle className="almacen-halo" r="24" />}
         <DibujoAlmacen tipo={almacen.tipo} />
-        <circle className={`mapa-stock mapa-stock-${estadoDeStock(stockDe(almacen), almacen.stockInicial)}`}
+        <circle className={`mapa-stock mapa-stock-${estadoDeStockCon(stockDe(almacen), almacen.stockInicial)}`}
           cx={almacen.tipo === 'CENTRAL' ? 17.5 : 15} cy={almacen.tipo === 'CENTRAL' ? -17.5 : -15}
           r="4.5" pointerEvents="none" />
       </g>;

@@ -1,4 +1,5 @@
 import { aMs } from './reloj.js';
+import { UMBRALES_POR_OMISION } from './umbrales.js';
 
 // El último corte observado, sin mostrar el inventario de un instante futuro.
 export function inventarioEn(fotogramas, inventarioActual, instante) {
@@ -13,15 +14,16 @@ export function inventarioEn(fotogramas, inventarioActual, instante) {
   return ultimo;
 }
 
-// Los mismos cortes visuales que usa la barra de inventario del panel derecho.
-export function estadoDeStock(stock, inicial) {
+// Los mismos cortes visuales que usa la barra de inventario del panel derecho, y los mismos
+// que la configuración del sistema permite ajustar (B06).
+export function estadoDeStock(stock, inicial, umbrales = UMBRALES_POR_OMISION.stock) {
   if (stock?.ilimitado) return 'suficiente';
   if (!Number.isFinite(stock?.disponible) || stock.disponible < 0) return 'sin-datos';
   if (stock.disponible === 0) return 'vacio';
   if (!Number.isFinite(inicial) || inicial <= 0) return 'sin-datos';
   const porcentaje = Math.round((stock.disponible / inicial) * 100);
-  if (porcentaje < 20) return 'critico';
-  if (porcentaje < 60) return 'advertencia';
+  if (porcentaje < umbrales.critico) return 'critico';
+  if (porcentaje < umbrales.advertencia) return 'advertencia';
   return 'suficiente';
 }
 

@@ -312,6 +312,15 @@ final class EjecucionesService {
         return ejecucion.vista;
     }
 
+    RendimientoVista rendimiento(UUID id) {
+        Ejecucion ejecucion = obtener(id);
+        synchronized (ejecucion) {
+            var visibles = ejecucion.mediciones.stream().filter(m ->
+                    !m.instante().isAfter(ejecucion.vista.reloj())).toList();
+            return RendimientoVista.de(id, ejecucion.inicioRealMs, ejecucion.finRealMs, visibles);
+        }
+    }
+
     private void correr(Ejecucion ejecucion, CrearEjecucionRequest request, int dias,
                         DatosFuente.DatosEntrada entrada) {
         try {
@@ -331,11 +340,16 @@ final class EjecucionesService {
                     .construir();
 
             List<Vehiculo> flota = datos.flota();
+            List<Almacen> almacenesBase = datos.almacenes();
+            Map<String, Almacen> origenes = new LinkedHashMap<>();
+            for (Vehiculo v : flota) almacenesBase.stream()
+                    .filter(a -> a.getUbicacion().equals(v.getUbicacion())).findFirst()
+                    .ifPresent(a -> origenes.put(v.getId(), a));
             ejecucion.inicioRealMs = reloj.ahoraMs();
             registrarFotograma(ejecucion, request.inicio(),
                     flota.stream().map(Vistas::vehiculo).toList(), ejecucion.inventario);
             Simulador simulador = new Simulador(planificador, ruteo,
-                    datos.almacenes(), parametros, Duration.ofMinutes(30),
+                    almacenesBase, parametros, Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
@@ -351,9 +365,10 @@ final class EjecucionesService {
                                             Solucion plan, MedicionDePlanificacion medicion,
                                             AvanceDeLaOperacion avance) {
                         verificarCancelacion(ejecucion);
+                        synchronized (ejecucion) { ejecucion.mediciones.add(medicion); }
                         Ventana ventana = ejecucion.ventanaEnCurso;
                         ventana.relojPlan = reloj;
-                        ventana.rutas = plan.getRutas().stream().map(Vistas::ruta).toList();
+                        ventana.rutas = Vistas.rutas(plan, reloj, evaluador);
                         ventana.avance = Vistas.avance(avance, medicion);
                         ventana.noAsignados = Vistas.pedidos(plan.getPedidosNoAsignados(),
                                 "NO_ASIGNADO", "SIN_RUTA_FACTIBLE");
@@ -377,7 +392,27 @@ final class EjecucionesService {
                     public void alAvanzar(LocalDateTime reloj, List<Vehiculo> vehiculos) {
                         Ventana ventana = ejecucion.ventanaEnCurso;
                         if (ventana.desde == null) ventana.desde = ejecucion.ventanaHasta;
-                        List<VehiculoVista> posiciones = vehiculos.stream().map(Vistas::vehiculo).toList();
+                        for (TrayectoVista trayecto : ventana.trayectosIteracion) {
+                            for (var paso : trayecto.pasos()) {
+                                if (!paso.hito().equals("CARGA") || paso.instante().isAfter(reloj)) continue;
+                                almacenesBase.stream().filter(a ->
+                                        Vistas.coordenada(a.getUbicacion()).equals(paso.ubicacion()))
+                                        .findFirst().ifPresent(a -> origenes.put(trayecto.vehiculoId(), a));
+                            }
+                        }
+                        List<VehiculoVista> posiciones = vehiculos.stream().map(v -> {
+                            var origen = origenes.get(v.getId());
+                            Double minutos = null;
+                            if (origen != null && v.getEstado() != EstadoVehiculo.AVERIADO
+                                    && v.getEstado() != EstadoVehiculo.EN_MANTENIMIENTO) {
+                                double km = ruteo.calcularKm(v.getUbicacion(), origen.getUbicacion(), reloj, v.getVelocidadKmH());
+                                if (Double.isFinite(km)) minutos = (double) Duration.between(reloj,
+                                        com.paqrap.modelo.Turnos.avanzar(reloj, km / v.getVelocidadKmH())).toMillis() / 60000;
+                            }
+                            var base = Vistas.vehiculo(v);
+                            return new VehiculoVista(base.id(), base.tipo(), base.ubicacion(), base.estado(),
+                                    base.capacidad(), base.cargaAbordo(), origen == null ? null : origen.getId(), minutos);
+                        }).toList();
                         if (ventana.relojPlan != null) {
                             ventana.planes.add(new PlanVista(-1, ventana.relojPlan, ventana.rutas,
                                     reloj, ventana.trayectosIteracion, ventana.noAsignados));
@@ -465,9 +500,18 @@ final class EjecucionesService {
                 posicionesFinales = ultimo == null ? anterior.vehiculos() : ultimo.vehiculos();
             }
             ejecucion.finRealMs = reloj.ahoraMs();
+            int productosEntregados = resumen.entregas().stream()
+                    .mapToInt(e -> e.pedido().getCantidad()).sum();
+            int productosVencidos = resumen.vencidos().stream().mapToInt(Pedido::getCantidad).sum();
+            var finalAvance = new AvanceVista(resumen.pedidosEntregados(), productosEntregados,
+                    resumen.vencidos().size(), productosVencidos,
+                    posicionesFinales.stream().mapToInt(VehiculoVista::cargaAbordo).sum(),
+                    resumen.pedidosPendientes(), resumen.medicionesDePlanificacion().isEmpty()
+                        ? 0 : resumen.medicionesDePlanificacion().get(
+                            resumen.medicionesDePlanificacion().size() - 1).milisegundos());
             EjecucionVista finalVista = new EjecucionVista(anterior.id(), finalEstado,
                     anterior.escenario(), anterior.algoritmo(), anterior.inicio(), resumen.fin(),
-                    LocalDateTime.now(), anterior.avance(), posicionesFinales,
+                    LocalDateTime.now(), finalAvance, posicionesFinales,
                     anterior.rutas(), anterior.noAsignados(), Vistas.resumen(resumen), null, null,
                     false, ritmoVista(ejecucion), anterior.trayectos(), colapso);
             actualizar(ejecucion, finalVista, resumen.huboColapso() ? "COLAPSO" : "TERMINADA");
@@ -758,6 +802,7 @@ final class EjecucionesService {
         volatile InventarioVista inventario;
         volatile Ventana ventanaEnCurso = new Ventana();
         final List<AveriaVista> averias = new ArrayList<>();
+        final List<MedicionDePlanificacion> mediciones = new ArrayList<>();
         final ArrayDeque<FotogramaVista> fotogramas = new ArrayDeque<>();
         final ArrayDeque<PlanVista> planes = new ArrayDeque<>();
         final ArrayDeque<EventoOperacionVista> eventos = new ArrayDeque<>();

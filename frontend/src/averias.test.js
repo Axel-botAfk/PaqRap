@@ -4,6 +4,12 @@ import { averiasEn, averiaDeGrupo, PERMANENCIA_HORAS } from './averias.js';
 
 const averia = (unidadId, tipo, instante) => ({ unidadId, tipo, instante, estado: 'APLICADA' });
 
+test('una avería rechazada o aún registrada no genera marcador de incidencia aplicada', () => {
+  const a = averia('TA01', 'TIPO_2', '2026-09-01T08:00:00');
+  assert.equal(averiasEn([{ ...a, estado: 'NO_APLICADA' }], '2026-09-01T09:00:00').size, 0);
+  assert.equal(averiasEn([{ ...a, estado: 'REGISTRADA' }], '2026-09-01T09:00:00').size, 0);
+});
+
 test('el tipo 1 permanece dos horas en el lugar y los tipos 2 y 3 cuatro', () => {
   assert.equal(PERMANENCIA_HORAS.TIPO_1, 2);
   assert.equal(PERMANENCIA_HORAS.TIPO_2, 4);

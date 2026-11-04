@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { filasDeAlmacenes } from './almacenes.js';
 
+test('el porcentaje usa capacidad publicada aunque el stock inicial sea distinto', () => {
+  const filas = filasDeAlmacenes({ almacenes: [{ id: 'A', disponible: 250, capacidad: 1000 }] },
+    [{ id: 'A', stockInicial: 500, ubicacion: { x: 1, y: 1 } }], []);
+  assert.equal(filas[0].porcentaje, 25);
+  assert.equal(filas[0].capacidad, 1000);
+});
+
 const delMapa = [
   { id: 'ALM-CENTRAL', tipo: 'CENTRAL', ubicacion: { x: 35, y: 25 }, stockInicial: 0 },
   { id: 'ALM-NOR', tipo: 'INTERMEDIO', ubicacion: { x: 12, y: 8 }, stockInicial: 1000 },

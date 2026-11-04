@@ -3,6 +3,7 @@ import Acordeon from '../components/Acordeon.jsx';
 import PanelUnidades from './PanelUnidades.jsx';
 import PanelUmbrales from './PanelUmbrales.jsx';
 import PanelAlmacenes from './PanelAlmacenes.jsx';
+import PanelRendimiento from './PanelRendimiento.jsx';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
@@ -21,7 +22,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
   almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
-  umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {},
+  umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
   alRestablecerUmbrales = () => {}, estadosPedido = null }) {
   const simulacion = vista === 'simulacion';
   const { escenario, detalle, dia, hora, horizonte, limites,
@@ -128,6 +129,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
     <Acordeon titulo="Inventario de almacenes" abierto={false}
       nota={mapaDatos?.almacenes?.length ? numero(mapaDatos.almacenes.length) : null}>
       <PanelAlmacenes inventario={inventario} mapaDatos={mapaDatos} rutas={rutas}
+        planes={planes} instante={instante}
         estadosPedido={estadosPedido} seleccionado={almacenSeleccionado}
         alSeleccionar={alSeleccionarAlmacen} umbrales={umbrales} ejecucion={ejecucion} />
     </Acordeon>
@@ -154,6 +156,9 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         alRestablecer={alRestablecerUmbrales} />
     </Acordeon>
 
+    <Acordeon titulo="Rendimiento del planificador" abierto={false}>
+      <PanelRendimiento key={ejecucion?.id || 'sin-corrida'} id={ejecucion?.id} />
+    </Acordeon>
     <Acordeon titulo="Resumen de la corrida" abierto={false}>
       {!ejecucion?.resumen ? <p className="vacio">El servidor publica el resumen al terminar la corrida o al detectar el colapso.</p>
         : <dl>

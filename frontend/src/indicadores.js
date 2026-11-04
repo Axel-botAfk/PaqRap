@@ -32,10 +32,11 @@ export function ocupacionDeAlmacenes(almacenes, inicialPorId, umbrales = undefin
   const ilimitados = lista.filter(almacen => almacen?.ilimitado).length;
   const medibles = lista.filter(almacen => !almacen?.ilimitado
     && Number.isFinite(almacen?.disponible) && almacen.disponible >= 0
-    && Number.isFinite(inicialPorId?.get(almacen.id)) && inicialPorId.get(almacen.id) > 0);
+    && Number.isFinite(almacen.capacidad ?? inicialPorId?.get(almacen.id))
+    && (almacen.capacidad ?? inicialPorId.get(almacen.id)) > 0);
   if (!medibles.length) return sinDatos({ ilimitados });
   const carga = medibles.reduce((total, almacen) => total + almacen.disponible, 0);
-  const capacidad = medibles.reduce((total, almacen) => total + inicialPorId.get(almacen.id), 0);
+  const capacidad = medibles.reduce((total, almacen) => total + (almacen.capacidad ?? inicialPorId.get(almacen.id)), 0);
   return { carga, capacidad, porcentaje: Math.round((carga / capacidad) * 100),
     estado: estadoDeStock({ disponible: carga }, capacidad, umbrales), unidades: medibles.length,
     ilimitados };

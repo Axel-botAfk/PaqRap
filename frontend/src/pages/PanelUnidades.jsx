@@ -21,14 +21,16 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
   const [abierta, setAbierta] = useState(null);
   const [alDestino, setAlDestino] = useState('');
   const [desdeSalida, setDesdeSalida] = useState('');
+  const [alOrigen, setAlOrigen] = useState('');
   const filaRef = useRef(new Map());
 
   const todas = filasDeUnidades(vehiculos, rutas, trayectos, reloj, umbrales.carga);
   const limite = valor => (valor === '' ? null : Number(valor));
   const filas = ordenarUnidades(filtrarUnidades(todas, {
-    minutosAlDestino: limite(alDestino), minutosDesdeSalida: limite(desdeSalida)
+    minutosAlDestino: limite(alDestino), minutosDesdeSalida: limite(desdeSalida),
+    minutosAlOrigen: limite(alOrigen)
   }), orden);
-  const hayBusqueda = alDestino !== '' || desdeSalida !== '';
+  const hayBusqueda = alDestino !== '' || desdeSalida !== '' || alOrigen !== '';
 
   // Al llegar la selección desde el mapa, traer la fila a la vista sin mover el resto del riel.
   useEffect(() => {
@@ -56,14 +58,17 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
       <div className="field"><label htmlFor="u-origen">Desde la salida ≤ (min)</label>
         <input id="u-origen" className="input" type="number" min="0" step="5" value={desdeSalida}
           placeholder="—" onChange={e => setDesdeSalida(e.target.value)} /></div>
+      <div className="field"><label htmlFor="u-retorno">Al almacén de origen ≤ (min estimados)</label>
+        <input id="u-retorno" className="input" type="number" min="0" value={alOrigen}
+          placeholder="—" onChange={e => setAlOrigen(e.target.value)} /></div>
       {hayBusqueda && <button type="button" className="unidades-limpiar"
-        onClick={() => { setAlDestino(''); setDesdeSalida(''); }}>Limpiar búsqueda</button>}
+        onClick={() => { setAlDestino(''); setDesdeSalida(''); setAlOrigen(''); }}>Limpiar búsqueda</button>}
     </div>
 
     {!filas.length && <p className="vacio">Ninguna unidad cumple la búsqueda en este instante.</p>}
 
     <div className="lista-unidades">{filas.map(fila => {
-      const averia = averias?.get(fila.id);
+      const averia = fila.estado === 'AVERIADO' ? averias?.get(fila.id) : null;
       const activa = seleccionada === fila.id;
       return <div key={fila.id} className={`ut ${activa ? 'ut-activa' : ''}`}
         ref={nodo => { nodo ? filaRef.current.set(fila.id, nodo) : filaRef.current.delete(fila.id); }}>
@@ -88,6 +93,8 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
             <span className="sub">Llegada {hora(fila.llegada)}{Number.isFinite(fila.minutosAlDestino)
               ? ` · en ${numero(fila.minutosAlDestino)} min` : ''}</span>
           </span>}
+          {fila.origenId && <span className="sub">Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
+            ? 'sin estimación factible' : `${numero(Math.ceil(fila.minutosAlOrigen))} min estimados`}</span>}
           {averia && <span className={`ut-averia mapa-averia-${averia.tipo.toLowerCase()}`}>
             {ETIQUETAS_AVERIA[averia.tipo]}
           </span>}
@@ -99,12 +106,14 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
           </button>
           {abierta === fila.id && <ul className="ut-lista-envios">
             {fila.pedidos.map(pedido => <li key={pedido.id}>
-              <span>{pedido.id}</span><b>{numero(pedido.cantidad)} producto(s)</b>
+              <span>{pedido.id} · {pedido.ruta}</span><b>{numero(pedido.cantidad)} × producto P</b>
             </li>)}
           </ul>}
         </>}
       </div>;
     })}</div>
-    <p className="nota">{numero(filas.length)}{hayBusqueda ? ` de ${numero(todas.length)}` : ''} unidad(es) del último corte publicado{reloj ? `, a las ${fecha(reloj)}` : ''}. Los horarios salen del trayecto publicado para la ventana.</p>
+    <p className="nota">{numero(filas.length)}{hayBusqueda ? ` de ${numero(todas.length)}` : ''} unidad(es) del corte{reloj ? `, a las ${fecha(reloj)}` : ''}.
+      Retorno: consulta del motor desde ese nodo al último almacén de carga con bloqueos y turnos;
+      no ordena regresar ni sustituye el próximo destino. Sin origen o camino conocido no se estima.</p>
   </>;
 }

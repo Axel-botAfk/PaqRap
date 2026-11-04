@@ -4,6 +4,7 @@ import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
   segmentosEnInstante, rutaFinalizadaEn, orientacionEnTrayecto, orientacionEnFotogramas,
   giroMasCorto } from '../mapa.js';
 import { aMs } from '../reloj.js';
+import { bloqueosEn } from '../bloqueos.js';
 import { esFinal } from '../services/api.js';
 import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from '../formato.js';
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
@@ -191,7 +192,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const stockDe = almacen => !ejecucion
     ? almacen.tipo === 'CENTRAL' ? { ilimitado: true } : { disponible: almacen.stockInicial }
     : stockDelInstante ? stockPorId.get(almacen.id) : null;
-  const bloqueosActivos = (mapaDatos?.bloqueos || []).filter(b => instante && b.inicio <= instante && b.fin > instante);
+  const bloqueosActivos = bloqueosEn(mapaDatos?.bloqueos, instante);
   const claveBloqueos = bloqueosActivos.map(b => `${b.inicio}/${b.fin}`).join('|');
   const bloqueados = useMemo(() => nodosBloqueados(bloqueosActivos), [mapaDatos, claveBloqueos]);
   // En vivo cada unidad sigue los hitos que el simulador informó para la ventana; las que no
@@ -397,13 +398,13 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
   function fichaDeAlmacen(almacen) {
     const stock = stockDe(almacen);
-    const inicial = almacen.stockInicial > 0 ? almacen.stockInicial : null;
+    const inicial = stock?.capacidad ?? (almacen.stockInicial > 0 ? almacen.stockInicial : null);
     const estado = estadoDeStockCon(stock, almacen.stockInicial);
     const nodo = `Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`;
     const lineas = [nodo, ETIQUETAS_STOCK[estado]];
-    if (stock?.ilimitado) lineas.push('Stock ilimitadas');
+    if (stock?.ilimitado) lineas.push('Stock ilimitado');
     else if (stock && Number.isFinite(stock.disponible)) {
-      lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}`);
+      lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} ${stock.capacidad ? 'de capacidad' : 'iniciales'}` : ''}`);
       if (inventario?.reloj) lineas.push(`Último corte disponible: ${fecha(inventario.reloj)}`);
     }
     return {
@@ -411,7 +412,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       lineas, nodo, estado, estadoTexto: ETIQUETAS_STOCK[estado],
       stockActual: stock?.ilimitado ? 'Ilimitado'
         : Number.isFinite(stock?.disponible)
-          ? `${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} iniciales` : ''}` : '—',
+          ? `${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} ${stock.capacidad ? 'de capacidad' : 'iniciales'}` : ''}` : '—',
       ultimoCorte: inventario?.reloj && stock ? fecha(inventario.reloj) : '—'
     };
   }

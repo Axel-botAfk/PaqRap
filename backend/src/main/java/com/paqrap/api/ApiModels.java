@@ -54,7 +54,12 @@ public final class ApiModels {
         }
     }
     public record StockAlmacenVista(String id, String tipo, Coordenada ubicacion,
-                                   Integer disponible, boolean ilimitado) { }
+                                   Integer disponible, boolean ilimitado, Integer capacidad) {
+        public StockAlmacenVista(String id, String tipo, Coordenada ubicacion,
+                                 Integer disponible, boolean ilimitado) {
+            this(id, tipo, ubicacion, disponible, ilimitado, null);
+        }
+    }
     public record InventarioVista(LocalDateTime reloj, List<StockAlmacenVista> almacenes) { }
 
     public record Coordenada(int x, int y) { }
@@ -67,8 +72,13 @@ public final class ApiModels {
 
     public record VehiculoVista(
             String id, String tipo, Coordenada ubicacion, String estado, int capacidad,
-            int cargaAbordo
-    ) { }
+            int cargaAbordo, String origenId, Double minutosAlOrigen
+    ) {
+        public VehiculoVista(String id, String tipo, Coordenada ubicacion, String estado,
+                             int capacidad, int cargaAbordo) {
+            this(id, tipo, ubicacion, estado, capacidad, cargaAbordo, null, null);
+        }
+    }
 
     /** Posición observada después de ejecutar un salto del simulador. */
     public record FotogramaVista(long indice, LocalDateTime reloj,
@@ -105,8 +115,15 @@ public final class ApiModels {
     public record RutaVista(
             String id, String vehiculoId, String tipoVehiculo, String almacenId,
             Coordenada origen, int carga, double distanciaKm, double costo,
-            List<PedidoVista> paradas
-    ) { }
+            List<PedidoVista> paradas, LocalDateTime salidaPrevista,
+            java.util.Map<String, LocalDateTime> llegadasPrevistas
+    ) {
+        public RutaVista(String id, String vehiculoId, String tipoVehiculo, String almacenId,
+                Coordenada origen, int carga, double distanciaKm, double costo, List<PedidoVista> paradas) {
+            this(id, vehiculoId, tipoVehiculo, almacenId, origen, carga, distanciaKm, costo,
+                    paradas, null, java.util.Map.of());
+        }
+    }
 
     public record AvanceVista(
             int pedidosEntregados, int productosEntregados, int pedidosVencidos,

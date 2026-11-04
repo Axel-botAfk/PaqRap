@@ -20,8 +20,9 @@ export function estadoDeStock(stock, inicial, umbrales = UMBRALES_POR_OMISION.st
   if (stock?.ilimitado) return 'suficiente';
   if (!Number.isFinite(stock?.disponible) || stock.disponible < 0) return 'sin-datos';
   if (stock.disponible === 0) return 'vacio';
-  if (!Number.isFinite(inicial) || inicial <= 0) return 'sin-datos';
-  const porcentaje = Math.round((stock.disponible / inicial) * 100);
+  const capacidad = stock.capacidad ?? inicial;
+  if (!Number.isFinite(capacidad) || capacidad <= 0) return 'sin-datos';
+  const porcentaje = (stock.disponible / capacidad) * 100;
   if (porcentaje < umbrales.critico) return 'critico';
   if (porcentaje < umbrales.advertencia) return 'advertencia';
   return 'suficiente';

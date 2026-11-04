@@ -12,6 +12,17 @@ const rutas = [
   { id: 'R-2', vehiculoId: 'TA02', paradas: [{ id: 'P-3', cantidad: 4 }] }
 ];
 
+test('una unidad con dos viajes conserva envíos de ambos y horarios del plan', () => {
+  const r = [...rutas, { id: 'R-3', vehiculoId: 'TA01',
+    salidaPrevista: '2026-09-01T11:00:00', llegadasPrevistas: { 'P-9': '2026-09-01T12:00:00' },
+    paradas: [{ id: 'P-9', cantidad: 2 }] }];
+  const fila = filasDeUnidades(flota, r, [], '2026-09-01T10:00:00').find(v => v.id === 'TA01');
+  assert.equal(fila.pedidos.length, 3);
+  assert.equal(fila.productos, 11);
+  assert.equal(fila.minutosAlDestino, 120);
+  assert.equal(fila.minutosDesdeSalida, null);
+});
+
 test('cada fila trae ocupación en número y en porcentaje', () => {
   const filas = filasDeUnidades(flota, rutas);
   const ta01 = filas.find(f => f.id === 'TA01');
@@ -140,4 +151,10 @@ test('sin criterios de búsqueda la lista no se recorta', () => {
   const filas = filasDeUnidades(flota, rutas, trayectos, INSTANTE);
   assert.equal(filtrarUnidades(filas, {}).length, filas.length);
   assert.equal(filtrarUnidades(filas).length, filas.length);
+});
+
+test('la búsqueda al origen utiliza los minutos publicados y no el tiempo desde salida', () => {
+  const filas = filasDeUnidades([{ ...flota[0], origenId: 'A', minutosAlOrigen: 12 }, flota[1]], []);
+  assert.deepEqual(filtrarUnidades(filas, { minutosAlOrigen: 12 }).map(v => v.id), ['TA02']);
+  assert.equal(filtrarUnidades(filas, { minutosAlOrigen: 11 }).length, 0);
 });

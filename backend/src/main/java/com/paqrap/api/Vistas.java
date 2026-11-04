@@ -41,7 +41,8 @@ final class Vistas {
         return new StockAlmacenVista(almacen.getId(), almacen.getTipo().name(),
                 coordenada(almacen.getUbicacion()),
                 almacen.esInventarioInfinito() ? null : almacen.getStockInicial(),
-                almacen.esInventarioInfinito());
+                almacen.esInventarioInfinito(), almacen.esInventarioInfinito()
+                        ? null : Almacen.CAPACIDAD_MAXIMA_INTERMEDIO);
     }
 
     static BloqueoVista bloqueo(Bloqueo bloqueo) {
@@ -77,6 +78,26 @@ final class Vistas {
         return new AvanceVista(avance.pedidosEntregados(), avance.productosEntregados(),
                 avance.pedidosVencidos(), avance.productosVencidos(),
                 avance.productosABordo(), medicion.pedidosEnCola(), medicion.milisegundos());
+    }
+
+    /** Horarios del mismo evaluador, respetando programas de varios viajes por unidad. */
+    static List<RutaVista> rutas(com.paqrap.modelo.Solucion plan,
+            java.time.LocalDateTime reloj, com.paqrap.planificador.Evaluador evaluador) {
+        var viajes = plan.getRutas();
+        var vistas = new java.util.ArrayList<RutaVista>(viajes.stream().map(Vistas::ruta).toList());
+        for (var programa : com.paqrap.planificador.Evaluador.indicesPorVehiculo(viajes).values()) {
+            var rutas = programa.stream().map(viajes::get).toList();
+            var medidas = evaluador.evaluarPrograma(rutas.get(0).getVehiculo(), rutas, reloj);
+            for (int i = 0; i < programa.size(); i++) {
+                var medida = medidas.get(i);
+                if (!medida.factible()) continue;
+                var v = vistas.get(programa.get(i));
+                vistas.set(programa.get(i), new RutaVista(v.id(), v.vehiculoId(), v.tipoVehiculo(),
+                        v.almacenId(), v.origen(), v.carga(), v.distanciaKm(), v.costo(), v.paradas(),
+                        medida.horaCarga(), java.util.Map.copyOf(medida.horasLlegada())));
+            }
+        }
+        return List.copyOf(vistas);
     }
 
     static ResumenVista resumen(ResumenSimulacion resumen) {

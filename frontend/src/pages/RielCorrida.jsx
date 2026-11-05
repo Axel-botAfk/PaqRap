@@ -4,6 +4,8 @@ import PanelUnidades from './PanelUnidades.jsx';
 import PanelUmbrales from './PanelUmbrales.jsx';
 import PanelAlmacenes from './PanelAlmacenes.jsx';
 import PanelRendimiento from './PanelRendimiento.jsx';
+import ControlesCorrida from '../components/ControlesCorrida.jsx';
+import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
@@ -25,6 +27,7 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
   alRestablecerUmbrales = () => {}, estadosPedido = null }) {
   const simulacion = vista === 'simulacion';
+  const activa = controlesDeCorrida(ejecucion?.estado).activa;
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
@@ -35,12 +38,14 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   }), { km: 0, costo: 0 });
 
   return <>
+    <ControlesCorrida key={ejecucion?.id || 'sin-corrida'} ejecucion={ejecucion} ocupado={ocupado}
+      alControlar={cfg.alControlar} progreso={progreso} />
     <Acordeon titulo={simulacion ? 'Tipo de simulación' : 'Configuración de la corrida'}>
       <form onSubmit={cfg.alIniciar}>
         {simulacion && <div className="radios">
           {ESCENARIOS_SIMULACION.map(([valor, titulo, ayuda]) => <label key={valor}>
             <input type="radio" name="escenario" value={valor} checked={escenario === valor}
-              disabled={corriendo} onChange={() => cfg.setEscenario(valor)} />
+              disabled={activa || ocupado} onChange={() => cfg.setEscenario(valor)} />
             <span><b>{titulo}</b><small>{ayuda}</small></span>
           </label>)}
         </div>}
@@ -49,10 +54,12 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <div className="row">
           <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
             <input id="c-dia" className="input" name="dia" type="date" value={dia} required
+              disabled={activa || ocupado}
               min={limites.desde} max={limites.hasta}
               onChange={e => cfg.setDia(e.target.value)} /></div>
           <div className="field"><label htmlFor="c-hora">Hora inicial</label>
             <input id="c-hora" className="input" name="hora" type="time" value={hora} required
+              disabled={activa || ocupado}
               onChange={e => cfg.setHora(e.target.value)} /></div>
         </div>
         {detalle
@@ -61,18 +68,18 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
 
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
+            disabled={activa || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
 
         <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
 
-        <div className="acciones">
+        {!activa && <div className="acciones">
           <button className="btn btn-primary" type="submit" disabled={ocupado || !limites.desde}>
-            {ocupado ? 'Procesando…' : '▶ Iniciar'}</button>
-        </div>
+            {ocupado ? 'Procesando…' : ejecucion ? '▶ Iniciar nueva corrida' : '▶ Iniciar'}</button>
+        </div>}
 
         {ejecucion?.ritmo && <>
-          <div className="bar"><i style={{ width: `${Math.round(progreso * 100)}%` }} /></div>
-          <p className="nota">Ventana {numero(ejecucion.ritmo.ventana)} de {numero(ejecucion.ritmo.ventanas)} · {textoRitmo(ejecucion.ritmo)}</p>
+          <p className="nota">{textoRitmo(ejecucion.ritmo)}</p>
         </>}
         {aviso && <p className={`nota nota-aviso ${aviso === 'Conexión en vivo activa.' ? 'nota-conexion-activa' : ''}`}
           role="status">{aviso}</p>}

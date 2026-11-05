@@ -12,6 +12,7 @@ import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
 import Riel from './components/Riel.jsx';
 import Mapa from './components/Mapa.jsx';
 import RielCorrida from './pages/RielCorrida.jsx';
+import { controlesDeCorrida } from './controlesCorrida.js';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
 import { inventarioEn } from './stock.js';
@@ -70,6 +71,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const accionCorrida = useRef(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
   const [fotogramas, setFotogramas] = useState([]);
   const cantidadFotogramas = useRef(0);
@@ -495,6 +497,7 @@ export default function App() {
 
   async function iniciar(evento) {
     evento.preventDefault();
+    if (ocupado || accionCorrida.current || controlesDeCorrida(ejecucion?.estado).activa) return;
     setError('');
     const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
     const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
@@ -542,6 +545,26 @@ export default function App() {
     finally { setOcupado(false); }
   }
 
+  async function controlarCorrida(accion) {
+    const corridaId = idActual.current;
+    if (!corridaId || ocupado || accionCorrida.current
+      || !controlesDeCorrida(ejecucion?.estado)[accion]) return;
+    accionCorrida.current = true;
+    setOcupado(true);
+    setError('');
+    try {
+      const resultado = await ({ pausar: api.pausar, reanudar: api.reanudar, cancelar: api.cancelar })[accion](corridaId);
+      if (idActual.current !== corridaId) return;
+      setEjecucion(resultado);
+      if (accion === 'reanudar' && resultado.estado === 'EN_CURSO') setEnVivo(true);
+      setAviso(resultado.estado === 'PAUSADA' ? 'Corrida pausada para todos los dispositivos.'
+        : resultado.estado === 'CANCELADA' ? 'Corrida detenida. Puedes iniciar una nueva.'
+          : resultado.estado === 'EN_CURSO' ? 'Corrida reanudada.' : 'La corrida ya finalizó.');
+    } catch (e) {
+      if (idActual.current === corridaId) setError(e.message);
+    } finally { accionCorrida.current = false; setOcupado(false); }
+  }
+
   // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
   // cifras de la corrida vive en el riel y en el mapa.
   const numeroMetrica = valor => numero(valor ?? 0);
@@ -568,7 +591,8 @@ export default function App() {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
-    flota: flotaParaAveria, alIniciar: iniciar, alRegistrarAveria: registrarAveria
+    flota: flotaParaAveria, alIniciar: iniciar, alRegistrarAveria: registrarAveria,
+    alControlar: controlarCorrida
   };
 
   const enMapa = ES_MAPA(vista);

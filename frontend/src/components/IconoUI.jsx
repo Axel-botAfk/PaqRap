@@ -1,6 +1,9 @@
 import React from 'react';
 
 const trazos = {
+  pausa: <><path d="M8 5v14M16 5v14" strokeWidth="3" /></>,
+  reproducir: <path d="m8 4 12 8-12 8Z" fill="currentColor" stroke="none" />,
+  detener: <rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none" />,
   pedidos: <><path d="M7 3h8l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M15 3v6h5M9 13h7M9 17h7"/></>,
   averias: <path d="M21 7.5a6 6 0 0 1-7.8 5.7L7 19.4a2 2 0 0 1-2.8-2.8l6.2-6.2A6 6 0 0 1 16.1 2L13 5.1l.9 3 3 .9L21 5Z"/>,
   calendario: <><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18M8 15h3"/></>,

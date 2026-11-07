@@ -155,6 +155,23 @@ final class EjecucionesService {
         }
     }
 
+    List<ApiModels.CorridaActivaVista> activas(Escenario escenario) {
+        return ejecuciones.values().stream().map(ejecucion -> {
+            synchronized (ejecucion) {
+                EjecucionVista vista = ejecucion.vista;
+                if (vista.escenario() != escenario || (vista.estado() != Estado.PENDIENTE
+                        && vista.estado() != Estado.EN_CURSO && vista.estado() != Estado.PAUSADA)) {
+                    return null;
+                }
+                return new ApiModels.CorridaActivaVista(vista.id(), vista.estado(),
+                        vista.escenario(), vista.inicio(), vista.reloj());
+            }
+        }).filter(java.util.Objects::nonNull)
+                .sorted(java.util.Comparator.comparing(ApiModels.CorridaActivaVista::inicio)
+                        .thenComparing(ApiModels.CorridaActivaVista::id))
+                .toList();
+    }
+
     InventarioVista inventario(UUID id) {
         Ejecucion ejecucion = obtener(id);
         return ejecucion.inventario;

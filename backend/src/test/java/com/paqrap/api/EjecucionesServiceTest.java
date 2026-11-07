@@ -45,6 +45,8 @@ class EjecucionesServiceTest {
                 Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L)).id();
         var fin = esperar(id);
         assertEquals(Estado.TERMINADA, fin.estado());
+        assertTrue(servicio.activas(Escenario.PERIODO_5_DIAS).isEmpty(),
+                "una corrida terminada no aparece para conexión automática");
         // Con el ritmo por defecto, 5 días toman entre 30 y 60 minutos de reloj de pared.
         long transcurrido = reloj.ahoraMs() - arranque;
         assertTrue(transcurrido >= 30 * 60_000L && transcurrido <= 60 * 60_000L,
@@ -183,8 +185,11 @@ class EjecucionesServiceTest {
         UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
                 Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L, 20)).id();
         esperarEstado(id, Estado.EN_CURSO);
+        assertEquals(id, servicio.activas(Escenario.OPERACION_DIARIA).get(0).id());
+        assertTrue(servicio.activas(Escenario.PERIODO_5_DIAS).isEmpty());
         var pausada = servicio.pausar(id);
         assertEquals(Estado.PAUSADA, pausada.estado());
+        assertEquals(Estado.PAUSADA, servicio.activas(Escenario.OPERACION_DIARIA).get(0).estado());
         assertNotNull(pausada.ritmo().transcurridoAlPausarMs());
         Thread.sleep(150);
         int ventana = servicio.consultar(id).ritmo().ventana();
@@ -196,6 +201,7 @@ class EjecucionesServiceTest {
         assertThrows(ApiException.class, () -> servicio.reanudar(UUID.randomUUID()));
         assertEquals(Estado.CANCELADA, servicio.cancelar(id).estado());
         assertEquals(Estado.CANCELADA, esperar(id).estado());
+        assertTrue(servicio.activas(Escenario.OPERACION_DIARIA).isEmpty());
         assertThrows(ApiException.class, () -> servicio.pausar(id));
     }
 

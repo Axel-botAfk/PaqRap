@@ -26,6 +26,15 @@ class ApiControllerTest {
     }
 
     @Test
+    void listaActivasPorEscenarioSinCrearCorridas() throws Exception {
+        mvc.perform(get("/api/ejecuciones/activas").param("escenario", "OPERACION_DIARIA"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/ejecuciones/activas").param("escenario", "DESCONOCIDO"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void rechazaPeriodoConTraversal() throws Exception {
         mvc.perform(get("/api/datos/periodos/no-es-periodo"))
                 .andExpect(status().isBadRequest())

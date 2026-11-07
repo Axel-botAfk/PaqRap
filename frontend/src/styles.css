@@ -178,6 +178,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .trazo-final .trazo-recorrido { opacity: .22; }
 .trazo-resaltado .trazo-pendiente, .trazo-ruta:hover .trazo-pendiente, .trazo-ruta:focus-within .trazo-pendiente { stroke: var(--red); stroke-width: 4.2; opacity: 1; }
 .trazo-resaltado .trazo-recorrido, .trazo-ruta:hover .trazo-recorrido, .trazo-ruta:focus-within .trazo-recorrido { stroke: #71839c; stroke-width: 3.4; opacity: .85; }
+.trazo-envio-atenuado .trazo-visible { opacity: .18; }
+.trazo-envio-atenuado:hover .trazo-visible, .trazo-envio-atenuado:focus-within .trazo-visible { opacity: .82; }
+.trazo-ruta.trazo-envio-resaltado .trazo-pendiente { stroke: #2563eb; stroke-width: 4.1; opacity: 1; filter: drop-shadow(0 0 3px rgb(37 99 235 / 45%)); }
+.trazo-ruta.trazo-envio-resaltado .trazo-recorrido { stroke: #2563eb; stroke-width: 3.2; opacity: .8; filter: drop-shadow(0 0 2px rgb(37 99 235 / 35%)); }
 .trazo-interaccion { stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
 .trazo-interaccion:focus-visible { stroke: var(--red-200); outline: none; }
 
@@ -1220,6 +1224,30 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .alm-cabecera .almacen-linea span { display: inline-flex; align-items: center; gap: 6px; }
 .almacen-pie { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .almacen-pie .sub { font-size: 10.5px; color: var(--suave); }
+.almacenes .alm { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.almacenes .alm.alm-activo { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
+.almacenes .alm:last-child { border-bottom: 1px solid var(--line); }
+.alm-seleccion { display: grid; gap: 4px; margin: 9px 0; padding: 9px 10px; border: 1px solid #a9c7ff;
+  border-radius: 10px; background: #eff6ff; color: #173b82; font-size: 10.5px; line-height: 1.35; }
+.alm-seleccion button { justify-self: start; padding: 0; border: 0; background: transparent; color: #1d4ed8;
+  font: 700 10.5px Archivo; cursor: pointer; }
+.alm-pedidos { padding: 0 8px 8px; gap: 5px; }
+.alm-pedidos > .alm-pedido { display: block; min-width: 0; border: 1px solid var(--line);
+  border-radius: 9px; background: #fff; overflow: hidden; }
+.alm-pedido-cabecera { display: flex; align-items: stretch; }
+.alm-pedido-seleccionar, .alm-fraccion { width: 100%; min-width: 0; display: grid; gap: 2px;
+  padding: 7px 9px; border: 0; background: transparent; color: var(--navy); text-align: left; cursor: pointer; }
+.alm-pedido-seleccionar strong, .alm-fraccion strong { font: 800 11px Archivo; }
+.alm-pedido-seleccionar span, .alm-fraccion span { font-size: 10px; color: var(--suave); }
+.alm-pedido-seleccionar small, .alm-fraccion small { font-size: 9.5px; color: #4168a5; }
+.alm-pedido-expandir { flex: none; width: 30px; border: 0; background: transparent; color: var(--navy);
+  font-size: 16px; cursor: pointer; }
+.alm-fracciones { margin: 0; padding: 0 6px 6px 14px; list-style: none; display: grid; gap: 3px; }
+.alm-fracciones li { display: block; border-left: 2px solid #c8daf6; border-radius: 0 7px 7px 0; }
+.alm-envio-marcado { background: #eff6ff; box-shadow: inset 3px 0 0 #2563eb; }
+.alm-pedido-seleccionar:hover, .alm-fraccion:hover, .alm-pedido-expandir:hover { background: #f4f8ff; }
+.alm-seleccion button:focus-visible, .alm-pedido-seleccionar:focus-visible,
+.alm-pedido-expandir:focus-visible, .alm-fraccion:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
 :root .envio-original { padding: 12px 16px; border-bottom: 1px solid var(--line, #dce5ea); }
 :root .envio-original summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 :root .controles-corrida {
@@ -1238,6 +1266,12 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .btn.control-detener:hover:not(:disabled) { background: #fff0f2; border-color: #a51c30; }
 .control-progreso { display: block; width: 100%; height: 6px; margin: 8px 0; accent-color: #14254e; }
 .controles-corrida small { color: #59687a; font-size: 11px; }
+.corridas-activas { display: grid; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--line);
+  background: #fff; font-size: 11px; }
+.corridas-activas .row { grid-template-columns: minmax(0, 1fr) auto; }
+.corridas-activas .input { min-width: 0; }
+.corrida-nueva-enlace { border: 0; padding: 4px 0; background: transparent; color: #315ba4;
+  font: 600 11px Archivo; text-align: left; cursor: pointer; }
 .control-ayuda { color: #536276; font-size: 11px; line-height: 1.5; margin: 8px 0 0; }
 .confirmar-detencion { width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; box-sizing: border-box; padding: 24px; border: 1px solid #dce3ec; border-radius: 14px; color: #20314a; box-shadow: 0 20px 65px rgb(0 0 0 / 25%); }
 .confirmar-detencion::backdrop { background: rgb(12 23 42 / 55%); }

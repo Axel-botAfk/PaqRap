@@ -45,7 +45,8 @@ function encuadre({ cx, cy, z }) {
     x: centroX - ancho / 2, y: centroY - alto / 2 };
 }
 
-export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada, mapaDatos,
+export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada,
+  rutasEnvioSeleccionadas = LISTA_VACIA, mapaDatos,
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
   alReproducir, pasoMs, alCambiarPaso, velocidadHabilitada = false,
   enVivo = false, trayectosEnVivo = null,
@@ -62,6 +63,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const estadoDeStockCon = (stock, inicial) => estadoDeStock(stock, inicial, umbrales.stock);
   const ETIQUETAS_CARGA = etiquetasDeCarga(umbrales.carga);
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
+  const rutasDelEnvio = new Set(rutasEnvioSeleccionadas);
   const [vista, setVista] = useState(VISTA_INICIAL);
   const [arrastrando, setArrastrando] = useState(false);
   const [filtros, setFiltros] = useState(false);
@@ -228,8 +230,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     || estadoDeStockCon(stockDe(almacen), almacen.stockInicial) === nivelStock;
 
   const vehiculos = vehiculosTodos.filter(v => enFlota(v.tipo) && enNivelCarga(v));
-  const trazos = estadoPedido === 'NO_ASIGNADO' ? LISTA_VACIA
-    : trazosTodos.filter(({ ruta }) => enFlota(ruta.tipoVehiculo) && enNivelCargaDeRuta(ruta));
+  const trazos = trazosTodos.filter(({ ruta }) => rutasDelEnvio.has(ruta.id)
+    || (estadoPedido !== 'NO_ASIGNADO' && enFlota(ruta.tipoVehiculo)
+      && enNivelCargaDeRuta(ruta)));
   const segmentosDibujados = trazos.flatMap(({ ruta, detalles }) => {
     const terminada = rutaFinalizadaEn(ruta, trayectosParaGiro.get(ruta.vehiculoId), instanteMs);
     return detalles.flatMap((detalle, indice) => segmentosEnInstante(detalle, instanteMs)
@@ -514,7 +517,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       {segmentosDibujados.map(({ ruta, camino, recorrido, terminada, clave }) => {
         const coordenadas = camino.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
         const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
-        return <g key={clave} style={{ '--ruta-color': colorDeRuta(ruta) }} className={`trazo-ruta ${terminada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''}`}>
+        const seleccionadaPorEnvio = rutasDelEnvio.has(ruta.id);
+        return <g key={clave} style={{ '--ruta-color': colorDeRuta(ruta) }}
+          className={`trazo-ruta ${terminada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''} ${seleccionadaPorEnvio ? 'trazo-envio-resaltado' : rutasDelEnvio.size ? 'trazo-envio-atenuado' : ''}`}>
           <polyline className={`trazo-visible ${recorrido ? 'trazo-recorrido' : 'trazo-pendiente'}`}
             points={coordenadas} fill="none" />
           <polyline className="trazo-interaccion" points={coordenadas} fill="none"

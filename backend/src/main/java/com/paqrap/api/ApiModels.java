@@ -17,6 +17,9 @@ public final class ApiModels {
     public enum Algoritmo { GRASP, TABU }
     public enum Estado { PENDIENTE, EN_CURSO, PAUSADA, TERMINADA, COLAPSADA, FALLIDA, CANCELADA }
 
+    public record CorridaActivaVista(UUID id, Estado estado, Escenario escenario,
+            LocalDateTime inicio, LocalDateTime reloj) { }
+
     public record CrearEjecucionRequest(
             @NotNull Escenario escenario,
             @NotNull Algoritmo algoritmo,

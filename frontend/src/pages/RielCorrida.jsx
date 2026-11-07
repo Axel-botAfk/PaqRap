@@ -5,6 +5,7 @@ import PanelUmbrales from './PanelUmbrales.jsx';
 import PanelAlmacenes from './PanelAlmacenes.jsx';
 import PanelRendimiento from './PanelRendimiento.jsx';
 import ControlesCorrida from '../components/ControlesCorrida.jsx';
+import IconoUI from '../components/IconoUI.jsx';
 import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
@@ -117,30 +118,36 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </form>
     </Acordeon>
 
-    <Acordeon titulo="Rutas del instante" nota={numero(rutas.length)}>
+    <Acordeon titulo={<><IconoUI nombre="ruta" size={17}
+      className="rutas-instante-icono" />Rutas del instante</>} nota={numero(rutas.length)}>
       {calculandoRutas ? <p className="vacio" role="status">Calculando rutas…</p>
         : rutas.length === 0 ? <p className="vacio">No hay rutas planificadas para este instante.</p>
           : <div className="lista-rutas">{rutas.map((ruta, indice) => <button key={`${ruta.id}-${indice}`}
             type="button" className={`rt ${rutaSeleccionada === ruta.id ? 'rt-activa' : ''}`}
             style={{ '--ruta-color': colorDeRuta(ruta) }}
             onClick={() => alSeleccionarRuta(rutaSeleccionada === ruta.id ? null : ruta.id)}>
-            <span className="l1"><b>{ruta.vehiculoId}</b><span className="num">{decimal(ruta.distanciaKm, ' km')}</span></span>
-            <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span>
-              {typeof ruta.costo === 'number' && <span className="costo">S/ {decimal(ruta.costo)}</span>}</span>
+            <span className="rt-detalle"><span className="l1"><b>{ruta.vehiculoId}</b></span>
+              <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span></span></span>
+            <span className="rt-metricas"><span className="num"><IconoUI nombre="distancia" size={14} />
+              {decimal(ruta.distanciaKm, ' km')}</span>
+              {typeof ruta.costo === 'number' && <span className="costo"><IconoUI nombre="monedas" size={14} />
+                S/ {decimal(ruta.costo)}</span>}</span>
           </button>)}</div>}
       {rutas.length > 0 && !calculandoRutas && <p className="nota nota-total">
         <span>Total del instante</span>
         <b>{decimal(totalRutas.km, ' km')} · S/ {decimal(totalRutas.costo)}</b></p>}
     </Acordeon>
 
-    <Acordeon titulo="Unidades de transporte" abierto={false}
+    <Acordeon titulo={<><IconoUI nombre="camion" size={17} />Unidades de transporte</>} abierto={false}
       nota={vehiculos.length ? numero(vehiculos.length) : null}>
       <PanelUnidades vehiculos={vehiculos} rutas={rutas} averias={averiasDelInstante}
         seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante}
         trayectos={trayectos} umbrales={umbrales} />
     </Acordeon>
 
-    <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>
+    <Acordeon titulo={<><IconoUI nombre="averias" size={18}
+      className="averia-registro-icono" />Registrar avería</>} abierto={false}
+      nota={averias.length ? numero(averias.length) : null}>
       <form onSubmit={cfg.alRegistrarAveria}>
         <div className="field"><label htmlFor="a-unidad">Placa</label>
           <select id="a-unidad" className="input" value={unidadAveriada} required
@@ -164,7 +171,10 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </form>
     </Acordeon>
 
-    <Acordeon titulo="Inventario de almacenes" abierto={false}
+    <Acordeon titulo={<><svg className="alm-inventario-icono" width="17" height="17" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" focusable="false"><path d="m3 9 9-6 9 6v12H3V9Z"/>
+      <path d="M8 21v-8h8v8M8 13h8M12 7h.01"/></svg>Inventario de almacenes</>} abierto={false}
       nota={mapaDatos?.almacenes?.length ? numero(mapaDatos.almacenes.length) : null}>
       <PanelAlmacenes inventario={inventario} mapaDatos={mapaDatos} rutas={rutas}
         planes={planes} instante={instante}
@@ -191,7 +201,10 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </dl>
     </Acordeon>}
 
-    <Acordeon titulo="Umbrales del semáforo" abierto={false}>
+    <Acordeon titulo={<><svg width="30" height="16" viewBox="0 0 30 16" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="8" r="4" fill="#E60023" /><circle cx="15" cy="8" r="4" fill="#F5A400" />
+      <circle cx="25" cy="8" r="4" fill="#13A538" />
+    </svg>Umbrales del semáforo</>} abierto={false}>
       <PanelUmbrales umbrales={umbrales} alGuardar={alGuardarUmbrales}
         alRestablecer={alRestablecerUmbrales} />
     </Acordeon>

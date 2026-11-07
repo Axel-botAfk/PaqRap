@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { normalizarUmbrales, UMBRALES_POR_OMISION } from '../umbrales.js';
+import IconoUI from '../components/IconoUI.jsx';
 
 /**
  * Opción del sistema para los cortes del semáforo (B06).
@@ -43,9 +44,15 @@ export default function PanelUmbrales({ umbrales, alGuardar, alRestablecer }) {
 
   const porOmision = JSON.stringify(umbrales) === JSON.stringify(UMBRALES_POR_OMISION);
 
-  return <form onSubmit={enviar}>
-    {CAMPOS.map(([grupo, clave, etiqueta, ayuda]) => <div key={`${grupo}-${clave}`} className="field">
-      <label htmlFor={`u-${grupo}-${clave}`}>{etiqueta}</label>
+  return <form className="panel-umbrales" onSubmit={enviar}>
+    {CAMPOS.map(([grupo, clave, etiqueta, ayuda]) => <div key={`${grupo}-${clave}`} className="field umbral-field">
+      <label htmlFor={`u-${grupo}-${clave}`}><span>{etiqueta}</span>
+        <span className="umbral-colores">{clave === 'baja' || clave === 'critico'
+          ? <span className="umbral-color umbral-rojo"><i aria-hidden="true" />Rojo</span>
+          : <><span className="umbral-color umbral-ambar"><i aria-hidden="true" />Ámbar</span>
+            <span className="umbral-flecha" aria-hidden="true">→</span>
+            <span className="umbral-color umbral-verde"><i aria-hidden="true" />Verde</span></>}
+        </span></label>
       <input id={`u-${grupo}-${clave}`} className="input" type="number" min="1" max="99" step="1"
         required value={borrador[grupo]?.[clave] ?? ''}
         onChange={e => cambiar(grupo, clave, e.target.value)} />
@@ -58,7 +65,7 @@ export default function PanelUmbrales({ umbrales, alGuardar, alRestablecer }) {
         onClick={alRestablecer}>Restablecer</button>
     </div>
     {aviso && <p className="nota nota-aviso" role="status">{aviso}</p>}
-    <p className="nota">Valores del caso: carga 40 % y 70 %; stock 20 % y 60 %. Se guardan en este
+    <p className="nota umbral-nota"><IconoUI nombre="info" size={15} />Valores del caso: carga 40 % y 70 %; stock 20 % y 60 %. Se guardan en este
       navegador, no en el servidor, así que cada visualizador conserva los suyos.</p>
   </form>;
 }

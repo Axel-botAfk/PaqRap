@@ -34,9 +34,9 @@ export default function ControlesCorrida({ ejecucion, ocupado, alControlar, prog
   return <section className="controles-corrida" aria-label="Control de la corrida" aria-busy={!!pendiente}>
     <div className="controles-cabecera">
       <b>Control de la corrida</b>
-      <span className={`control-estado control-${ejecucion.estado.toLowerCase()}`} role="status">
+      {ejecucion.estado !== 'EN_CURSO' && <span className={`control-estado control-${ejecucion.estado.toLowerCase()}`} role="status">
         {pendiente ? 'Aplicando…' : ejecucion.estado === 'CANCELADA' ? 'Detenida' : ETIQUETAS[ejecucion.estado]}
-      </span>
+      </span>}
     </div>
     {controles.activa && <div className="controles-botones">
       <button type="button" className="btn control-principal" disabled={bloqueado || !(controles.pausar || controles.reanudar)}

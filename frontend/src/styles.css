@@ -1264,9 +1264,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .ut-disponibilidad.estado-averiado { background: #ffebed; color: #a51c30; }
 .ut-disponibilidad.estado-en_mantenimiento { background: #fff3d7; color: #865a00; }
 .ut-ubicacion svg, .ut-pedidos-resumen svg { flex: none; color: #6c7f9f; }
-.ut .ut-retorno { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 5px 7px;
-  border-radius: 7px; background: #edf5ff; color: #315585; overflow-wrap: anywhere; }
-.ut-retorno svg { flex: none; }
+.ut .ut-retorno { display: block; min-width: 0; color: #315585; overflow-wrap: anywhere; }
 .unidad-luz { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--luz, #8f9aac); box-shadow: 0 0 0 1px rgba(10, 29, 58, .18); }
 .ut-averia { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font: 700 9.5px Archivo; background: var(--luz-averia, #1d1d2b); color: #fff; }
 .mapa-averia-tipo_1 { --luz-averia: #ffb703; } .ut-averia.mapa-averia-tipo_1 { color: #3d2b00; }
@@ -1307,9 +1305,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .ut-horarios { gap: 5px 8px; }
 
 /* Formulario de umbrales del semáforo en el riel derecho. */
-.mapview .panel-umbrales { display: grid; gap: 11px; min-width: 0; padding: 12px;
-  border: 1px solid var(--border); border-radius: 12px; background: #fff;
-  box-shadow: 0 4px 15px rgb(26 52 105 / 5%); }
+.mapview .panel-umbrales { display: grid; gap: 11px; min-width: 0; }
 .mapview .panel-umbrales .umbral-field { min-width: 0; margin: 0; gap: 5px; }
 .mapview .panel-umbrales .umbral-field label { display: flex; flex-wrap: wrap; align-items: center;
   gap: 4px 7px; min-width: 0; color: var(--navy); font: 700 10.5px Archivo; }
@@ -1425,30 +1421,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
   color: var(--blue-ui); font-size: 9.5px; line-height: 1.35; }
 .panel-inventario .alm-nota svg { flex: none; margin-top: 1px; }
 
-/* Rutas del instante: tarjetas compactas con las métricas del plan vigente. */
-.mapview .acc h3 button:has(> span > .rutas-instante-icono) { background: var(--red-soft); }
-.mapview .acc h3 button:has(> span > .rutas-instante-icono):hover { background: #ffe4e8; }
-.mapview .lista-rutas { gap: 7px; min-width: 0; max-height: min(350px, 44dvh);
-  margin: 0; padding: 2px 2px 4px; border: 0; overflow-x: hidden; overflow-y: auto; }
-.mapview .lista-rutas .rt { box-sizing: border-box; display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(86px, .52fr); align-items: center; gap: 7px;
-  min-width: 0; min-height: 58px; padding: 8px 9px; border: 1px solid var(--border);
-  border-left: 4px solid var(--ruta-color, var(--border)); border-radius: 10px;
-  background: #fff; box-shadow: 0 3px 9px rgb(26 52 105 / 5%); }
-.mapview .lista-rutas .rt:hover:not(.rt-activa) { background: #f8fbff; }
-.mapview .lista-rutas .rt.rt-activa { border-color: #ffc4cb; border-left-color: var(--red);
-  background: var(--red-soft); box-shadow: 0 0 0 1px #ffc4cb; }
-.mapview .rt-detalle, .mapview .rt-metricas { display: grid; gap: 3px; min-width: 0; }
-.mapview .rt .l1, .mapview .rt .l2 { min-width: 0; }
-.mapview .rt .l1 b { color: var(--navy); font-size: 12.5px; }
-.mapview .rt .sub { color: var(--blue-ui); font-size: 9.5px; line-height: 1.25;
-  overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
-.mapview .rt-metricas { align-self: stretch; align-content: center;
-  padding-left: 8px; border-left: 1px solid var(--border); }
-.mapview .rt .num, .mapview .rt .costo { display: inline-flex; align-items: center;
-  gap: 4px; min-width: 0; margin: 0; color: var(--navy); font-size: 10.5px; line-height: 1.2;
-  white-space: normal; overflow-wrap: anywhere; }
-.mapview .rt-metricas svg { flex: none; color: var(--blue-ui); }
+/* Rutas del instante. */
+.mapview .acc h3 button:has(> span > .rutas-instante-icono) { background: #fff; }
+.mapview .acc h3 button:has(> span > .rutas-instante-icono):hover[aria-expanded="false"] { background: var(--red-soft); }
 .mapview .nota.nota-total { display: flex; flex-wrap: wrap; align-items: center;
   gap: 3px 9px; margin: 9px 0 0; padding: 9px 10px; border-radius: 9px;
   background: #edf3ff; color: var(--navy); font-size: 10.5px; }

@@ -126,12 +126,9 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
             type="button" className={`rt ${rutaSeleccionada === ruta.id ? 'rt-activa' : ''}`}
             style={{ '--ruta-color': colorDeRuta(ruta) }}
             onClick={() => alSeleccionarRuta(rutaSeleccionada === ruta.id ? null : ruta.id)}>
-            <span className="rt-detalle"><span className="l1"><b>{ruta.vehiculoId}</b></span>
-              <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span></span></span>
-            <span className="rt-metricas"><span className="num"><IconoUI nombre="distancia" size={14} />
-              {decimal(ruta.distanciaKm, ' km')}</span>
-              {typeof ruta.costo === 'number' && <span className="costo"><IconoUI nombre="monedas" size={14} />
-                S/ {decimal(ruta.costo)}</span>}</span>
+            <span className="l1"><b>{ruta.vehiculoId}</b><span className="num">{decimal(ruta.distanciaKm, ' km')}</span></span>
+            <span className="l2"><span className="sub">{ruta.id} · {ruta.paradas.length} parada(s)</span>
+              {typeof ruta.costo === 'number' && <span className="costo">S/ {decimal(ruta.costo)}</span>}</span>
           </button>)}</div>}
       {rutas.length > 0 && !calculandoRutas && <p className="nota nota-total">
         <span>Total del instante</span>

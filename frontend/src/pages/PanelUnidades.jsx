@@ -83,15 +83,14 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
             <b>{fila.id}</b>
             <span className="sub ut-tipo"><svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
               <DibujoVehiculo tipo={fila.tipo} /></svg>{tipoVehiculo(fila.tipo)}</span>
-            <span className="num"><IconoUI nombre="caja" size={13} />
-              <i className={`unidad-luz mapa-carga-${fila.nivel}`} title={ETIQUETAS_CARGA[fila.nivel]} />
+            <span className="num"><i className={`unidad-luz mapa-carga-${fila.nivel}`} title={ETIQUETAS_CARGA[fila.nivel]} />
               {fila.porcentaje === null ? 'Sin dato'
               : `${numero(fila.cargaAbordo)} / ${numero(fila.capacidad)} · ${fila.porcentaje} %`}</span>
           </span>
           <span className="l2">
             <span className="sub ut-estado-ubicacion"><span className={`ut-disponibilidad estado-${fila.estado?.toLowerCase()}`}>
               {estadoVehiculo(fila.estado)}</span>{fila.ubicacion && <span className="ut-ubicacion">
-              <IconoUI nombre="ruta" size={13} />({fila.ubicacion.x}, {fila.ubicacion.y})</span>}</span>
+              <IconoUI nombre="ubicacion" size={13} />({fila.ubicacion.x}, {fila.ubicacion.y})</span>}</span>
             <span className="sub ut-pedidos-resumen"><IconoUI nombre="pedidos" size={13} />{fila.pedidos.length
               ? `${numero(fila.pedidos.length)} pedido(s) · ${numero(fila.productos)} producto(s)`
               : 'Sin pedidos asignados'}</span>
@@ -102,7 +101,7 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
             <span className="sub">Llegada {hora(fila.llegada)}{Number.isFinite(fila.minutosAlDestino)
               ? ` · en ${numero(fila.minutosAlDestino)} min` : ''}</span>
           </span>}
-          {fila.origenId && <span className="sub ut-retorno"><IconoUI nombre="ruta" size={13} />Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
+          {fila.origenId && <span className="sub ut-retorno">Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
             ? 'sin estimación factible' : `${numero(Math.ceil(fila.minutosAlOrigen))} min estimados`}</span>}
           {averia && <span className={`ut-averia mapa-averia-${averia.tipo.toLowerCase()}`}>
             {ETIQUETAS_AVERIA[averia.tipo]}

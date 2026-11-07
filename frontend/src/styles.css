@@ -1164,6 +1164,53 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .mapa-indicador-titulo { font: 800 9.5px Archivo; letter-spacing: .11em; text-transform: uppercase; color: var(--suave); }
 .mapa-indicador b { font: 800 15px Archivo; color: var(--navy); }
 .mapa-indicador small { grid-column: 1 / -1; font: 400 9.5px Archivo; line-height: 1.35; color: var(--suave); }
+.mapa-estado-movil { display: none; }
+@media (max-width: 768px) {
+  .mapview .mapa-indicadores { display: none; }
+  .mapview .mapa-estado-movil { position: absolute; inset: 0; z-index: 22;
+    display: block; pointer-events: none; }
+  .mapview .mapa-estado-boton { position: absolute; left: 12px; bottom: var(--estado-base);
+    display: flex; align-items: center; gap: 7px; box-sizing: border-box;
+    width: min(245px, calc(100% - 24px)); min-height: 37px; padding: 6px 11px;
+    border: 1px solid var(--border); border-radius: 999px; background: #fff;
+    box-shadow: var(--shadow-floating); color: var(--navy); font: 700 11px Archivo;
+    white-space: nowrap; pointer-events: auto; }
+  .mapview .mapa-estado-boton:hover { background: #f1f6ff; }
+  .mapview .mapa-estado-boton > svg { flex: none; color: #1769f5; }
+  .mapview .mapa-estado-boton > b { margin-left: auto; font-size: 10.5px; }
+  .mapview .mapa-estado-boton > i { flex: none; width: 7px; height: 7px;
+    margin: -3px 2px 0 2px; border-right: 2px solid #1769f5;
+    border-bottom: 2px solid #1769f5; transform: rotate(45deg); }
+  .mapview .mapa-estado-boton[aria-expanded="true"] > i { margin-top: 3px; transform: rotate(225deg); }
+  .mapview .con-leyenda-abierta .mapa-estado-boton { left: 70px;
+    width: min(245px, calc(100% - 82px)); }
+  .mapview .mapa-estado-panel { position: absolute; left: 12px;
+    bottom: calc(var(--estado-base) + 44px); box-sizing: border-box;
+    width: min(420px, calc(100% - 24px)); max-height: min(230px, max(112px, calc(100% - var(--estado-base) - 54px)));
+    padding: 11px; overflow-y: auto; border: 1px solid var(--border);
+    border-radius: 16px; background: #fff; box-shadow: var(--shadow-floating);
+    pointer-events: auto; }
+  .mapview .con-leyenda-abierta .mapa-estado-panel { top: 6px; bottom: auto; left: 70px;
+    width: min(320px, calc(100% - 82px));
+    max-height: min(230px, max(88px, calc(100% - var(--estado-base) - 18px))); }
+  .mapview .mapa-estado-panel > header { display: flex; align-items: center; gap: 7px;
+    margin-bottom: 9px; color: var(--navy); font: 800 14px Archivo; }
+  .mapview .mapa-estado-panel > header > svg { color: #1769f5; }
+  .mapview .mapa-estado-panel > header > button { width: 25px; height: 25px;
+    margin-left: auto; padding: 0; border: 0; border-radius: 7px;
+    background: #f3f6fc; color: var(--navy); font: 700 18px Archivo; }
+  .mapview .mapa-estado-panel > header > button:hover { background: #eaf1ff; }
+  .mapview .mapa-estado-datos { display: grid; gap: 8px; padding: 9px;
+    border: 1px solid var(--border); border-radius: 11px; }
+  .mapview .mapa-estado-datos .mapa-indicador { grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 3px 7px; min-width: 0; }
+  .mapview .mapa-estado-datos .mapa-indicador + .mapa-indicador {
+    padding-top: 8px; border-top: 1px solid var(--border); }
+  .mapview .mapa-estado-datos .mapa-indicador-titulo { font-size: 10px; }
+  .mapview .mapa-estado-datos .mapa-indicador b { font-size: 15px; }
+  .mapview .mapa-estado-datos .mapa-indicador small { font-size: 10px;
+    overflow-wrap: anywhere; }
+}
 
 /* Avería por tipo sobre el ícono de la unidad (D10-D13): se distingue por forma y por número. */
 .mapa-averia path { stroke: #ffffff; stroke-width: 1.6; paint-order: stroke; }
@@ -1174,28 +1221,63 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .leyenda-averia { width: 18px; height: 18px; flex: none; }
 
 /* ── Panel de unidades de transporte (E02-E05, E13) y su enlace con el mapa (F01) ────────── */
-.unidades-orden { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
-.unidades-orden label { font: 800 9.5px Archivo; letter-spacing: .11em; text-transform: uppercase; color: var(--suave); white-space: nowrap; }
-.unidades-orden select { flex: 1; }
-.lista-unidades { display: flex; flex-direction: column; gap: 1px; margin: 0 -16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); max-height: 340px; overflow-y: auto; }
-.ut { border-bottom: 1px solid var(--line); background: #fff; }
-.ut-activa { background: var(--red-100); box-shadow: inset 4px 0 0 var(--red); }
-.ut-cabecera { width: 100%; display: flex; flex-direction: column; gap: 3px; padding: 8px 16px; background: transparent; border: 0; text-align: left; }
-.ut-cabecera:hover { background: var(--ground); }
-.ut .l1 { display: flex; align-items: center; gap: 7px; }
-.ut .l1 b { font: 800 12.5px Archivo; }
-.ut .l2 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.ut .sub { font-size: 10.5px; color: var(--suave); }
-.ut .num { margin-left: auto; font: 800 11.5px Archivo; white-space: nowrap; }
+.mapview .acc h3 button span:has(> svg) { display: inline-flex; align-items: center; gap: 7px; }
+.mapview .acc h3 button span > svg { flex: none; box-sizing: content-box; padding: 5px;
+  border-radius: 9px; background: var(--red-100); color: var(--brand-red); }
+.mapview .acc h3 button:has(> span > svg) em { padding: 3px 8px; border-radius: 999px;
+  background: #eaf2ff; color: var(--navy); font-weight: 800; }
+.unidades-orden { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
+  gap: 7px; margin-bottom: 10px; }
+.unidades-orden label { font: 800 9px Archivo; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--suave); white-space: nowrap; }
+.mapview .unidades-orden select { min-width: 0; width: 100%; height: 34px; padding: 0 8px;
+  background-color: #fff; box-shadow: 0 2px 6px rgb(19 38 66 / 5%); }
+.lista-unidades { display: flex; flex-direction: column; gap: 8px; min-width: 0; max-height: min(370px, 44dvh);
+  margin: 0; padding: 9px 2px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.ut { --ut-estado: #8f9aac; min-width: 0; border: 1px solid var(--line); border-left: 4px solid var(--ut-estado);
+  border-radius: 11px; background: #fff; box-shadow: 0 3px 9px rgb(19 38 66 / 6%); }
+.ut:has(.estado-disponible) { --ut-estado: #19a566; }
+.ut:has(.estado-en_ruta) { --ut-estado: #2972cc; }
+.ut:has(.estado-averiado) { --ut-estado: #e3262a; }
+.ut:has(.estado-en_mantenimiento) { --ut-estado: #e6a600; }
+.ut-activa { border-color: #9bbcf1; border-left-color: var(--ut-estado); background: #f4f8ff;
+  box-shadow: 0 0 0 1px #9bbcf1, 0 4px 10px rgb(37 99 235 / 10%); }
+.ut-cabecera { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 6px;
+  padding: 9px 10px; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.ut-cabecera:hover { background: #f8fbff; }
+.ut .l1 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+.ut .l1 b { font: 800 12px Archivo; color: var(--navy); }
+.ut .l1 .ut-tipo { display: inline-flex; align-items: center; gap: 3px; min-width: 0; }
+.ut-tipo svg { width: 19px; height: 19px; flex: none; padding: 2px; border-radius: 6px; background: #eef5ff; }
+.ut .l2 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 5px 8px; min-width: 0; }
+.ut .sub { font-size: 9.5px; line-height: 1.3; color: var(--suave); }
+.ut .num { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding: 4px 6px;
+  border-radius: 999px; background: #eaf2ff; color: var(--navy); font: 800 10px Archivo; white-space: nowrap; }
+.ut .num svg { color: #315ba4; }
+.ut .num .unidad-luz { width: 7px; height: 7px; }
+.ut-estado-ubicacion, .ut-ubicacion, .ut-pedidos-resumen { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.ut-disponibilidad { padding: 3px 6px; border-radius: 999px; background: #edf1f7; color: #536276;
+  font-size: 9px; font-weight: 700; white-space: nowrap; }
+.ut-disponibilidad.estado-disponible { background: #ddf5e9; color: #087a4e; }
+.ut-disponibilidad.estado-en_ruta { background: #e5f0ff; color: #245ca5; }
+.ut-disponibilidad.estado-averiado { background: #ffebed; color: #a51c30; }
+.ut-disponibilidad.estado-en_mantenimiento { background: #fff3d7; color: #865a00; }
+.ut-ubicacion svg, .ut-pedidos-resumen svg { flex: none; color: #6c7f9f; }
+.ut .ut-retorno { display: flex; align-items: center; gap: 5px; min-width: 0; padding: 5px 7px;
+  border-radius: 7px; background: #edf5ff; color: #315585; overflow-wrap: anywhere; }
+.ut-retorno svg { flex: none; }
 .unidad-luz { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--luz, #8f9aac); box-shadow: 0 0 0 1px rgba(10, 29, 58, .18); }
 .ut-averia { display: inline-block; margin-top: 3px; padding: 1px 7px; border-radius: 999px; font: 700 9.5px Archivo; background: var(--luz-averia, #1d1d2b); color: #fff; }
 .mapa-averia-tipo_1 { --luz-averia: #ffb703; } .ut-averia.mapa-averia-tipo_1 { color: #3d2b00; }
 .mapa-averia-tipo_2 { --luz-averia: #fb5607; }
 .mapa-averia-tipo_3 { --luz-averia: #1d1d2b; }
-.ut-envios { width: 100%; padding: 0 16px 8px; border: 0; background: transparent; text-align: left; font: 800 10.5px Archivo; color: var(--red-d); }
-.ut-lista-envios { margin: 0; padding: 0 16px 9px; list-style: none; display: grid; gap: 4px; }
-.ut-lista-envios li { display: flex; justify-content: space-between; gap: 8px; font-size: 10.5px; color: var(--suave); }
-.ut-lista-envios li b { color: var(--navy); font: 800 10.5px Archivo; }
+.ut-envios { width: 100%; padding: 0 10px 8px; border: 0; background: transparent; text-align: left;
+  font: 800 9.5px Archivo; color: var(--red-d); cursor: pointer; }
+.ut-lista-envios { margin: 0; padding: 0 10px 9px; list-style: none; display: grid; gap: 4px; }
+.ut-lista-envios li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 3px 8px;
+  min-width: 0; font-size: 9.5px; color: var(--suave); overflow-wrap: anywhere; }
+.ut-lista-envios li b { color: var(--navy); font: 800 9.5px Archivo; }
 .unidad-halo { fill: none; stroke: var(--red, #e3262a); stroke-width: 2.5; opacity: .9; }
 .mapa-unidad.unidad-activa { cursor: pointer; }
 
@@ -1209,10 +1291,54 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .mapa-almacen[role="button"] { cursor: pointer; }
 
 /* Búsqueda por minutos en la lista de unidades (E06, E07). */
-.unidades-busqueda { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; align-items: end; }
-.unidades-busqueda .field label { font: 800 9px Archivo; letter-spacing: .08em; text-transform: uppercase; color: var(--suave); }
+.unidades-busqueda { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 8px; margin-bottom: 10px; align-items: end; }
+.unidades-busqueda .field { min-width: 0; margin-bottom: 0; }
+.unidades-busqueda .field:nth-child(3) { grid-column: 1 / -1; }
+.unidades-busqueda .field label { font: 800 8.5px Archivo; letter-spacing: .04em;
+  text-transform: uppercase; color: var(--suave); line-height: 1.25; }
+.unidades-busqueda .field:nth-child(3) .unidades-campo-tiempo { width: calc((100% - 8px) / 2); }
+.unidades-campo-tiempo { position: relative; display: block; min-width: 0; }
+.unidades-campo-tiempo svg { position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  color: #7485a2; pointer-events: none; }
+.mapview .unidades-campo-tiempo .input { box-sizing: border-box; width: 100%; min-width: 0; height: 33px;
+  padding-left: 27px; background: #fff; }
 .unidades-limpiar { grid-column: 1 / -1; justify-self: start; border: 0; background: transparent; padding: 0; font: 800 10.5px Archivo; color: var(--red-d); }
-.ut-horarios { gap: 10px; }
+.ut-horarios { gap: 5px 8px; }
+
+/* Formulario de umbrales del semáforo en el riel derecho. */
+.mapview .panel-umbrales { display: grid; gap: 11px; min-width: 0; padding: 12px;
+  border: 1px solid var(--border); border-radius: 12px; background: #fff;
+  box-shadow: 0 4px 15px rgb(26 52 105 / 5%); }
+.mapview .panel-umbrales .umbral-field { min-width: 0; margin: 0; gap: 5px; }
+.mapview .panel-umbrales .umbral-field label { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 4px 7px; min-width: 0; color: var(--navy); font: 700 10.5px Archivo; }
+.umbral-colores { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.umbral-color { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+  border-radius: 999px; font: 600 9px Archivo; white-space: nowrap; }
+.umbral-color i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: currentColor; }
+.umbral-rojo { background: #ffebed; color: #c51d2a; }
+.umbral-ambar { background: #fff4dd; color: #a76b00; }
+.umbral-verde { background: #e2f7e9; color: #087b42; }
+.umbral-flecha { color: var(--blue-secondary); font-size: 11px; }
+.mapview .panel-umbrales .umbral-field .input { box-sizing: border-box; height: 34px;
+  border-radius: 8px; background: #fff; font-size: 12px; }
+.mapview .panel-umbrales .umbral-field .nota { margin: 0; color: var(--blue-secondary);
+  font-size: 9.5px; line-height: 1.35; }
+.mapview .panel-umbrales .acciones { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px; margin: 2px 0 0; }
+.mapview .panel-umbrales .acciones .btn { min-width: 0; min-height: 35px; padding: 6px 7px;
+  border-radius: 8px; font: 700 10.5px Archivo; letter-spacing: 0; white-space: normal; }
+.mapview .panel-umbrales .acciones .btn-primary { background: #FF002B; border-color: #FF002B; color: #fff; }
+.mapview .panel-umbrales .acciones .btn:not(.btn-primary) { background: #fff;
+  border-color: var(--border); color: var(--navy); }
+.mapview .panel-umbrales .acciones .btn:not(.btn-primary):hover:not(:disabled) { background: var(--surface-secondary); }
+.mapview .panel-umbrales .acciones .btn:disabled { opacity: .5; cursor: not-allowed; }
+.mapview .panel-umbrales .nota-aviso { margin: 0; }
+.mapview .panel-umbrales .umbral-nota { display: flex; align-items: flex-start; gap: 7px;
+  margin: 1px 0 0; padding-top: 9px; border-top: 1px solid var(--border);
+  color: var(--blue-secondary); font-size: 9.5px; line-height: 1.4; }
+.umbral-nota svg { flex: none; margin-top: 1px; }
 
 /* Lista de almacenes con semáforo y envíos en tránsito (E18-E20). */
 .alm { border-bottom: 1px solid var(--line); }
@@ -1248,6 +1374,86 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .alm-pedido-seleccionar:hover, .alm-fraccion:hover, .alm-pedido-expandir:hover { background: #f4f8ff; }
 .alm-seleccion button:focus-visible, .alm-pedido-seleccionar:focus-visible,
 .alm-pedido-expandir:focus-visible, .alm-fraccion:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+
+/* Inventario de almacenes: presentación compacta del panel derecho. */
+.mapview .acc h3 button:has(> span > .alm-inventario-icono),
+.mapview .acc h3 button:has(> span > .averia-registro-icono) { background: #fff; }
+.mapview .acc h3 button:has(> span > .alm-inventario-icono):hover[aria-expanded="false"],
+.mapview .acc h3 button:has(> span > .averia-registro-icono):hover[aria-expanded="false"] { background: var(--red-soft); }
+.panel-inventario { display: grid; gap: 9px; min-width: 0; }
+.mapview .panel-inventario > label { color: var(--navy); font: 700 10.5px Archivo; }
+.alm-consulta-control { position: relative; min-width: 0; }
+.alm-consulta-control > svg { position: absolute; z-index: 1; top: 50%; left: 10px;
+  transform: translateY(-50%); color: var(--blue-ui); pointer-events: none; }
+.mapview .alm-consulta-control .input { box-sizing: border-box; width: 100%; min-width: 0;
+  height: 35px; padding: 0 24px 0 32px; border-radius: 9px; background: #fff; font-size: 10.5px; }
+.panel-inventario .almacenes { gap: 8px; min-width: 0; }
+.mapview .panel-inventario .almacenes .alm { min-width: 0; border-color: var(--border);
+  border-radius: 11px; box-shadow: 0 3px 10px rgb(26 52 105 / 5%); }
+.panel-inventario .alm-cabecera { min-width: 0; gap: 6px; padding: 9px; }
+.panel-inventario .almacen-linea { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 3px 7px; min-width: 0; font-size: 10.5px; }
+.panel-inventario .alm-cabecera .almacen-linea > span { display: inline-flex; flex: 1 1 150px;
+  flex-wrap: wrap; align-items: center; gap: 3px 5px; min-width: 0; }
+.panel-inventario .almacen-linea strong { color: var(--navy); font-weight: 800; overflow-wrap: anywhere; }
+.panel-inventario .almacen-linea em { display: inline-flex; align-items: center; gap: 2px;
+  font-style: normal; color: var(--blue-ui); white-space: nowrap; }
+.panel-inventario .almacen-linea em svg { flex: none; }
+.panel-inventario .almacen-linea b { margin-left: auto; padding: 0; background: none;
+  box-shadow: none; color: var(--navy); font-size: 10.5px; white-space: nowrap; }
+.panel-inventario .almacen-linea .unidad-luz { width: 9px; height: 9px; }
+.mapview .panel-inventario .alm .bar { height: 5px; margin-top: 1px; }
+.mapview .panel-inventario .alm .bar i { height: 5px; }
+.mapview .panel-inventario .alm .bar i.medio { background: #f1b800; }
+.mapview .panel-inventario .alm .bar i.bajo { background: #e3262a; }
+.panel-inventario .almacen-pie { display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: 4px 9px; min-width: 0; }
+.panel-inventario .almacen-pie .sub { color: var(--blue-ui); font-size: 9.5px; line-height: 1.3; }
+.panel-inventario .alm-estado { display: inline-flex; align-items: center; flex-wrap: wrap;
+  gap: 4px; white-space: nowrap; }
+.panel-inventario .alm-porcentaje { padding: 2px 5px; border-radius: 999px;
+  background: #e4f7ec; color: #087a4e; font-size: 9px; }
+.panel-inventario .alm-porcentaje.mapa-stock-advertencia { background: #fff4d9; color: #906000; }
+.panel-inventario .alm-porcentaje.mapa-stock-critico { background: #ffeaec; color: #ba2530; }
+.panel-inventario .alm-porcentaje.mapa-stock-vacio,
+.panel-inventario .alm-porcentaje.mapa-stock-sin-datos { background: #edf1f7; color: #536276; }
+.panel-inventario .alm-envios-resumen { display: inline-flex; flex: 1 1 105px;
+  align-items: flex-start; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.panel-inventario .alm-envios-resumen svg { flex: none; margin-top: 1px; }
+.mapview .panel-inventario .alm-nota { display: flex; align-items: flex-start; gap: 7px;
+  margin: 1px 0 0; padding: 8px 9px; border-radius: 9px; background: #edf3ff;
+  color: var(--blue-ui); font-size: 9.5px; line-height: 1.35; }
+.panel-inventario .alm-nota svg { flex: none; margin-top: 1px; }
+
+/* Rutas del instante: tarjetas compactas con las métricas del plan vigente. */
+.mapview .acc h3 button:has(> span > .rutas-instante-icono) { background: var(--red-soft); }
+.mapview .acc h3 button:has(> span > .rutas-instante-icono):hover { background: #ffe4e8; }
+.mapview .lista-rutas { gap: 7px; min-width: 0; max-height: min(350px, 44dvh);
+  margin: 0; padding: 2px 2px 4px; border: 0; overflow-x: hidden; overflow-y: auto; }
+.mapview .lista-rutas .rt { box-sizing: border-box; display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(86px, .52fr); align-items: center; gap: 7px;
+  min-width: 0; min-height: 58px; padding: 8px 9px; border: 1px solid var(--border);
+  border-left: 4px solid var(--ruta-color, var(--border)); border-radius: 10px;
+  background: #fff; box-shadow: 0 3px 9px rgb(26 52 105 / 5%); }
+.mapview .lista-rutas .rt:hover:not(.rt-activa) { background: #f8fbff; }
+.mapview .lista-rutas .rt.rt-activa { border-color: #ffc4cb; border-left-color: var(--red);
+  background: var(--red-soft); box-shadow: 0 0 0 1px #ffc4cb; }
+.mapview .rt-detalle, .mapview .rt-metricas { display: grid; gap: 3px; min-width: 0; }
+.mapview .rt .l1, .mapview .rt .l2 { min-width: 0; }
+.mapview .rt .l1 b { color: var(--navy); font-size: 12.5px; }
+.mapview .rt .sub { color: var(--blue-ui); font-size: 9.5px; line-height: 1.25;
+  overflow: visible; overflow-wrap: anywhere; text-overflow: clip; white-space: normal; }
+.mapview .rt-metricas { align-self: stretch; align-content: center;
+  padding-left: 8px; border-left: 1px solid var(--border); }
+.mapview .rt .num, .mapview .rt .costo { display: inline-flex; align-items: center;
+  gap: 4px; min-width: 0; margin: 0; color: var(--navy); font-size: 10.5px; line-height: 1.2;
+  white-space: normal; overflow-wrap: anywhere; }
+.mapview .rt-metricas svg { flex: none; color: var(--blue-ui); }
+.mapview .nota.nota-total { display: flex; flex-wrap: wrap; align-items: center;
+  gap: 3px 9px; margin: 9px 0 0; padding: 9px 10px; border-radius: 9px;
+  background: #edf3ff; color: var(--navy); font-size: 10.5px; }
+.mapview .nota-total b { color: var(--navy); font-size: 11px; white-space: normal; }
+
 :root .envio-original { padding: 12px 16px; border-bottom: 1px solid var(--line, #dce5ea); }
 :root .envio-original summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 :root .controles-corrida {

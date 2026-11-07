@@ -45,6 +45,27 @@ function encuadre({ cx, cy, z }) {
     x: centroX - ancho / 2, y: centroY - alto / 2 };
 }
 
+function IndicadoresMapa({ flotaGlobal, almacenesGlobal, etiquetasCarga }) {
+  return <>
+    <div className="mapa-indicador">
+      <span className="mapa-indicador-titulo">Flota</span>
+      <b>{flotaGlobal.porcentaje === null ? '—' : `${flotaGlobal.porcentaje} %`}</b>
+      <span className={`mapa-indicador-luz mapa-carga-${flotaGlobal.estado}`}
+        title={etiquetasCarga[flotaGlobal.estado]} />
+      <small>{flotaGlobal.porcentaje === null ? 'Sin datos del instante'
+        : `${numero(flotaGlobal.carga)} / ${numero(flotaGlobal.capacidad)} en ${numero(flotaGlobal.unidades)} unidad(es)`}</small>
+    </div>
+    <div className="mapa-indicador">
+      <span className="mapa-indicador-titulo">Almacenes</span>
+      <b>{almacenesGlobal.porcentaje === null ? '—' : `${almacenesGlobal.porcentaje} %`}</b>
+      <span className={`mapa-indicador-luz mapa-stock-${almacenesGlobal.estado}`}
+        title={ETIQUETAS_STOCK[almacenesGlobal.estado]} />
+      <small>{almacenesGlobal.porcentaje === null ? 'Sin corte de inventario'
+        : `${numero(almacenesGlobal.carga)} / ${numero(almacenesGlobal.capacidad)} disponibles${almacenesGlobal.ilimitados ? ' · central ilimitado' : ''}`}</small>
+    </div>
+  </>;
+}
+
 export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSeleccionada,
   rutasEnvioSeleccionadas = LISTA_VACIA, mapaDatos,
   inventario, instante, fotogramas, indiceFotograma, alCambiarFotograma, reproduciendo,
@@ -73,6 +94,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [nivelStock, setNivelStock] = useState('');
   // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
   const [pieAbierto, setPieAbierto] = useState(false);
+  const [estadoAbierto, setEstadoAbierto] = useState(false);
+  const [estadoBase, setEstadoBase] = useState(150);
+  const estadoPanelId = useId();
   const svgRef = useRef(null);
   const lienzoRef = useRef(null);
   const tipRef = useRef(null);
@@ -84,6 +108,26 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const angulosMostrados = useRef(new Map());
   const vistaActual = useRef(vista);
   vistaActual.current = vista;
+
+  useEffect(() => {
+    const lienzo = lienzoRef.current;
+    const leyenda = lienzo?.querySelector('.mapa-pie');
+    const reproductor = lienzo?.querySelector('.mapa-reproductor');
+    if (!lienzo || !leyenda) return undefined;
+    const ubicar = () => {
+      if (!window.matchMedia('(max-width: 768px)').matches) return;
+      const base = Math.ceil(lienzo.getBoundingClientRect().bottom
+        - leyenda.getBoundingClientRect().top + 8);
+      setEstadoBase(anterior => anterior === base ? anterior : base);
+    };
+    const observador = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(ubicar);
+    observador?.observe(lienzo);
+    observador?.observe(leyenda);
+    if (reproductor) observador?.observe(reproductor);
+    window.addEventListener('resize', ubicar);
+    ubicar();
+    return () => { observador?.disconnect(); window.removeEventListener('resize', ubicar); };
+  }, [pieAbierto]);
 
   const marco = encuadre(vista);
 
@@ -479,22 +523,25 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     {/* Indicadores globales (G01-G04): el llenado del conjunto, con el mismo semáforo que cada
         elemento individual. Sin corte publicado se declara, no se estima. */}
     <div className="mapa-indicadores">
-      <div className="mapa-indicador">
-        <span className="mapa-indicador-titulo">Flota</span>
-        <b>{flotaGlobal.porcentaje === null ? '—' : `${flotaGlobal.porcentaje} %`}</b>
-        <span className={`mapa-indicador-luz mapa-carga-${flotaGlobal.estado}`}
-          title={ETIQUETAS_CARGA[flotaGlobal.estado]} />
-        <small>{flotaGlobal.porcentaje === null ? 'Sin datos del instante'
-          : `${numero(flotaGlobal.carga)} / ${numero(flotaGlobal.capacidad)} en ${numero(flotaGlobal.unidades)} unidad(es)`}</small>
-      </div>
-      <div className="mapa-indicador">
-        <span className="mapa-indicador-titulo">Almacenes</span>
-        <b>{almacenesGlobal.porcentaje === null ? '—' : `${almacenesGlobal.porcentaje} %`}</b>
-        <span className={`mapa-indicador-luz mapa-stock-${almacenesGlobal.estado}`}
-          title={ETIQUETAS_STOCK[almacenesGlobal.estado]} />
-        <small>{almacenesGlobal.porcentaje === null ? 'Sin corte de inventario'
-          : `${numero(almacenesGlobal.carga)} / ${numero(almacenesGlobal.capacidad)} disponibles${almacenesGlobal.ilimitados ? ' · central ilimitado' : ''}`}</small>
-      </div>
+      <IndicadoresMapa flotaGlobal={flotaGlobal} almacenesGlobal={almacenesGlobal}
+        etiquetasCarga={ETIQUETAS_CARGA} />
+    </div>
+    <div className={`mapa-estado-movil ${pieAbierto ? 'con-leyenda-abierta' : ''}`}
+      style={{ '--estado-base': `${estadoBase}px` }}>
+      <button type="button" className="mapa-estado-boton" aria-expanded={estadoAbierto}
+        aria-controls={estadoPanelId} onClick={() => setEstadoAbierto(!estadoAbierto)}>
+        <IconoUI nombre="metricas" size={15} /><span>Estado</span>
+        <b>{flotaGlobal.porcentaje === null ? '—' : `${flotaGlobal.porcentaje} %`} · {almacenesGlobal.porcentaje === null ? '—' : `${almacenesGlobal.porcentaje} %`}</b>
+        <i aria-hidden="true" />
+      </button>
+      {estadoAbierto && <section id={estadoPanelId} className="mapa-estado-panel"
+        aria-label="Estado de flota y almacenes">
+        <header><IconoUI nombre="metricas" size={17} /><strong>Estado</strong>
+          <button type="button" aria-label="Cerrar estado" onClick={() => setEstadoAbierto(false)}>×</button>
+        </header>
+        <div className="mapa-estado-datos"><IndicadoresMapa flotaGlobal={flotaGlobal}
+          almacenesGlobal={almacenesGlobal} etiquetasCarga={ETIQUETAS_CARGA} /></div>
+      </section>}
     </div>
     <div className="mapa-reloj-actual">
       <time dateTime={ahoraReal ? new Date(ahoraReal).toISOString() : undefined}>

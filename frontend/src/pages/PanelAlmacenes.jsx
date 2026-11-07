@@ -4,6 +4,7 @@ import { filasDeAlmacenes } from '../almacenes.js';
 import { ETIQUETAS_STOCK } from '../stock.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { enviosEn, ventanaDeEnvios, agruparOriginales } from '../envios.js';
+import IconoUI from '../components/IconoUI.jsx';
 
 const ESTADOS = { PLANIFICADO: 'Planificado', EN_RUTA: 'En ruta', ENTREGADO: 'Entregado',
   NO_ASIGNADO: 'Sin asignar' };
@@ -39,15 +40,16 @@ export default function PanelAlmacenes({ inventario, mapaDatos, rutas, estadosPe
     return <p className="vacio">Todavía no se cargaron los almacenes del período.</p>;
   }
 
-  return <>
+  return <div className="panel-inventario">
     <label htmlFor="alm-consulta">Consultar envíos por almacén</label>
+    <div className="alm-consulta-control"><IconoUI nombre="camion" size={15} />
     <select id="alm-consulta" className="input" value={consulta}
       onChange={e => { setConsulta(e.target.value); setAbierto(null); setPedidoAbierto(null);
         alSeleccionarEnvio(null); }}>
       <option value="transito">En tránsito</option>
       <option value="salidas">Salidas previstas · próximas 4 horas</option>
       <option value="entregados">Entregados · últimas 4 horas</option>
-    </select>
+    </select></div>
     {seleccionEnvio && <div className="alm-seleccion" role="status">
       <span><b>{seleccionEnvio.tipo === 'original' ? 'Pedido' : 'Fracción'} {seleccionEnvio.id}</b>
         {rutasDelEnvio?.fracciones?.length ? seleccionEnvio.tipo === 'fraccion'
@@ -72,7 +74,8 @@ export default function PanelAlmacenes({ inventario, mapaDatos, rutas, estadosPe
           onClick={() => alSeleccionar(activo ? null : fila.id)}>
           <div className="almacen-linea">
             <span><i className={`unidad-luz mapa-stock-${fila.estado}`} title={ETIQUETAS_STOCK[fila.estado]} />
-              {fila.id} <em>({fila.ubicacion.x}, {fila.ubicacion.y})</em></span>
+              <strong>{fila.id}</strong> <em><IconoUI nombre="ubicacion" size={12} />
+                ({fila.ubicacion.x}, {fila.ubicacion.y})</em></span>
             <b>{fila.ilimitado ? '∞'
               : fila.disponible === null ? '—'
                 : `${numero(fila.disponible)}${fila.capacidad ? ` / ${numero(fila.capacidad)}` : ''}`}</b>
@@ -81,9 +84,9 @@ export default function PanelAlmacenes({ inventario, mapaDatos, rutas, estadosPe
             : fila.estado === 'advertencia' ? 'medio' : ''}
           style={{ width: `${fila.porcentaje ?? 0}%` }} /></div>}
           <div className="almacen-pie">
-            <span className="sub">{fila.ilimitado ? 'Abastecimiento ilimitado' : ETIQUETAS_STOCK[fila.estado]}{fila.porcentaje === null ? ''
-              : ` · ${fila.porcentaje} %`}</span>
-            <span className="sub">{enTransito.pedidos.length
+            <span className="sub alm-estado">{fila.ilimitado ? 'Abastecimiento ilimitado' : ETIQUETAS_STOCK[fila.estado]}
+              {fila.porcentaje !== null && <b className={`alm-porcentaje mapa-stock-${fila.estado}`}>{fila.porcentaje} %</b>}</span>
+            <span className="sub alm-envios-resumen"><IconoUI nombre="info" size={12} />{enTransito.pedidos.length
               ? `${numero(enTransito.pedidos.length)} fracción(es) · ${numero(enTransito.productos)} producto(s)`
               : 'Sin envíos observados para esta consulta'}</span>
           </div>
@@ -130,9 +133,9 @@ export default function PanelAlmacenes({ inventario, mapaDatos, rutas, estadosPe
         </>}
       </div>;
     })}</div>
-    <p className="nota">{inventario
+    <p className="nota alm-nota"><IconoUI nombre="info" size={15} />{inventario
       ? `Inventario del último corte disponible, a las ${fecha(inventario.reloj)}.`
       : ejecucion ? 'Sin corte de inventario para este instante; se muestran los almacenes del período.'
         : 'Sin una corrida seleccionada, se muestra el stock inicial del caso.'} </p>
-  </>;
+  </div>;
 }

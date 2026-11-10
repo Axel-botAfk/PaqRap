@@ -33,6 +33,7 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos)
   }),
+  activas: (escenario) => solicitud(`/api/ejecuciones/activas?escenario=${encodeURIComponent(escenario)}`),
   consultar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}`),
   inventario: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/inventario`),
   averias: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/averias`),

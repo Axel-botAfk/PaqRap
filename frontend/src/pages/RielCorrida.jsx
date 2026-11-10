@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Acordeon from '../components/Acordeon.jsx';
 import PanelUnidades from './PanelUnidades.jsx';
 import PanelUmbrales from './PanelUmbrales.jsx';
 import PanelAlmacenes from './PanelAlmacenes.jsx';
 import PanelRendimiento from './PanelRendimiento.jsx';
+import ControlesCorrida from '../components/ControlesCorrida.jsx';
+import IconoUI from '../components/IconoUI.jsx';
+import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
@@ -18,13 +21,21 @@ const ESCENARIOS_SIMULACION = [
  * operación diaria fija el escenario y la de simulación deja elegir entre los otros dos.
  */
 export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado, rutas,
-  calculandoRutas, rutaSeleccionada, alSeleccionarRuta, inventario, mapaDatos, averias,
+  calculandoRutas, rutaSeleccionada, alSeleccionarRuta,
+  seleccionEnvio = null, rutasDelEnvio = null, alSeleccionarEnvio = () => {},
+  inventario, mapaDatos, averias,
   aviso, progreso, vehiculos = [], averiasDelInstante = null, instante = null,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
   almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
   alRestablecerUmbrales = () => {}, estadosPedido = null }) {
   const simulacion = vista === 'simulacion';
+  const activa = controlesDeCorrida(ejecucion?.estado).activa;
+  const [corridaElegida, setCorridaElegida] = useState('');
+  const preparandoNueva = !!cfg.crearIndependiente;
+  const bloquearConfiguracion = activa && !preparandoNueva;
+  const puedeIniciar = !cfg.consultandoCorridas
+    && (preparandoNueva || !cfg.corridasActivas?.length);
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
@@ -35,12 +46,32 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   }), { km: 0, costo: 0 });
 
   return <>
+    <ControlesCorrida key={ejecucion?.id || 'sin-corrida'} ejecucion={ejecucion} ocupado={ocupado}
+      alControlar={cfg.alControlar} progreso={progreso} />
+    {!ejecucion && !preparandoNueva && cfg.corridasActivas?.length > 1 &&
+      <div className="corridas-activas" role="region" aria-label="Elegir corrida activa">
+        <label htmlFor="corrida-activa">Hay varias corridas activas. Elige cuál visualizar:</label>
+        <div className="row">
+          <select id="corrida-activa" className="input" value={corridaElegida}
+            onChange={evento => setCorridaElegida(evento.target.value)}>
+            <option value="">Seleccionar corrida</option>
+            {cfg.corridasActivas.map(corrida => <option key={corrida.id} value={corrida.id}>
+              {fecha(corrida.inicio)} · {corrida.estado === 'PAUSADA' ? 'Pausada'
+                : corrida.estado === 'PENDIENTE' ? 'Preparando' : 'En curso'} · {corrida.id.slice(0, 8)}
+            </option>)}
+          </select>
+          <button type="button" className="btn" disabled={ocupado || !cfg.corridasActivas.some(c => c.id === corridaElegida)}
+            onClick={() => cfg.alElegirCorrida(corridaElegida)}>Abrir</button>
+        </div>
+        <button type="button" className="corrida-nueva-enlace"
+          onClick={cfg.alPrepararNueva}>Iniciar una corrida independiente</button>
+      </div>}
     <Acordeon titulo={simulacion ? 'Tipo de simulación' : 'Configuración de la corrida'}>
       <form onSubmit={cfg.alIniciar}>
         {simulacion && <div className="radios">
           {ESCENARIOS_SIMULACION.map(([valor, titulo, ayuda]) => <label key={valor}>
             <input type="radio" name="escenario" value={valor} checked={escenario === valor}
-              disabled={corriendo} onChange={() => cfg.setEscenario(valor)} />
+              disabled={activa || ocupado} onChange={() => cfg.setEscenario(valor)} />
             <span><b>{titulo}</b><small>{ayuda}</small></span>
           </label>)}
         </div>}
@@ -49,10 +80,12 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <div className="row">
           <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
             <input id="c-dia" className="input" name="dia" type="date" value={dia} required
+              disabled={bloquearConfiguracion || ocupado}
               min={limites.desde} max={limites.hasta}
               onChange={e => cfg.setDia(e.target.value)} /></div>
           <div className="field"><label htmlFor="c-hora">Hora inicial</label>
             <input id="c-hora" className="input" name="hora" type="time" value={hora} required
+              disabled={bloquearConfiguracion || ocupado}
               onChange={e => cfg.setHora(e.target.value)} /></div>
         </div>
         {detalle
@@ -61,25 +94,32 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
 
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
+            disabled={bloquearConfiguracion || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
 
         <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
 
-        <div className="acciones">
-          <button className="btn btn-primary" type="submit" disabled={ocupado || !limites.desde}>
-            {ocupado ? 'Procesando…' : '▶ Iniciar'}</button>
-        </div>
+        {ejecucion && !preparandoNueva && <button type="button" className="corrida-nueva-enlace"
+          onClick={cfg.alPrepararNueva}>Preparar otra corrida independiente</button>}
+        {preparandoNueva && <button type="button" className="corrida-nueva-enlace"
+          onClick={cfg.alCancelarNueva}>Cancelar nueva corrida</button>}
+        {(!activa || preparandoNueva) && <div className="acciones">
+          <button className="btn btn-primary" type="submit"
+            disabled={ocupado || !limites.desde || !puedeIniciar}>
+            {ocupado ? 'Procesando…' : preparandoNueva ? '▶ Iniciar corrida independiente'
+              : ejecucion ? '▶ Iniciar nueva corrida' : '▶ Iniciar'}</button>
+        </div>}
 
         {ejecucion?.ritmo && <>
-          <div className="bar"><i style={{ width: `${Math.round(progreso * 100)}%` }} /></div>
-          <p className="nota">Ventana {numero(ejecucion.ritmo.ventana)} de {numero(ejecucion.ritmo.ventanas)} · {textoRitmo(ejecucion.ritmo)}</p>
+          <p className="nota">{textoRitmo(ejecucion.ritmo)}</p>
         </>}
         {aviso && <p className={`nota nota-aviso ${aviso === 'Conexión en vivo activa.' ? 'nota-conexion-activa' : ''}`}
           role="status">{aviso}</p>}
       </form>
     </Acordeon>
 
-    <Acordeon titulo="Rutas del instante" nota={numero(rutas.length)}>
+    <Acordeon titulo={<><IconoUI nombre="ruta" size={17}
+      className="rutas-instante-icono" />Rutas del instante</>} nota={numero(rutas.length)}>
       {calculandoRutas ? <p className="vacio" role="status">Calculando rutas…</p>
         : rutas.length === 0 ? <p className="vacio">No hay rutas planificadas para este instante.</p>
           : <div className="lista-rutas">{rutas.map((ruta, indice) => <button key={`${ruta.id}-${indice}`}
@@ -95,14 +135,16 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <b>{decimal(totalRutas.km, ' km')} · S/ {decimal(totalRutas.costo)}</b></p>}
     </Acordeon>
 
-    <Acordeon titulo="Unidades de transporte" abierto={false}
+    <Acordeon titulo={<><IconoUI nombre="camion" size={17} />Unidades de transporte</>} abierto={false}
       nota={vehiculos.length ? numero(vehiculos.length) : null}>
       <PanelUnidades vehiculos={vehiculos} rutas={rutas} averias={averiasDelInstante}
         seleccionada={unidadSeleccionada} alSeleccionar={alSeleccionarUnidad} reloj={instante}
         trayectos={trayectos} umbrales={umbrales} />
     </Acordeon>
 
-    <Acordeon titulo="Registrar avería" abierto={false} nota={averias.length ? numero(averias.length) : null}>
+    <Acordeon titulo={<><IconoUI nombre="averias" size={18}
+      className="averia-registro-icono" />Registrar avería</>} abierto={false}
+      nota={averias.length ? numero(averias.length) : null}>
       <form onSubmit={cfg.alRegistrarAveria}>
         <div className="field"><label htmlFor="a-unidad">Placa</label>
           <select id="a-unidad" className="input" value={unidadAveriada} required
@@ -126,10 +168,15 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </form>
     </Acordeon>
 
-    <Acordeon titulo="Inventario de almacenes" abierto={false}
+    <Acordeon titulo={<><svg className="alm-inventario-icono" width="17" height="17" viewBox="0 0 24 24"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" focusable="false"><path d="m3 9 9-6 9 6v12H3V9Z"/>
+      <path d="M8 21v-8h8v8M8 13h8M12 7h.01"/></svg>Inventario de almacenes</>} abierto={false}
       nota={mapaDatos?.almacenes?.length ? numero(mapaDatos.almacenes.length) : null}>
       <PanelAlmacenes inventario={inventario} mapaDatos={mapaDatos} rutas={rutas}
         planes={planes} instante={instante}
+        seleccionEnvio={seleccionEnvio} rutasDelEnvio={rutasDelEnvio}
+        alSeleccionarEnvio={alSeleccionarEnvio}
         estadosPedido={estadosPedido} seleccionado={almacenSeleccionado}
         alSeleccionar={alSeleccionarAlmacen} umbrales={umbrales} ejecucion={ejecucion} />
     </Acordeon>
@@ -151,7 +198,10 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
       </dl>
     </Acordeon>}
 
-    <Acordeon titulo="Umbrales del semáforo" abierto={false}>
+    <Acordeon titulo={<><svg width="30" height="16" viewBox="0 0 30 16" aria-hidden="true" focusable="false">
+      <circle cx="5" cy="8" r="4" fill="#E60023" /><circle cx="15" cy="8" r="4" fill="#F5A400" />
+      <circle cx="25" cy="8" r="4" fill="#13A538" />
+    </svg>Umbrales del semáforo</>} abierto={false}>
       <PanelUmbrales umbrales={umbrales} alGuardar={alGuardarUmbrales}
         alRestablecer={alRestablecerUmbrales} />
     </Acordeon>

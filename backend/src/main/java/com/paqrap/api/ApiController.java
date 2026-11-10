@@ -2,6 +2,8 @@ package com.paqrap.api;
 
 import com.paqrap.api.ApiModels.CrearEjecucionRequest;
 import com.paqrap.api.ApiModels.EjecucionVista;
+import com.paqrap.api.ApiModels.Escenario;
+import com.paqrap.api.ApiModels.CorridaActivaVista;
 import com.paqrap.api.ApiModels.FotogramasVista;
 import com.paqrap.api.ApiModels.PlanesVista;
 import com.paqrap.api.ApiModels.PeriodoVista;
@@ -58,6 +60,11 @@ class ApiController {
 
     @GetMapping("/ejecuciones/{id}")
     EjecucionVista consultar(@PathVariable UUID id) { return ejecuciones.consultar(id); }
+
+    @GetMapping("/ejecuciones/activas")
+    List<CorridaActivaVista> activas(@RequestParam Escenario escenario) {
+        return ejecuciones.activas(escenario);
+    }
 
     @GetMapping("/ejecuciones/{id}/rendimiento")
     RendimientoVista rendimiento(@PathVariable UUID id) { return ejecuciones.rendimiento(id); }

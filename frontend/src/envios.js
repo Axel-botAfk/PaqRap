@@ -60,3 +60,21 @@ export function agruparOriginales(filas) {
   }
   return [...grupos.values()];
 }
+
+/** Solo resalta rutas que contienen la fracción en el plan dibujado para el reloj visible. */
+export function rutasDeEnvioEnMapa(filas, seleccion, rutasVisibles) {
+  if (!seleccion) return { fracciones: [], rutas: [], sinRutaVisible: [] };
+  const fracciones = (filas || []).filter(fila => seleccion.tipo === 'original'
+    ? (fila.original || fila.idOriginal || fila.id) === seleccion.id
+    : fila.id === seleccion.id);
+  const rutas = new Set();
+  const sinRutaVisible = [];
+  for (const fraccion of fracciones) {
+    const visible = (rutasVisibles || []).some(ruta => ruta.id === fraccion.ruta
+      && ruta.vehiculoId === fraccion.unidad && ruta.almacenId === fraccion.almacen
+      && (ruta.paradas || []).some(parada => parada.id === fraccion.id));
+    if (visible) rutas.add(fraccion.ruta);
+    else sinRutaVisible.push(fraccion);
+  }
+  return { fracciones, rutas: [...rutas], sinRutaVisible };
+}

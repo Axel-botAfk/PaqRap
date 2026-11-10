@@ -31,7 +31,5 @@ export default function PanelRendimiento({ id }) {
           : `${decimal((datos.finRealMs - datos.inicioRealMs) / 1000)} s`}</dd></div></dl>
       <button type="button" className="btn" onClick={descargar}>Descargar evidencia JSON</button>
     </>}
-    <p className="nota">Una medición por llamada real. La duración incluye esperas de reproducción.
-      Memoria RSS se mide por separado sobre el proceso Java del servidor.</p>
   </>;
 }

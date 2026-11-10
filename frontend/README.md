@@ -16,7 +16,16 @@ npm run dev
 ```
 
 Abrir `http://127.0.0.1:5173/`. Vite reenvía `/api` y `/ws` al backend;
-el frontend no guarda host, token ni credenciales. Para producción:
+el frontend no guarda host, token ni credenciales.
+
+Para abrir la misma corrida en un celular de la misma red, entra a
+`http://IP_DE_LA_LAPTOP:5173/` en ambos dispositivos, abre «Compartir o conectar
+corrida» y copia el enlace o introduce el UUID. El firewall debe permitir el
+puerto 5173. El backend puede seguir escuchando en `127.0.0.1:8080` porque Vite
+reenvía las solicitudes desde la laptop. Un enlace con `127.0.0.1` solo funciona
+en el equipo que lo generó.
+
+Para producción:
 
 ```sh
 npm run build

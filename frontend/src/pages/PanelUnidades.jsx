@@ -4,6 +4,8 @@ import { filasDeUnidades, ordenarUnidades, filtrarUnidades, ORDENES } from '../u
 import { etiquetasDeCarga } from '../carga.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { ETIQUETAS_AVERIA } from '../averias.js';
+import IconoUI from '../components/IconoUI.jsx';
+import DibujoVehiculo from '../components/DibujoVehiculo.jsx';
 
 /**
  * Lista de unidades de transporte del riel (E02 a E05 y E13), enlazada con el mapa en los dos
@@ -53,14 +55,17 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
     {/* Búsqueda por minutos (E06 y E07): el caso pide distinguir la llegada de la salida. */}
     <div className="unidades-busqueda">
       <div className="field"><label htmlFor="u-destino">Al destino ≤ (min)</label>
-        <input id="u-destino" className="input" type="number" min="0" step="5" value={alDestino}
-          placeholder="—" onChange={e => setAlDestino(e.target.value)} /></div>
+        <span className="unidades-campo-tiempo"><IconoUI nombre="reloj" size={14} />
+          <input id="u-destino" className="input" type="number" min="0" step="5" value={alDestino}
+            placeholder="—" onChange={e => setAlDestino(e.target.value)} /></span></div>
       <div className="field"><label htmlFor="u-origen">Desde la salida ≤ (min)</label>
-        <input id="u-origen" className="input" type="number" min="0" step="5" value={desdeSalida}
-          placeholder="—" onChange={e => setDesdeSalida(e.target.value)} /></div>
+        <span className="unidades-campo-tiempo"><IconoUI nombre="reloj" size={14} />
+          <input id="u-origen" className="input" type="number" min="0" step="5" value={desdeSalida}
+            placeholder="—" onChange={e => setDesdeSalida(e.target.value)} /></span></div>
       <div className="field"><label htmlFor="u-retorno">Al almacén de origen ≤ (min estimados)</label>
-        <input id="u-retorno" className="input" type="number" min="0" value={alOrigen}
-          placeholder="—" onChange={e => setAlOrigen(e.target.value)} /></div>
+        <span className="unidades-campo-tiempo"><IconoUI nombre="reloj" size={14} />
+          <input id="u-retorno" className="input" type="number" min="0" value={alOrigen}
+            placeholder="—" onChange={e => setAlOrigen(e.target.value)} /></span></div>
       {hayBusqueda && <button type="button" className="unidades-limpiar"
         onClick={() => { setAlDestino(''); setDesdeSalida(''); setAlOrigen(''); }}>Limpiar búsqueda</button>}
     </div>
@@ -75,15 +80,18 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         <button type="button" className="ut-cabecera" aria-pressed={activa}
           onClick={() => alSeleccionar(activa ? null : fila.id)}>
           <span className="l1">
-            <i className={`unidad-luz mapa-carga-${fila.nivel}`} title={ETIQUETAS_CARGA[fila.nivel]} />
             <b>{fila.id}</b>
-            <span className="sub">{tipoVehiculo(fila.tipo)}</span>
-            <span className="num">{fila.porcentaje === null ? 'Sin dato'
+            <span className="sub ut-tipo"><svg viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+              <DibujoVehiculo tipo={fila.tipo} /></svg>{tipoVehiculo(fila.tipo)}</span>
+            <span className="num"><i className={`unidad-luz mapa-carga-${fila.nivel}`} title={ETIQUETAS_CARGA[fila.nivel]} />
+              {fila.porcentaje === null ? 'Sin dato'
               : `${numero(fila.cargaAbordo)} / ${numero(fila.capacidad)} · ${fila.porcentaje} %`}</span>
           </span>
           <span className="l2">
-            <span className="sub">{estadoVehiculo(fila.estado)}{fila.ubicacion ? ` · (${fila.ubicacion.x}, ${fila.ubicacion.y})` : ''}</span>
-            <span className="sub">{fila.pedidos.length
+            <span className="sub ut-estado-ubicacion"><span className={`ut-disponibilidad estado-${fila.estado?.toLowerCase()}`}>
+              {estadoVehiculo(fila.estado)}</span>{fila.ubicacion && <span className="ut-ubicacion">
+              <IconoUI nombre="ubicacion" size={13} />({fila.ubicacion.x}, {fila.ubicacion.y})</span>}</span>
+            <span className="sub ut-pedidos-resumen"><IconoUI nombre="pedidos" size={13} />{fila.pedidos.length
               ? `${numero(fila.pedidos.length)} pedido(s) · ${numero(fila.productos)} producto(s)`
               : 'Sin pedidos asignados'}</span>
           </span>
@@ -93,7 +101,7 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
             <span className="sub">Llegada {hora(fila.llegada)}{Number.isFinite(fila.minutosAlDestino)
               ? ` · en ${numero(fila.minutosAlDestino)} min` : ''}</span>
           </span>}
-          {fila.origenId && <span className="sub">Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
+          {fila.origenId && <span className="sub ut-retorno">Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
             ? 'sin estimación factible' : `${numero(Math.ceil(fila.minutosAlOrigen))} min estimados`}</span>}
           {averia && <span className={`ut-averia mapa-averia-${averia.tipo.toLowerCase()}`}>
             {ETIQUETAS_AVERIA[averia.tipo]}

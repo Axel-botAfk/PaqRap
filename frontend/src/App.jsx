@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
+import { corridaRecuperable, unicaCorridaActiva } from './conexionCorridas.js';
 import { planVigenteEn, estadosDePedido, vehiculosObservadosEn } from './mapa.js';
 import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
@@ -12,16 +13,18 @@ import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
 import Riel from './components/Riel.jsx';
 import Mapa from './components/Mapa.jsx';
 import RielCorrida from './pages/RielCorrida.jsx';
+import { controlesDeCorrida } from './controlesCorrida.js';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
 import { inventarioEn } from './stock.js';
+import { enviosEn, rutasDeEnvioEnMapa } from './envios.js';
 import { leerUmbrales, guardarUmbrales, olvidarUmbrales } from './umbrales.js';
 
 const CLAVE_EJECUCION = 'paqrap.ejecucion';
 const CLAVE_POR_VISTA = vista => `${CLAVE_EJECUCION}.${vista}`;
 const claveDeEscenario = escenario => escenario === 'OPERACION_DIARIA'
   ? 'operacion' : `simulacion.${escenario.toLowerCase()}`;
-const ID_VALIDO = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i;
+const ID_VALIDO = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const LISTA_VACIA = [];
 const ALGORITMO = 'TABU';          // el planificador del caso; ya no se elige desde la pantalla
 const SIN_LIMITES = { desde: '', hasta: '' };
@@ -30,10 +33,6 @@ const SIN_LIMITES = { desde: '', hasta: '' };
 const periodoDe = dia => (dia && dia.length >= 7 ? dia.slice(0, 4) + dia.slice(5, 7) : '');
 const TITULOS = Object.fromEntries(VISTAS);
 const ES_MAPA = vista => vista === 'operacion' || vista === 'simulacion';
-
-function leerEjecucionGuardada() {
-  try { return localStorage.getItem(CLAVE_EJECUCION); } catch { return null; }
-}
 
 function guardarEjecucion(id) {
   try { id ? localStorage.setItem(CLAVE_EJECUCION, id) : localStorage.removeItem(CLAVE_EJECUCION); } catch { /* sin almacenamiento */ }
@@ -63,14 +62,19 @@ export default function App() {
   const [horizonte, setHorizonte] = useState(30);
   const [ejecucion, setEjecucion] = useState(null);
   const [id, setId] = useState(() => {
-    const valor = new URLSearchParams(location.search).get('ejecucion') || leerEjecucionGuardada();
+    const valor = new URLSearchParams(location.search).get('ejecucion');
     return ID_VALIDO.test(valor || '') ? valor : null;
   });
   const idActual = useRef(id);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [corridasActivas, setCorridasActivas] = useState([]);
+  const [consultandoCorridas, setConsultandoCorridas] = useState(false);
+  const [crearIndependiente, setCrearIndependiente] = useState(false);
+  const accionCorrida = useRef(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
+  const [seleccionEnvio, setSeleccionEnvio] = useState(null);
   const [fotogramas, setFotogramas] = useState([]);
   const cantidadFotogramas = useRef(0);
   const cargarFotogramas = useRef(null);
@@ -155,11 +159,47 @@ export default function App() {
     return () => { activo = false; };
   }, [periodo, periodos]);
 
+  // El descubrimiento pertenece al servidor y al escenario, no al almacenamiento del navegador.
+  // Una sola corrida se recupera sin crear otra; con varias se espera una elección explícita.
+  useEffect(() => {
+    if (!ES_MAPA(vista) || id || ocupado || crearIndependiente) return undefined;
+    let activo = true;
+    let consultando = false;
+    const consultarActivas = async () => {
+      if (consultando) return;
+      consultando = true;
+      setConsultandoCorridas(true);
+      try {
+        const lista = await api.activas(escenario);
+        if (!activo || idActual.current || vistaActual.current !== vista) return;
+        setCorridasActivas(lista);
+        const unica = unicaCorridaActiva(lista, escenario);
+        if (unica) {
+          const recuperada = await api.consultar(unica.id);
+          if (activo && !idActual.current && vistaActual.current === vista
+              && corridaRecuperable(recuperada, escenario)) {
+            adoptarCorrida(recuperada);
+          }
+        }
+      } catch (e) {
+        if (activo) setError(`No se pudieron consultar las corridas activas: ${e.message}`);
+      } finally {
+        consultando = false;
+        if (activo) setConsultandoCorridas(false);
+      }
+    };
+    consultarActivas();
+    const intervalo = setInterval(consultarActivas, 5000);
+    return () => { activo = false; clearInterval(intervalo); };
+  }, [vista, escenario, id, ocupado, crearIndependiente]);
+
   useEffect(() => {
     if (!id) return undefined;
     let activo = true;
     let socket;
     let intervalo;
+    let temporizadorSocket;
+    let reintentosSocket = 0;
     let restaurado = false;
     const actualizar = datos => {
       if (!activo || idActual.current !== id) return;
@@ -207,23 +247,55 @@ export default function App() {
       });
     consultar();
     intervalo = setInterval(consultar, 5000);
-    try {
-      socket = new WebSocket(urlWebSocket(id));
-      socket.onopen = () => { if (activo) setAviso('Conexión en vivo activa.'); };
-      socket.onmessage = evento => {
-        try {
-          const mensaje = JSON.parse(evento.data);
-          if (mensaje.ejecucion) {
-            actualizar(mensaje.ejecucion);
-            if (cargarFotogramas.current?.id === id) cargarFotogramas.current.cargar();
-            if (cargarPlanes.current?.id === id) cargarPlanes.current.cargar();
-          }
-        } catch { if (activo) setAviso('Evento no reconocido; se mantiene la consulta periódica.'); }
-      };
-      socket.onclose = () => { if (activo) setAviso('Conexión en vivo interrumpida; la vista se actualiza periódicamente.'); };
-      socket.onerror = () => { if (activo) setAviso('Sin conexión en vivo; la vista se actualiza periódicamente.'); };
-    } catch { setAviso('Sin conexión en vivo; la vista se actualiza periódicamente.'); }
-    return () => { activo = false; clearInterval(intervalo); socket?.close(); };
+    const recuperarHistorial = () => {
+      if (cargarFotogramas.current?.id === id) cargarFotogramas.current.cargar();
+      if (cargarPlanes.current?.id === id) cargarPlanes.current.cargar();
+    };
+    const reintentarSocket = () => {
+      if (!activo || temporizadorSocket) return;
+      const espera = Math.min(10000, 1000 * 2 ** reintentosSocket++);
+      temporizadorSocket = setTimeout(() => { temporizadorSocket = null; abrirSocket(); }, espera);
+    };
+    const abrirSocket = () => {
+      if (!activo) return;
+      try {
+        socket = new WebSocket(urlWebSocket(id));
+        socket.onopen = () => {
+          if (!activo) return;
+          reintentosSocket = 0;
+          setAviso('Conexión en vivo activa.');
+          consultar();
+          recuperarHistorial();
+        };
+        socket.onmessage = evento => {
+          try {
+            const mensaje = JSON.parse(evento.data);
+            if (mensaje.ejecucion) { actualizar(mensaje.ejecucion); recuperarHistorial(); }
+          } catch { if (activo) setAviso('Evento no reconocido; se mantiene la consulta periódica.'); }
+        };
+        socket.onclose = () => {
+          if (!activo) return;
+          setAviso('Conexión en vivo interrumpida; la vista se actualiza periódicamente.');
+          consultar();
+          reintentarSocket();
+        };
+        socket.onerror = () => {
+          if (!activo) return;
+          setAviso('Sin conexión en vivo; la vista se actualiza periódicamente.');
+          socket.close();
+        };
+      } catch {
+        setAviso('Sin conexión en vivo; la vista se actualiza periódicamente.');
+        reintentarSocket();
+      }
+    };
+    abrirSocket();
+    return () => {
+      activo = false;
+      clearInterval(intervalo);
+      clearTimeout(temporizadorSocket);
+      socket?.close();
+    };
   }, [id]);
 
   useEffect(() => {
@@ -411,6 +483,13 @@ export default function App() {
     ...ruta, paradas: ruta.paradas.filter(p => !p.fechaRegistro
       || aMs(p.fechaRegistro) <= aMs(instanteReproducido))
   })).filter(ruta => ruta.paradas.length > 0);
+  const enviosDelInstante = useMemo(() => enviosEn(planes, instanteReproducido),
+    [planes, instanteReproducido]);
+  const rutasDelEnvio = useMemo(() => rutasDeEnvioEnMapa(
+    enviosDelInstante, seleccionEnvio, rutasVisibles),
+  [enviosDelInstante, seleccionEnvio, rutasVisibles]);
+
+  useEffect(() => { setSeleccionEnvio(null); }, [id]);
 
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
@@ -446,10 +525,11 @@ export default function App() {
     restaurarVistaInicial.current = false;
     vistaActual.current = destino;
     if (ES_MAPA(destino) && destino !== vista) {
-      const clave = destino === 'operacion' ? 'operacion'
-        : claveDeEscenario(escenarioSimulacion.current);
-      const siguienteId = ejecucionesPorVista.current[clave] || null;
-      if (siguienteId !== id) {
+      setCorridasActivas([]);
+      setCrearIndependiente(false);
+      const conservar = ejecucion && vistaDeEscenario(ejecucion.escenario) === destino
+        && (destino !== 'simulacion' || ejecucion.escenario === escenarioSimulacion.current);
+      if (id && !conservar) {
         setEjecucion(null);
         setFotogramas([]);
         setPlanes([]);
@@ -458,11 +538,10 @@ export default function App() {
         setUnidadSeleccionada(null);
         setAlmacenSeleccionado(null);
         setRutaSeleccionada(null);
-        idActual.current = siguienteId;
-        setId(siguienteId);
-        guardarEjecucion(siguienteId);
-        history.replaceState(null, '', siguienteId
-          ? `?ejecucion=${encodeURIComponent(siguienteId)}` : location.pathname);
+        idActual.current = null;
+        setId(null);
+        guardarEjecucion(null);
+        history.replaceState(null, '', location.pathname);
       }
     }
     setVista(destino);
@@ -475,8 +554,8 @@ export default function App() {
     escenarioSimulacion.current = valor;
     try { localStorage.setItem('paqrap.escenario.simulacion', valor); } catch { /* sin almacenamiento */ }
     setEscenario(valor);
-    const siguienteId = ejecucionesPorVista.current[claveDeEscenario(valor)] || null;
-    if (siguienteId !== id) {
+    setCorridasActivas([]);
+    if (id && ejecucion?.escenario !== valor) {
       setEjecucion(null);
       setFotogramas([]);
       setPlanes([]);
@@ -485,16 +564,35 @@ export default function App() {
       setUnidadSeleccionada(null);
       setAlmacenSeleccionado(null);
       setRutaSeleccionada(null);
-      idActual.current = siguienteId;
-      setId(siguienteId);
-      guardarEjecucion(siguienteId);
-      history.replaceState(null, '', siguienteId
-        ? `?ejecucion=${encodeURIComponent(siguienteId)}` : location.pathname);
+      idActual.current = null;
+      setId(null);
+      guardarEjecucion(null);
+      history.replaceState(null, '', location.pathname);
     }
+  }
+
+  function prepararNuevaCorrida() {
+    setCrearIndependiente(true);
+    if (!id) return;
+    setEjecucion(null);
+    setFotogramas([]);
+    setPlanes([]);
+    setInventario(null);
+    setAverias([]);
+    setUnidadSeleccionada(null);
+    setAlmacenSeleccionado(null);
+    setRutaSeleccionada(null);
+    idActual.current = null;
+    setId(null);
+    guardarEjecucion(null);
+    history.replaceState(null, '', location.pathname);
   }
 
   async function iniciar(evento) {
     evento.preventDefault();
+    if (ocupado || consultandoCorridas || accionCorrida.current
+        || (controlesDeCorrida(ejecucion?.estado).activa && !crearIndependiente)
+        || (!id && corridasActivas.length && !crearIndependiente)) return;
     setError('');
     const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
     const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
@@ -507,6 +605,20 @@ export default function App() {
     setHora(horaIngresada);
     setOcupado(true);
     try {
+      if (!crearIndependiente) {
+        const activas = await api.activas(escenario);
+        if (activas.length) {
+          setCorridasActivas(activas);
+          const unica = unicaCorridaActiva(activas, escenario);
+          if (unica) {
+            const recuperada = await api.consultar(unica.id);
+            if (corridaRecuperable(recuperada, escenario)) {
+              adoptarCorrida(recuperada);
+            }
+          }
+          return;
+        }
+      }
       const nueva = await api.iniciar({
         escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
@@ -514,6 +626,8 @@ export default function App() {
         ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
       });
       const claveCorrida = claveDeEscenario(nueva.escenario);
+      setCrearIndependiente(false);
+      setCorridasActivas([]);
       ejecucionesPorVista.current[claveCorrida] = nueva.id;
       guardarEjecucionDeVista(claveCorrida, nueva.id);
       if (vistaActual.current === vistaDeEscenario(nueva.escenario)
@@ -530,6 +644,51 @@ export default function App() {
     finally { setOcupado(false); }
   }
 
+  function adoptarCorrida(recuperada) {
+      setError('');
+      setCorridasActivas([]);
+      const destino = vistaDeEscenario(recuperada.escenario);
+      const clave = claveDeEscenario(recuperada.escenario);
+      ejecucionesPorVista.current[clave] = recuperada.id;
+      guardarEjecucionDeVista(clave, recuperada.id);
+      guardarEjecucion(recuperada.id);
+      setEjecucion(recuperada);
+      setFotogramas([]);
+      setPlanes([]);
+      setInventario(null);
+      setAverias([]);
+      setRutaSeleccionada(null);
+      setUnidadSeleccionada(null);
+      setAlmacenSeleccionado(null);
+      setEscenario(recuperada.escenario);
+      if (recuperada.escenario !== 'OPERACION_DIARIA') {
+        escenarioSimulacion.current = recuperada.escenario;
+        try { localStorage.setItem('paqrap.escenario.simulacion', recuperada.escenario); } catch { /* sin almacenamiento */ }
+      }
+      vistaActual.current = destino;
+      setVista(destino);
+      idActual.current = recuperada.id;
+      setId(recuperada.id);
+      setCrearIndependiente(false);
+      history.replaceState(null, '', `?ejecucion=${encodeURIComponent(recuperada.id)}`);
+  }
+
+  async function elegirCorrida(uuid) {
+    if (ocupado || !corridasActivas.some(corrida => corrida.id === uuid)) return;
+    setOcupado(true);
+    setError('');
+    try {
+      const recuperada = await api.consultar(uuid);
+      if (!corridaRecuperable(recuperada, escenario)) {
+        setCorridasActivas(actuales => actuales.filter(corrida => corrida.id !== uuid));
+        setError('Esta corrida ya no está activa. Elige otra corrida disponible.');
+        return;
+      }
+      adoptarCorrida(recuperada);
+    } catch (e) { setError(`No se pudo recuperar la corrida: ${e.message}`); }
+    finally { setOcupado(false); }
+  }
+
   async function registrarAveria(evento) {
     evento.preventDefault();
     if (!id || !unidadAveriada) return;
@@ -540,6 +699,26 @@ export default function App() {
       setAviso(`Avería registrada para ${unidadAveriada}; se aplica en el siguiente corte y sus pedidos se replanifican.`);
     } catch (e) { setError(e.message); }
     finally { setOcupado(false); }
+  }
+
+  async function controlarCorrida(accion) {
+    const corridaId = idActual.current;
+    if (!corridaId || ocupado || accionCorrida.current
+      || !controlesDeCorrida(ejecucion?.estado)[accion]) return;
+    accionCorrida.current = true;
+    setOcupado(true);
+    setError('');
+    try {
+      const resultado = await ({ pausar: api.pausar, reanudar: api.reanudar, cancelar: api.cancelar })[accion](corridaId);
+      if (idActual.current !== corridaId) return;
+      setEjecucion(resultado);
+      if (accion === 'reanudar' && resultado.estado === 'EN_CURSO') setEnVivo(true);
+      setAviso(resultado.estado === 'PAUSADA' ? 'Corrida pausada para todos los dispositivos.'
+        : resultado.estado === 'CANCELADA' ? 'Corrida detenida. Puedes iniciar una nueva.'
+          : resultado.estado === 'EN_CURSO' ? 'Corrida reanudada.' : 'La corrida ya finalizó.');
+    } catch (e) {
+      if (idActual.current === corridaId) setError(e.message);
+    } finally { accionCorrida.current = false; setOcupado(false); }
   }
 
   // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
@@ -568,7 +747,12 @@ export default function App() {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
-    flota: flotaParaAveria, alIniciar: iniciar, alRegistrarAveria: registrarAveria
+    flota: flotaParaAveria, alIniciar: iniciar, alElegirCorrida: elegirCorrida,
+    corridasActivas, consultandoCorridas, crearIndependiente,
+    alPrepararNueva: prepararNuevaCorrida,
+    alCancelarNueva: () => setCrearIndependiente(false),
+    alRegistrarAveria: registrarAveria,
+    alControlar: controlarCorrida
   };
 
   const enMapa = ES_MAPA(vista);
@@ -589,7 +773,8 @@ export default function App() {
     {enMapa && <>
       <section className="mapsec">
         <Mapa key={id || 'sin-ejecucion'} ejecucion={ejecucion} rutas={rutasVisibles}
-          calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada} mapaDatos={mapaDatos}
+          calculandoRutas={calculandoRutas} rutaSeleccionada={rutaSeleccionada}
+          rutasEnvioSeleccionadas={rutasDelEnvio.rutas} mapaDatos={mapaDatos}
           inventario={inventarioDelInstante} fotogramas={fotogramas} indiceFotograma={indiceFotograma}
           reproduciendo={reproduciendo} pasoMs={pasoMs}
           velocidadHabilitada={reproduccionIniciada && !modoVivo}
@@ -616,7 +801,15 @@ export default function App() {
         alAlternar={() => setRielAbierto(!rielAbierto)}>
         <RielCorrida vista={vista} cfg={configuracion} ejecucion={ejecucion} corriendo={corriendo}
           ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
-          rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={setRutaSeleccionada}
+          rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={rutaId => {
+            setSeleccionEnvio(null);
+            setRutaSeleccionada(rutaId);
+          }}
+          seleccionEnvio={seleccionEnvio} rutasDelEnvio={rutasDelEnvio}
+          alSeleccionarEnvio={seleccion => {
+            setRutaSeleccionada(null);
+            setSeleccionEnvio(seleccion);
+          }}
           inventario={inventarioDelInstante} mapaDatos={mapaDatos} averias={averias} aviso={aviso}
           progreso={progreso} vehiculos={vehiculosDelInstante} planes={planes}
           averiasDelInstante={averiasDelInstante} instante={instanteReproducido}

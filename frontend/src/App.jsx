@@ -6,7 +6,7 @@ import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
+import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
@@ -62,6 +62,13 @@ export default function App() {
   const [dia, setDia] = useState('');
   const [hora, setHora] = useState('00:00');
   const [horizonte, setHorizonte] = useState(30);
+  // Ritmo de la operación día a día: tiempo real salvo que se elija la demostración acelerada.
+  const [velocidadDiaria, setVelocidadDiaria] = useState(() => {
+    try {
+      const guardada = Number(localStorage.getItem('paqrap.velocidad.diaria'));
+      return VELOCIDADES_DIA_A_DIA.some(([valor]) => valor === guardada) ? guardada : VELOCIDAD_DIA_A_DIA;
+    } catch { return VELOCIDAD_DIA_A_DIA; }
+  });
   const [ejecucion, setEjecucion] = useState(null);
   const [id, setId] = useState(() => {
     const valor = new URLSearchParams(location.search).get('ejecucion');
@@ -139,9 +146,16 @@ export default function App() {
     return () => { activo = false; };
   }, []);
 
-  // Sin fecha todavía, se arranca en el primer día con datos del catálogo.
+  // Sin fecha todavía: la fecha y hora actuales si el catálogo tiene datos de este mes —la
+  // operación día a día empieza «ahora»—; si no, el primer día con datos.
   useEffect(() => {
     if (dia || !periodos.length) return undefined;
+    const actual = ahoraLocal();
+    if (periodos.includes(periodoDe(actual.dia))) {
+      setDia(actual.dia);
+      setHora(actual.hora);
+      return undefined;
+    }
     let activo = true;
     api.periodo(periodos[0])
       .then(info => { if (activo) setDia(info.primeraFechaPedido || `${periodos[0].slice(0, 4)}-${periodos[0].slice(4)}-01`); })
@@ -667,7 +681,7 @@ export default function App() {
         escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
         ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
-        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
+        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: velocidadDiaria } : {})
       });
       setMedicionInicio({ id: nueva.id, t0: pulsado, planMs: null, movimientoMs: null });
       const claveCorrida = claveDeEscenario(nueva.escenario);
@@ -791,6 +805,13 @@ export default function App() {
   const configuracion = {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
+    velocidadDiaria,
+    setVelocidadDiaria: valor => {
+      setVelocidadDiaria(valor);
+      try { localStorage.setItem('paqrap.velocidad.diaria', String(valor)); } catch { /* sin almacenamiento */ }
+    },
+    ahoraDisponible: periodos.includes(periodoDe(ahoraLocal().dia)),
+    alUsarAhora: () => { const actual = ahoraLocal(); setDia(actual.dia); setHora(actual.hora); },
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
     flota: flotaParaAveria, alIniciar: iniciar, alElegirCorrida: elegirCorrida,
     corridasActivas, consultandoCorridas, crearIndependiente,
@@ -899,6 +920,14 @@ export default function App() {
       <HojaFlota almacenes={mapaDatos?.almacenes || LISTA_VACIA} />
     </div>}
   </div>;
+}
+
+/** Fecha y hora del dispositivo en el formato de los campos del formulario. */
+function ahoraLocal() {
+  const d = new Date();
+  const dos = n => String(n).padStart(2, '0');
+  return { dia: `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`,
+    hora: `${dos(d.getHours())}:${dos(d.getMinutes())}` };
 }
 
 function esPantallaAngosta() {

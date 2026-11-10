@@ -61,19 +61,27 @@ export function duracion(ms) {
 }
 
 export function textoRitmo(ritmo) {
+  if (ritmo.velocidad === 1) return 'tiempo real: un minuto simulado por cada minuto real';
   return `${minutos(ritmo.minutosPorVentana)} simulados cada ${decimal(ritmo.saMs / 1000, ' s')}`;
 }
 
 // Ritmo fijo por escenario: ya no se configura desde la pantalla.
-export const VELOCIDAD_DIA_A_DIA = 60;
+// La operación día a día corre en tiempo real; 60× queda para demostraciones.
+export const VELOCIDAD_DIA_A_DIA = 1;
+export const VELOCIDADES_DIA_A_DIA = [
+  [1, 'Tiempo real (1×)'],
+  [60, 'Acelerada (60×) · demostración']
+];
 export const DURACION_5_DIAS_MIN = 40;
 
-export function ritmoConfigurado(escenario) {
+export function ritmoConfigurado(escenario, velocidad = VELOCIDAD_DIA_A_DIA) {
   if (escenario === 'PERIODO_5_DIAS') {
     return `Los 5 días se reproducen en unos ${DURACION_5_DIAS_MIN} min reales.`;
   }
   if (escenario === 'OPERACION_DIARIA') {
-    return `La jornada se reproduce en unos ${minutos(1440 / VELOCIDAD_DIA_A_DIA)} reales.`;
+    return velocidad === 1
+      ? 'Avanza en tiempo real: los pedidos se planifican conforme se registran desde la hora inicial.'
+      : `La jornada se reproduce en unos ${minutos(1440 / velocidad)} reales.`;
   }
   return 'Avanza 2 h simuladas cada 10 s y se detiene en el primer pedido vencido.';
 }

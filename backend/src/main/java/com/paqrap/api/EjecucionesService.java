@@ -504,8 +504,14 @@ final class EjecucionesService {
             actualizar(ejecucion, conRitmo(cambiarEstado(ejecucion.vista, Estado.EN_CURSO,
                     null, null), ritmoVista(ejecucion)), "INICIADA");
 
+            // La corrida arranca limpia: solo atiende pedidos registrados desde su inicio, como
+            // una operación que empieza en ese momento. Los anteriores del mes no son un atraso
+            // heredado; incluirlos saturaba el primer plan con pedidos ya vencidos.
+            List<com.paqrap.modelo.Pedido> ventasDesdeElInicio = entrada.ventas().stream()
+                    .filter(pedido -> !pedido.getFechaRegistro().isBefore(request.inicio()))
+                    .toList();
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
-                    Duration.ofDays(dias), entrada.ventas(), flota);
+                    Duration.ofDays(dias), ventasDesdeElInicio, flota);
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             // Lo que quedó sin publicar: el colapso corta antes del siguiente límite, que cuenta
             // como cruzado para que ese tramo también se vea.

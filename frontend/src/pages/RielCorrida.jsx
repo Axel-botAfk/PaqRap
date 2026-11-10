@@ -8,7 +8,7 @@ import ControlesCorrida from '../components/ControlesCorrida.jsx';
 import IconoUI from '../components/IconoUI.jsx';
 import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
-import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
+import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta, VELOCIDADES_DIA_A_DIA,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
 const NOMBRE_ESCENARIO = { OPERACION_DIARIA: 'Operación diaria', PERIODO_5_DIAS: 'Simulación 5 días',
@@ -103,12 +103,25 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
           : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
 
+        {escenario === 'OPERACION_DIARIA' && <>
+          <button type="button" className="corrida-nueva-enlace"
+            disabled={bloquearConfiguracion || ocupado || !cfg.ahoraDisponible}
+            title={cfg.ahoraDisponible ? undefined : 'No hay datos cargados para el mes actual.'}
+            onClick={cfg.alUsarAhora}>Usar la fecha y hora actuales</button>
+          <div className="field"><label htmlFor="c-ritmo">Ritmo de la jornada</label>
+            <select id="c-ritmo" className="input" value={cfg.velocidadDiaria}
+              disabled={bloquearConfiguracion || ocupado}
+              onChange={e => cfg.setVelocidadDiaria(Number(e.target.value))}>
+              {VELOCIDADES_DIA_A_DIA.map(([valor, texto]) => <option key={valor} value={valor}>{texto}</option>)}
+            </select></div>
+        </>}
+
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
             disabled={bloquearConfiguracion || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
 
-        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
+        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario, cfg.velocidadDiaria)}</p>
 
         {ejecucion && !preparandoNueva && <button type="button" className="corrida-nueva-enlace"
           onClick={cfg.alPrepararNueva}>Preparar otra corrida independiente</button>}

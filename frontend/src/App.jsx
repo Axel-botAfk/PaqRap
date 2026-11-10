@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
-import { corridaRecuperable, unicaCorridaActiva } from './conexionCorridas.js';
+import { corridaRecuperable, unicaCorridaActiva, decidirCorrida, esActiva } from './conexionCorridas.js';
 import { planVigenteEn, estadosDePedido, vehiculosObservadosEn } from './mapa.js';
 import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA,
+import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
@@ -16,6 +16,8 @@ import RielCorrida from './pages/RielCorrida.jsx';
 import { controlesDeCorrida } from './controlesCorrida.js';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
+import HojaFlota from './pages/HojaFlota.jsx';
+import ReportePlan from './pages/ReportePlan.jsx';
 import { inventarioEn } from './stock.js';
 import { enviosEn, rutasDeEnvioEnMapa } from './envios.js';
 import { leerUmbrales, guardarUmbrales, olvidarUmbrales } from './umbrales.js';
@@ -60,6 +62,13 @@ export default function App() {
   const [dia, setDia] = useState('');
   const [hora, setHora] = useState('00:00');
   const [horizonte, setHorizonte] = useState(30);
+  // Ritmo de la operación día a día: tiempo real salvo que se elija la demostración acelerada.
+  const [velocidadDiaria, setVelocidadDiaria] = useState(() => {
+    try {
+      const guardada = Number(localStorage.getItem('paqrap.velocidad.diaria'));
+      return VELOCIDADES_DIA_A_DIA.some(([valor]) => valor === guardada) ? guardada : VELOCIDAD_DIA_A_DIA;
+    } catch { return VELOCIDAD_DIA_A_DIA; }
+  });
   const [ejecucion, setEjecucion] = useState(null);
   const [id, setId] = useState(() => {
     const valor = new URLSearchParams(location.search).get('ejecucion');
@@ -108,6 +117,11 @@ export default function App() {
   // Cortes del semáforo configurables (B06); se recuerdan en este navegador.
   const [umbrales, setUmbrales] = useState(leerUmbrales);
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
+  // Reporte de la última planificación estable (G08 a G10): se abre solo al finalizar.
+  const [reporteAbierto, setReporteAbierto] = useState(false);
+  // Latencia desde «Iniciar» medida en este navegador (C03 y C04).
+  const [medicionInicio, setMedicionInicio] = useState(null);
+  const estadoPrevio = useRef(null);
   const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
   const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
@@ -132,9 +146,16 @@ export default function App() {
     return () => { activo = false; };
   }, []);
 
-  // Sin fecha todavía, se arranca en el primer día con datos del catálogo.
+  // Sin fecha todavía: la fecha y hora actuales si el catálogo tiene datos de este mes —la
+  // operación día a día empieza «ahora»—; si no, el primer día con datos.
   useEffect(() => {
     if (dia || !periodos.length) return undefined;
+    const actual = ahoraLocal();
+    if (periodos.includes(periodoDe(actual.dia))) {
+      setDia(actual.dia);
+      setHora(actual.hora);
+      return undefined;
+    }
     let activo = true;
     api.periodo(periodos[0])
       .then(info => { if (activo) setDia(info.primeraFechaPedido || `${periodos[0].slice(0, 4)}-${periodos[0].slice(4)}-01`); })
@@ -161,8 +182,12 @@ export default function App() {
 
   // El descubrimiento pertenece al servidor y al escenario, no al almacenamiento del navegador.
   // Una sola corrida se recupera sin crear otra; con varias se espera una elección explícita.
+  // Se consultan las corridas de todos los escenarios: quien entra desde otro dispositivo no
+  // sabe cuál se inició en el primero. Mientras se mira una corrida ya finalizada también se
+  // consulta, pero solo para ofrecer la que esté activa, sin quitar la que se está viendo.
+  const viendoFinalizada = !!id && !!ejecucion && ejecucion.id === id && esFinal(ejecucion.estado);
   useEffect(() => {
-    if (!ES_MAPA(vista) || id || ocupado || crearIndependiente) return undefined;
+    if (!ES_MAPA(vista) || (id && !viendoFinalizada) || ocupado || crearIndependiente) return undefined;
     let activo = true;
     let consultando = false;
     const consultarActivas = async () => {
@@ -170,14 +195,18 @@ export default function App() {
       consultando = true;
       setConsultandoCorridas(true);
       try {
-        const lista = await api.activas(escenario);
-        if (!activo || idActual.current || vistaActual.current !== vista) return;
-        setCorridasActivas(lista);
-        const unica = unicaCorridaActiva(lista, escenario);
-        if (unica) {
-          const recuperada = await api.consultar(unica.id);
-          if (activo && !idActual.current && vistaActual.current === vista
-              && corridaRecuperable(recuperada, escenario)) {
+        const lista = await api.activas();
+        if (!activo || vistaActual.current !== vista) return;
+        if (viendoFinalizada) {
+          if (idActual.current === id) setCorridasActivas(lista.filter(esActiva));
+          return;
+        }
+        if (idActual.current) return;
+        const decision = decidirCorrida(lista, escenario, restaurarVistaInicial.current);
+        setCorridasActivas(decision.ofrecer);
+        if (decision.adoptar) {
+          const recuperada = await api.consultar(decision.adoptar.id);
+          if (activo && !idActual.current && vistaActual.current === vista && esActiva(recuperada)) {
             adoptarCorrida(recuperada);
           }
         }
@@ -191,7 +220,7 @@ export default function App() {
     consultarActivas();
     const intervalo = setInterval(consultarActivas, 5000);
     return () => { activo = false; clearInterval(intervalo); };
-  }, [vista, escenario, id, ocupado, crearIndependiente]);
+  }, [vista, escenario, id, viendoFinalizada, ocupado, crearIndependiente]);
 
   useEffect(() => {
     if (!id) return undefined;
@@ -489,7 +518,34 @@ export default function App() {
     enviosDelInstante, seleccionEnvio, rutasVisibles),
   [enviosDelInstante, seleccionEnvio, rutasVisibles]);
 
-  useEffect(() => { setSeleccionEnvio(null); }, [id]);
+  // Primer plan dibujado y primera unidad en movimiento, contados desde que se pulsó «Iniciar».
+  const hayRutasDibujadas = rutasVisibles.length > 0;
+  const hayMovimiento = modoVivo && Number.isFinite(instanteVivoMs)
+    && (ejecucion.trayectos || LISTA_VACIA).some(trayecto => {
+      const pasos = trayecto.pasos || LISTA_VACIA;
+      return pasos.length > 1 && aMs(pasos[0].instante) < instanteVivoMs
+        && pasos.some(paso => paso.ubicacion.x !== pasos[0].ubicacion.x
+          || paso.ubicacion.y !== pasos[0].ubicacion.y);
+    });
+  useEffect(() => {
+    if (!medicionInicio || medicionInicio.id !== id) return;
+    if (hayRutasDibujadas && medicionInicio.planMs === null) {
+      setMedicionInicio(m => ({ ...m, planMs: performance.now() - m.t0 }));
+    } else if (hayMovimiento && medicionInicio.movimientoMs === null) {
+      setMedicionInicio(m => ({ ...m, movimientoMs: performance.now() - m.t0 }));
+    }
+  }, [medicionInicio, id, hayRutasDibujadas, hayMovimiento]);
+
+  useEffect(() => { setSeleccionEnvio(null); setReporteAbierto(false); estadoPrevio.current = null; }, [id]);
+
+  // Solo al presenciar el final: abrir una corrida que ya había terminado no interrumpe.
+  useEffect(() => {
+    const estado = ejecucion?.estado || null;
+    const previo = estadoPrevio.current;
+    estadoPrevio.current = estado;
+    if ((previo === 'EN_CURSO' || previo === 'PAUSADA')
+        && (estado === 'TERMINADA' || estado === 'COLAPSADA')) setReporteAbierto(true);
+  }, [ejecucion?.estado]);
 
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
@@ -551,6 +607,7 @@ export default function App() {
   }
 
   function cambiarEscenario(valor) {
+    restaurarVistaInicial.current = false;
     escenarioSimulacion.current = valor;
     try { localStorage.setItem('paqrap.escenario.simulacion', valor); } catch { /* sin almacenamiento */ }
     setEscenario(valor);
@@ -592,7 +649,7 @@ export default function App() {
     evento.preventDefault();
     if (ocupado || consultandoCorridas || accionCorrida.current
         || (controlesDeCorrida(ejecucion?.estado).activa && !crearIndependiente)
-        || (!id && corridasActivas.length && !crearIndependiente)) return;
+        || (!id && corridasActivas.some(c => c.escenario === escenario) && !crearIndependiente)) return;
     setError('');
     const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
     const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
@@ -604,6 +661,7 @@ export default function App() {
     setDia(diaIngresado);
     setHora(horaIngresada);
     setOcupado(true);
+    const pulsado = performance.now();
     try {
       if (!crearIndependiente) {
         const activas = await api.activas(escenario);
@@ -623,8 +681,9 @@ export default function App() {
         escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
         ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
-        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
+        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: velocidadDiaria } : {})
       });
+      setMedicionInicio({ id: nueva.id, t0: pulsado, planMs: null, movimientoMs: null });
       const claveCorrida = claveDeEscenario(nueva.escenario);
       setCrearIndependiente(false);
       setCorridasActivas([]);
@@ -679,7 +738,7 @@ export default function App() {
     setError('');
     try {
       const recuperada = await api.consultar(uuid);
-      if (!corridaRecuperable(recuperada, escenario)) {
+      if (!esActiva(recuperada)) {
         setCorridasActivas(actuales => actuales.filter(corrida => corrida.id !== uuid));
         setError('Esta corrida ya no está activa. Elige otra corrida disponible.');
         return;
@@ -746,6 +805,13 @@ export default function App() {
   const configuracion = {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
+    velocidadDiaria,
+    setVelocidadDiaria: valor => {
+      setVelocidadDiaria(valor);
+      try { localStorage.setItem('paqrap.velocidad.diaria', String(valor)); } catch { /* sin almacenamiento */ }
+    },
+    ahoraDisponible: periodos.includes(periodoDe(ahoraLocal().dia)),
+    alUsarAhora: () => { const actual = ahoraLocal(); setDia(actual.dia); setHora(actual.hora); },
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
     flota: flotaParaAveria, alIniciar: iniciar, alElegirCorrida: elegirCorrida,
     corridasActivas, consultandoCorridas, crearIndependiente,
@@ -795,6 +861,15 @@ export default function App() {
             setReproduciendo(!reproduciendo);
           }} alCambiarPaso={setPasoMs}
           instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} />
+        {seleccionEnvio && <div className="envio-en-mapa" role="status">
+          <span><b>{seleccionEnvio.tipo === 'original' ? 'Envío' : 'Fracción'} {seleccionEnvio.id}</b>
+            {rutasDelEnvio.rutas.length
+              ? ` · ${rutasDelEnvio.rutas.length} ruta(s) resaltada(s): ${rutasDelEnvio.rutas.join(', ')}`
+              : ' · sin ruta visible en este instante'}
+            {rutasDelEnvio.sinRutaVisible.length > 0 && rutasDelEnvio.rutas.length > 0
+              ? ` · ${rutasDelEnvio.sinRutaVisible.length} fracción(es) sin ruta visible` : ''}</span>
+          <button type="button" onClick={() => setSeleccionEnvio(null)}>Quitar resaltado</button>
+        </div>}
       </section>
 
       <Riel titulo={vista === 'simulacion' ? 'Simulación' : 'Operación'} abierto={rielAbierto}
@@ -819,20 +894,40 @@ export default function App() {
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
           umbrales={umbrales} estadosPedido={estadosPedido}
           alGuardarUmbrales={valores => setUmbrales(guardarUmbrales(valores))}
-          alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())} />
+          alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())}
+          alVerReporte={() => setReporteAbierto(true)}
+          medicionInicio={medicionInicio?.id === id ? medicionInicio : null} />
       </Riel>
+      {reporteAbierto && ejecucion && <ReportePlan ejecucion={ejecucion} planes={planes}
+        alCerrar={() => setReporteAbierto(false)} />}
     </>}
 
     {vista === 'pedidos' && <div className="sheet sheet-pedidos">
       <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
         instante={instanteReproducido}
         pedidosDelInstante={pedidosDelInstante}
-        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
+        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente}
+        alVerEnMapa={seleccion => {
+          setRutaSeleccionada(null);
+          setSeleccionEnvio(seleccion);
+          if (ejecucion) cambiarVista(vistaDeEscenario(ejecucion.escenario));
+        }} />
     </div>}
     {vista === 'averias' && <div className="sheet sheet-averias">
       <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />
     </div>}
+    {vista === 'flota' && <div className="sheet sheet-flota">
+      <HojaFlota almacenes={mapaDatos?.almacenes || LISTA_VACIA} />
+    </div>}
   </div>;
+}
+
+/** Fecha y hora del dispositivo en el formato de los campos del formulario. */
+function ahoraLocal() {
+  const d = new Date();
+  const dos = n => String(n).padStart(2, '0');
+  return { dia: `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`,
+    hora: `${dos(d.getHours())}:${dos(d.getMinutes())}` };
 }
 
 function esPantallaAngosta() {

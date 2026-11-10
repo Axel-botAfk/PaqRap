@@ -30,8 +30,33 @@ class ApiControllerTest {
         mvc.perform(get("/api/ejecuciones/activas").param("escenario", "OPERACION_DIARIA"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/ejecuciones/activas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
         mvc.perform(get("/api/ejecuciones/activas").param("escenario", "DESCONOCIDO"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void mantenimientoDeFlotaPorApi() throws Exception {
+        mvc.perform(get("/api/flota"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.unidades.length()").value(37));
+        mvc.perform(post("/api/flota/unidades").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tipo\":\"BICICLETA\",\"ubicacion\":{\"x\":12,\"y\":38}}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.unidades.length()").value(38));
+        mvc.perform(post("/api/flota/unidades").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"tipo\":\"TRAILER\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .put("/api/flota/tipos/AUTO").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"capacidad\":0}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("FLOTA_INVALIDA"));
+        mvc.perform(post("/api/flota/restablecer"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modificada").value(false));
     }
 
     @Test

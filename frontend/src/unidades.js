@@ -15,7 +15,7 @@ const ENTREGAS = new Set(['ENTREGA', 'FIN_ENTREGA']);
 export function horariosDeTrayecto(trayecto, instante) {
   const pasos = trayecto?.pasos || [];
   const momento = aMs(instante);
-  if (!pasos.length) return { salida: null, llegada: null, minutosAlDestino: null, minutosDesdeSalida: null };
+  if (!pasos.length) return { salida: null, llegada: null, destino: null, minutosAlDestino: null, minutosDesdeSalida: null };
   const salidas = pasos.filter(paso => paso.hito === 'SALIDA');
   const salida = (salidas.filter(p => aMs(p.instante) <= momento).at(-1)
     || salidas[0] || pasos[0])?.instante || null;
@@ -31,6 +31,8 @@ export function horariosDeTrayecto(trayecto, instante) {
   return {
     salida,
     llegada,
+    // Nodo del destino inmediato, para medir la distancia que falta (E08, E11 y E16).
+    destino: siguiente?.ubicacion || null,
     // Solo hacia adelante: una entrega ya cumplida no son «minutos para llegar».
     minutosAlDestino: siguiente ? minutos(instante, siguiente.instante) : null,
     minutosDesdeSalida: Number.isFinite(momento) && aMs(salida) <= momento ? minutos(salida, instante) : null
@@ -55,7 +57,8 @@ export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = n
     const previstos = viajes.flatMap(r => [
       ...(r.salidaPrevista ? [{ hito: 'SALIDA', instante: r.salidaPrevista }] : []),
       ...Object.entries(r.llegadasPrevistas || {}).map(([pedidoId, instante]) =>
-        ({ hito: 'ENTREGA', instante, pedidoId }))
+        ({ hito: 'ENTREGA', instante, pedidoId,
+          ubicacion: (r.paradas || []).find(p => p.id === pedidoId)?.destino || null }))
     ]);
     const pasos = [...(trayectoPorVehiculo.get(vehiculo.id)?.pasos || []), ...previstos]
       .sort((a, b) => aMs(a.instante) - aMs(b.instante));
@@ -69,6 +72,13 @@ export function filasDeUnidades(vehiculos, rutas, trayectos = null, instante = n
       ubicacion: vehiculo.ubicacion,
       origenId: vehiculo.origenId || null,
       minutosAlOrigen: Number.isFinite(vehiculo.minutosAlOrigen) ? vehiculo.minutosAlOrigen : null,
+      // Al destino: por calles desde el nodo del corte, sin desvíos por bloqueos. Al origen y
+      // recorridos: los publica el servidor (el primero ya considera los bloqueos).
+      kmAlDestino: horarios.destino && vehiculo.ubicacion
+        ? Math.abs(horarios.destino.x - vehiculo.ubicacion.x)
+          + Math.abs(horarios.destino.y - vehiculo.ubicacion.y) : null,
+      kmAlOrigen: Number.isFinite(vehiculo.kmAlOrigen) ? vehiculo.kmAlOrigen : null,
+      kmRecorridos: Number.isFinite(vehiculo.kmRecorridos) ? vehiculo.kmRecorridos : null,
       cargaAbordo: medible ? vehiculo.cargaAbordo : null,
       capacidad: medible ? vehiculo.capacidad : null,
       porcentaje: medible ? Math.round((vehiculo.cargaAbordo / vehiculo.capacidad) * 100) : null,
@@ -89,7 +99,19 @@ export const ORDENES = [
   ['salida-asc', 'Hora de salida ↑'],
   ['salida-desc', 'Hora de salida ↓'],
   ['llegada-asc', 'Hora de llegada ↑'],
-  ['llegada-desc', 'Hora de llegada ↓']
+  ['llegada-desc', 'Hora de llegada ↓'],
+  ['km-destino-asc', 'Distancia por llegar ↑'],
+  ['km-destino-desc', 'Distancia por llegar ↓'],
+  ['km-recorridos-asc', 'Distancia recorrida ↑'],
+  ['km-recorridos-desc', 'Distancia recorrida ↓']
+];
+
+/** Rangos del filtro por distancia al destino (E11): cerrados a la izquierda, abiertos a la derecha. */
+export const RANGOS_KM = [
+  ['0-10', '0 a 10 km', 0, 10],
+  ['10-20', '10 a 20 km', 10, 20],
+  ['20-40', '20 a 40 km', 20, 40],
+  ['40-200', '40 a 200 km', 40, 200]
 ];
 
 const porId = (a, b) => a.id.localeCompare(b.id, 'es', { numeric: true });
@@ -112,7 +134,19 @@ export function ordenarUnidades(filas, criterio) {
     if (!Number.isFinite(y)) return -1;
     return x === y ? porId(a, b) : signo * (x - y);
   };
+  const porNumero = (campo, signo) => (a, b) => {
+    const x = a[campo];
+    const y = b[campo];
+    if (!Number.isFinite(x) && !Number.isFinite(y)) return porId(a, b);
+    if (!Number.isFinite(x)) return 1;
+    if (!Number.isFinite(y)) return -1;
+    return x === y ? porId(a, b) : signo * (x - y);
+  };
   switch (criterio) {
+    case 'km-destino-asc': return lista.sort(porNumero('kmAlDestino', 1));
+    case 'km-destino-desc': return lista.sort(porNumero('kmAlDestino', -1));
+    case 'km-recorridos-asc': return lista.sort(porNumero('kmRecorridos', 1));
+    case 'km-recorridos-desc': return lista.sort(porNumero('kmRecorridos', -1));
     case 'ocupacion-desc': return lista.sort(porOcupacion(-1));
     case 'ocupacion-asc': return lista.sort(porOcupacion(1));
     case 'pedidos-desc': return lista.sort((a, b) =>
@@ -131,7 +165,8 @@ export function ordenarUnidades(filas, criterio) {
  * unidad sin ese dato no se cuela en el resultado de una búsqueda que sí lo exige.
  */
 export function filtrarUnidades(filas, { minutosAlDestino = null, minutosDesdeSalida = null,
-  minutosAlOrigen = null } = {}) {
+  minutosAlOrigen = null, kmAlDestino = null, kmAlOrigen = null, rangoKm = null } = {}) {
+  const rango = RANGOS_KM.find(([clave]) => clave === rangoKm);
   return (filas || []).filter(fila => {
     if (Number.isFinite(minutosAlDestino)
       && !(Number.isFinite(fila.minutosAlDestino) && fila.minutosAlDestino <= minutosAlDestino)) return false;
@@ -139,6 +174,12 @@ export function filtrarUnidades(filas, { minutosAlDestino = null, minutosDesdeSa
       && !(Number.isFinite(fila.minutosDesdeSalida) && fila.minutosDesdeSalida <= minutosDesdeSalida)) return false;
     if (Number.isFinite(minutosAlOrigen)
       && !(Number.isFinite(fila.minutosAlOrigen) && fila.minutosAlOrigen <= minutosAlOrigen)) return false;
+    if (Number.isFinite(kmAlDestino)
+      && !(Number.isFinite(fila.kmAlDestino) && fila.kmAlDestino <= kmAlDestino)) return false;
+    if (Number.isFinite(kmAlOrigen)
+      && !(Number.isFinite(fila.kmAlOrigen) && fila.kmAlOrigen <= kmAlOrigen)) return false;
+    if (rango && !(Number.isFinite(fila.kmAlDestino) && fila.kmAlDestino >= rango[2]
+      && fila.kmAlDestino < rango[3])) return false;
     return true;
   });
 }

@@ -52,6 +52,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -86,6 +87,7 @@ final class EjecucionesService {
     private static final int MAX_EVENTOS = 4096;
     private static final int PAGINA_FOTOGRAMAS = 100;
     private final DatosFuente datos;
+    private final FlotaService flota;
     private final EventosWebSocket eventos;
     private final Marcapasos.Reloj reloj;
     private final ConcurrentMap<UUID, Ejecucion> ejecuciones = new ConcurrentHashMap<>();
@@ -98,12 +100,18 @@ final class EjecucionesService {
             }, new ThreadPoolExecutor.AbortPolicy());
 
     @Autowired
-    EjecucionesService(DatosFuente datos, EventosWebSocket eventos) {
-        this(datos, eventos, Marcapasos.SISTEMA);
+    EjecucionesService(DatosFuente datos, EventosWebSocket eventos, FlotaService flota) {
+        this(datos, eventos, Marcapasos.SISTEMA, flota);
     }
 
     EjecucionesService(DatosFuente datos, EventosWebSocket eventos, Marcapasos.Reloj reloj) {
+        this(datos, eventos, reloj, new FlotaService(datos));
+    }
+
+    EjecucionesService(DatosFuente datos, EventosWebSocket eventos, Marcapasos.Reloj reloj,
+                       FlotaService flota) {
         this.datos = datos;
+        this.flota = flota;
         this.eventos = eventos;
         this.reloj = reloj;
     }
@@ -136,6 +144,8 @@ final class EjecucionesService {
                 false, ritmoVista(ejecucion), List.of(), null);
         ejecucion.inventario = new InventarioVista(request.inicio(),
                 datos.almacenes().stream().map(Vistas::stock).toList());
+        // La flota se fija al crear la corrida: el mantenimiento posterior no la altera.
+        ejecucion.flota = flota.vigente();
         ejecuciones.put(id, ejecucion);
         try {
             ejecucion.tarea = executor.submit(() -> correr(ejecucion, request, dias, entrada));
@@ -159,7 +169,8 @@ final class EjecucionesService {
         return ejecuciones.values().stream().map(ejecucion -> {
             synchronized (ejecucion) {
                 EjecucionVista vista = ejecucion.vista;
-                if (vista.escenario() != escenario || (vista.estado() != Estado.PENDIENTE
+                // Sin escenario se listan todas: otro dispositivo aún no sabe cuál se inició.
+                if ((escenario != null && vista.escenario() != escenario) || (vista.estado() != Estado.PENDIENTE
                         && vista.estado() != Estado.EN_CURSO && vista.estado() != Estado.PAUSADA)) {
                     return null;
                 }
@@ -192,7 +203,7 @@ final class EjecucionesService {
                         "Solo se admiten averías durante una ejecución activa.");
             }
             String unidadId = solicitud.unidadId().trim();
-            if (datos.flota().stream().noneMatch(v -> v.getId().equals(unidadId))) {
+            if (ejecucion.flota.stream().noneMatch(v -> v.getId().equals(unidadId))) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "UNIDAD_DESCONOCIDA",
                         "La unidad no pertenece a la flota de la corrida.");
             }
@@ -356,12 +367,15 @@ final class EjecucionesService {
                     .iteracionesSinMejora(25)
                     .construir();
 
-            List<Vehiculo> flota = datos.flota();
+            List<Vehiculo> flota = ejecucion.flota;
             List<Almacen> almacenesBase = datos.almacenes();
             Map<String, Almacen> origenes = new LinkedHashMap<>();
             for (Vehiculo v : flota) almacenesBase.stream()
                     .filter(a -> a.getUbicacion().equals(v.getUbicacion())).findFirst()
                     .ifPresent(a -> origenes.put(v.getId(), a));
+            Map<String, Double> kmRecorridos = new HashMap<>();
+            Map<String, ApiModels.Coordenada> ultimaPosicion = new HashMap<>();
+            for (Vehiculo v : flota) ultimaPosicion.put(v.getId(), Vistas.coordenada(v.getUbicacion()));
             ejecucion.inicioRealMs = reloj.ahoraMs();
             registrarFotograma(ejecucion, request.inicio(),
                     flota.stream().map(Vistas::vehiculo).toList(), ejecucion.inventario);
@@ -402,6 +416,17 @@ final class EjecucionesService {
                         for (TrayectoVista trayecto : ventana.trayectosIteracion) {
                             ventana.trayectos.computeIfAbsent(trayecto.vehiculoId(),
                                     clave -> new ArrayList<>()).addAll(trayecto.pasos());
+                            // Distancia entre hitos consecutivos; la carga en almacén inicia otro viaje.
+                            var previa = ultimaPosicion.get(trayecto.vehiculoId());
+                            double km = kmRecorridos.getOrDefault(trayecto.vehiculoId(), 0.0);
+                            for (var paso : trayecto.pasos()) {
+                                if (previa != null) km += Math.abs(paso.ubicacion().x() - previa.x())
+                                        + Math.abs(paso.ubicacion().y() - previa.y());
+                                if (paso.hito().equals("CARGA")) km = 0.0;
+                                previa = paso.ubicacion();
+                            }
+                            kmRecorridos.put(trayecto.vehiculoId(), km);
+                            if (previa != null) ultimaPosicion.put(trayecto.vehiculoId(), previa);
                         }
                     }
 
@@ -420,15 +445,18 @@ final class EjecucionesService {
                         List<VehiculoVista> posiciones = vehiculos.stream().map(v -> {
                             var origen = origenes.get(v.getId());
                             Double minutos = null;
+                            Double kmOrigen = null;
                             if (origen != null && v.getEstado() != EstadoVehiculo.AVERIADO
                                     && v.getEstado() != EstadoVehiculo.EN_MANTENIMIENTO) {
                                 double km = ruteo.calcularKm(v.getUbicacion(), origen.getUbicacion(), reloj, v.getVelocidadKmH());
+                                if (Double.isFinite(km)) kmOrigen = km;
                                 if (Double.isFinite(km)) minutos = (double) Duration.between(reloj,
                                         com.paqrap.modelo.Turnos.avanzar(reloj, km / v.getVelocidadKmH())).toMillis() / 60000;
                             }
                             var base = Vistas.vehiculo(v);
                             return new VehiculoVista(base.id(), base.tipo(), base.ubicacion(), base.estado(),
-                                    base.capacidad(), base.cargaAbordo(), origen == null ? null : origen.getId(), minutos);
+                                    base.capacidad(), base.cargaAbordo(), origen == null ? null : origen.getId(), minutos,
+                                    kmOrigen, kmRecorridos.get(v.getId()));
                         }).toList();
                         if (ventana.relojPlan != null) {
                             ventana.planes.add(new PlanVista(-1, ventana.relojPlan, ventana.rutas,
@@ -476,8 +504,14 @@ final class EjecucionesService {
             actualizar(ejecucion, conRitmo(cambiarEstado(ejecucion.vista, Estado.EN_CURSO,
                     null, null), ritmoVista(ejecucion)), "INICIADA");
 
+            // La corrida arranca limpia: solo atiende pedidos registrados desde su inicio, como
+            // una operación que empieza en ese momento. Los anteriores del mes no son un atraso
+            // heredado; incluirlos saturaba el primer plan con pedidos ya vencidos.
+            List<com.paqrap.modelo.Pedido> ventasDesdeElInicio = entrada.ventas().stream()
+                    .filter(pedido -> !pedido.getFechaRegistro().isBefore(request.inicio()))
+                    .toList();
             ResumenSimulacion resumen = simulador.correr(request.inicio(),
-                    Duration.ofDays(dias), entrada.ventas(), flota);
+                    Duration.ofDays(dias), ventasDesdeElInicio, flota);
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             // Lo que quedó sin publicar: el colapso corta antes del siguiente límite, que cuenta
             // como cruzado para que ese tramo también se vea.
@@ -817,6 +851,7 @@ final class EjecucionesService {
         volatile Future<?> tarea;
         volatile Simulador simulador;
         volatile InventarioVista inventario;
+        volatile List<Vehiculo> flota = List.of();
         volatile Ventana ventanaEnCurso = new Ventana();
         final List<AveriaVista> averias = new ArrayList<>();
         final List<MedicionDePlanificacion> mediciones = new ArrayList<>();

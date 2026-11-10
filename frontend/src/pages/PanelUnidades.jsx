@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { numero, tipoVehiculo, estadoVehiculo, fecha, hora } from '../formato.js';
-import { filasDeUnidades, ordenarUnidades, filtrarUnidades, ORDENES } from '../unidades.js';
+import { numero, decimal, tipoVehiculo, estadoVehiculo, fecha, hora } from '../formato.js';
+import { filasDeUnidades, ordenarUnidades, filtrarUnidades, ORDENES, RANGOS_KM } from '../unidades.js';
 import { etiquetasDeCarga } from '../carga.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { ETIQUETAS_AVERIA } from '../averias.js';
@@ -24,15 +24,21 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
   const [alDestino, setAlDestino] = useState('');
   const [desdeSalida, setDesdeSalida] = useState('');
   const [alOrigen, setAlOrigen] = useState('');
+  const [kmDestino, setKmDestino] = useState('');
+  const [kmOrigen, setKmOrigen] = useState('');
+  // Filtro permanente por rango de distancia (E11): sigue aplicado al buscar y al ordenar.
+  const [rangoKm, setRangoKm] = useState('');
   const filaRef = useRef(new Map());
 
   const todas = filasDeUnidades(vehiculos, rutas, trayectos, reloj, umbrales.carga);
   const limite = valor => (valor === '' ? null : Number(valor));
   const filas = ordenarUnidades(filtrarUnidades(todas, {
     minutosAlDestino: limite(alDestino), minutosDesdeSalida: limite(desdeSalida),
-    minutosAlOrigen: limite(alOrigen)
+    minutosAlOrigen: limite(alOrigen), kmAlDestino: limite(kmDestino), kmAlOrigen: limite(kmOrigen),
+    rangoKm: rangoKm || null
   }), orden);
-  const hayBusqueda = alDestino !== '' || desdeSalida !== '' || alOrigen !== '';
+  const hayBusqueda = alDestino !== '' || desdeSalida !== '' || alOrigen !== ''
+    || kmDestino !== '' || kmOrigen !== '';
 
   // Al llegar la selección desde el mapa, traer la fila a la vista sin mover el resto del riel.
   useEffect(() => {
@@ -66,11 +72,30 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         <span className="unidades-campo-tiempo"><IconoUI nombre="reloj" size={14} />
           <input id="u-retorno" className="input" type="number" min="0" value={alOrigen}
             placeholder="—" onChange={e => setAlOrigen(e.target.value)} /></span></div>
+      <div className="field"><label htmlFor="u-km-destino">Al destino ≤ (km)</label>
+        <span className="unidades-campo-tiempo"><IconoUI nombre="distancia" size={14} />
+          <input id="u-km-destino" className="input" type="number" min="0" step="1" value={kmDestino}
+            placeholder="—" onChange={e => setKmDestino(e.target.value)} /></span></div>
+      <div className="field"><label htmlFor="u-km-origen">Al almacén de origen ≤ (km)</label>
+        <span className="unidades-campo-tiempo"><IconoUI nombre="distancia" size={14} />
+          <input id="u-km-origen" className="input" type="number" min="0" step="1" value={kmOrigen}
+            placeholder="—" onChange={e => setKmOrigen(e.target.value)} /></span></div>
       {hayBusqueda && <button type="button" className="unidades-limpiar"
-        onClick={() => { setAlDestino(''); setDesdeSalida(''); setAlOrigen(''); }}>Limpiar búsqueda</button>}
+        onClick={() => { setAlDestino(''); setDesdeSalida(''); setAlOrigen('');
+          setKmDestino(''); setKmOrigen(''); }}>Limpiar búsqueda</button>}
     </div>
 
-    {!filas.length && <p className="vacio">Ninguna unidad cumple la búsqueda en este instante.</p>}
+    <div className="unidades-rango" role="group" aria-label="Filtrar por distancia al destino">
+      <span>Filtro · distancia al destino</span>
+      <div className="filtro-opciones">
+        <button type="button" className={rangoKm === '' ? 'activo' : ''} aria-pressed={rangoKm === ''}
+          onClick={() => setRangoKm('')}>Todas</button>
+        {RANGOS_KM.map(([clave, texto]) => <button key={clave} type="button" aria-pressed={rangoKm === clave}
+          className={rangoKm === clave ? 'activo' : ''} onClick={() => setRangoKm(clave)}>{texto}</button>)}
+      </div>
+    </div>
+
+    {!filas.length && <p className="vacio">Ninguna unidad cumple la búsqueda{rangoKm ? ' y el filtro' : ''} en este instante.</p>}
 
     <div className="lista-unidades">{filas.map(fila => {
       const averia = fila.estado === 'AVERIADO' ? averias?.get(fila.id) : null;
@@ -103,6 +128,11 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
           </span>}
           {fila.origenId && <span className="sub ut-retorno">Retorno a {fila.origenId}: {fila.minutosAlOrigen === null
             ? 'sin estimación factible' : `${numero(Math.ceil(fila.minutosAlOrigen))} min estimados`}</span>}
+          {(fila.kmAlDestino !== null || fila.kmRecorridos !== null) && <span className="sub ut-km">
+            <IconoUI nombre="distancia" size={13} />
+            {fila.kmAlDestino !== null ? `${decimal(fila.kmAlDestino, ' km')} al destino` : 'Sin destino inmediato'}
+            {fila.kmAlOrigen !== null ? ` · ${decimal(fila.kmAlOrigen, ' km')} al origen` : ''}
+            {fila.kmRecorridos !== null ? ` · ${decimal(fila.kmRecorridos, ' km')} recorridos` : ''}</span>}
           {averia && <span className={`ut-averia mapa-averia-${averia.tipo.toLowerCase()}`}>
             {ETIQUETAS_AVERIA[averia.tipo]}
           </span>}
@@ -120,8 +150,10 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         </>}
       </div>;
     })}</div>
-    <p className="nota">{numero(filas.length)}{hayBusqueda ? ` de ${numero(todas.length)}` : ''} unidad(es) del corte{reloj ? `, a las ${fecha(reloj)}` : ''}.
+    <p className="nota">{numero(filas.length)}{hayBusqueda || rangoKm ? ` de ${numero(todas.length)}` : ''} unidad(es) del corte{reloj ? `, a las ${fecha(reloj)}` : ''}.
       Retorno: consulta del motor desde ese nodo al último almacén de carga con bloqueos y turnos;
-      no ordena regresar ni sustituye el próximo destino. Sin origen o camino conocido no se estima.</p>
+      no ordena regresar ni sustituye el próximo destino. Sin origen o camino conocido no se estima.
+      La distancia al destino se mide por calles desde el nodo del corte, sin desvíos por bloqueos;
+      la recorrida se cuenta desde la última carga en almacén.</p>
   </>;
 }

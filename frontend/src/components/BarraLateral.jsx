@@ -4,6 +4,7 @@ import IconoUI from './IconoUI.jsx';
 export const VISTAS = [
   ['pedidos', 'Pedidos'],
   ['averias', 'Averías de la flota'],
+  ['flota', 'Mantenimiento de flota'],
   ['operacion', 'Operación diaria'],
   ['simulacion', 'Simulación']
 ];
@@ -14,7 +15,7 @@ export default function BarraLateral({ vista, alCambiar, fuente }) {
     <nav aria-label="Secciones principales">
       {VISTAS.map(([clave, titulo]) => <button key={clave} type="button"
         data-on={vista === clave ? '' : undefined} onClick={() => alCambiar(clave)}>
-        <IconoUI nombre={{ pedidos: 'pedidos', averias: 'averias', operacion: 'calendario', simulacion: 'engranaje' }[clave]} size={18} />
+        <IconoUI nombre={{ pedidos: 'pedidos', averias: 'averias', flota: 'camion', operacion: 'calendario', simulacion: 'engranaje' }[clave]} size={18} />
         <span>{titulo}</span></button>)}
     </nav>
   </aside>;

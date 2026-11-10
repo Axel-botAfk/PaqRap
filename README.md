@@ -17,7 +17,7 @@ La ciudad se modela como una retícula de 70 km por 50 km con nodos cada kilóme
 
 ## Estado actual
 
-Entrega beta. No hay base de datos: las corridas viven en memoria mientras el servidor está activo y se pierden al reiniciar. La API es de solo lectura sobre el dominio —se puede crear, consultar y cancelar una ejecución, pero no registrar pedidos ni averías—; lo que falta está anotado en [docs/api-pendiente.md](docs/api-pendiente.md). Tampoco hay autenticación, así que el despliegue debe permanecer bajo acceso controlado.
+Los datos de entrada se leen de los archivos del curso o de MySQL (perfil `mysql`). Las corridas y el mantenimiento de flota viven en memoria mientras el servidor está activo y se pierden al reiniciar. Sobre una corrida se puede pausar, reanudar, detener y registrar averías; la flota se mantiene desde la pantalla «Mantenimiento de flota» (alta y baja de unidades, nodo de partida y capacidad, velocidad y costo por tipo). Al terminar cada escenario se presenta el reporte de la última planificación estable, imprimible y descargable en CSV. El alta de pedidos y la carga de archivos siguen sin endpoint; lo que falta está anotado en [docs/api-pendiente.md](docs/api-pendiente.md). No hay autenticación, así que el despliegue debe permanecer bajo acceso controlado.
 
 ## Estructura
 

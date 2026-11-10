@@ -8,8 +8,11 @@ import ControlesCorrida from '../components/ControlesCorrida.jsx';
 import IconoUI from '../components/IconoUI.jsx';
 import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
-import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
+import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta, VELOCIDADES_DIA_A_DIA,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
+
+const NOMBRE_ESCENARIO = { OPERACION_DIARIA: 'Operación diaria', PERIODO_5_DIAS: 'Simulación 5 días',
+  COLAPSO: 'Colapso logístico' };
 
 const ESCENARIOS_SIMULACION = [
   ['PERIODO_5_DIAS', 'Semanal (5 días)', 'Cinco jornadas en 30 a 60 minutos reales.'],
@@ -28,14 +31,20 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
   almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
-  alRestablecerUmbrales = () => {}, estadosPedido = null }) {
+  alRestablecerUmbrales = () => {}, estadosPedido = null, alVerReporte = () => {},
+  medicionInicio = null }) {
   const simulacion = vista === 'simulacion';
   const activa = controlesDeCorrida(ejecucion?.estado).activa;
-  const [corridaElegida, setCorridaElegida] = useState('');
+  const [corridaSeleccionada, setCorridaElegida] = useState('');
+  // Con una sola corrida ofrecida ya viene elegida: basta pulsar «Abrir».
+  const corridaElegida = cfg.corridasActivas?.some(c => c.id === corridaSeleccionada) ? corridaSeleccionada
+    : cfg.corridasActivas?.length === 1 ? cfg.corridasActivas[0].id : '';
   const preparandoNueva = !!cfg.crearIndependiente;
   const bloquearConfiguracion = activa && !preparandoNueva;
+  // Solo una corrida activa del mismo escenario impide iniciar otra sin pedirlo expresamente.
   const puedeIniciar = !cfg.consultandoCorridas
-    && (preparandoNueva || !cfg.corridasActivas?.length);
+    && (preparandoNueva || ejecucion || !cfg.corridasActivas?.some(c => c.escenario === cfg.escenario));
+  const sinCorridaEnVivo = !ejecucion || !activa;
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
@@ -48,15 +57,17 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   return <>
     <ControlesCorrida key={ejecucion?.id || 'sin-corrida'} ejecucion={ejecucion} ocupado={ocupado}
       alControlar={cfg.alControlar} progreso={progreso} />
-    {!ejecucion && !preparandoNueva && cfg.corridasActivas?.length > 1 &&
+    {sinCorridaEnVivo && !preparandoNueva && cfg.corridasActivas?.length > 0 &&
       <div className="corridas-activas" role="region" aria-label="Elegir corrida activa">
-        <label htmlFor="corrida-activa">Hay varias corridas activas. Elige cuál visualizar:</label>
+        <label htmlFor="corrida-activa">{cfg.corridasActivas.length === 1
+          ? 'Hay una corrida activa iniciada desde otro dispositivo o escenario:'
+          : 'Hay varias corridas activas. Elige cuál visualizar:'}</label>
         <div className="row">
           <select id="corrida-activa" className="input" value={corridaElegida}
             onChange={evento => setCorridaElegida(evento.target.value)}>
             <option value="">Seleccionar corrida</option>
             {cfg.corridasActivas.map(corrida => <option key={corrida.id} value={corrida.id}>
-              {fecha(corrida.inicio)} · {corrida.estado === 'PAUSADA' ? 'Pausada'
+              {NOMBRE_ESCENARIO[corrida.escenario] || corrida.escenario} · {fecha(corrida.inicio)} · {corrida.estado === 'PAUSADA' ? 'Pausada'
                 : corrida.estado === 'PENDIENTE' ? 'Preparando' : 'En curso'} · {corrida.id.slice(0, 8)}
             </option>)}
           </select>
@@ -92,12 +103,25 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
           : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
 
+        {escenario === 'OPERACION_DIARIA' && <>
+          <button type="button" className="corrida-nueva-enlace"
+            disabled={bloquearConfiguracion || ocupado || !cfg.ahoraDisponible}
+            title={cfg.ahoraDisponible ? undefined : 'No hay datos cargados para el mes actual.'}
+            onClick={cfg.alUsarAhora}>Usar la fecha y hora actuales</button>
+          <div className="field"><label htmlFor="c-ritmo">Ritmo de la jornada</label>
+            <select id="c-ritmo" className="input" value={cfg.velocidadDiaria}
+              disabled={bloquearConfiguracion || ocupado}
+              onChange={e => cfg.setVelocidadDiaria(Number(e.target.value))}>
+              {VELOCIDADES_DIA_A_DIA.map(([valor, texto]) => <option key={valor} value={valor}>{texto}</option>)}
+            </select></div>
+        </>}
+
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
             disabled={bloquearConfiguracion || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
 
-        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
+        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario, cfg.velocidadDiaria)}</p>
 
         {ejecucion && !preparandoNueva && <button type="button" className="corrida-nueva-enlace"
           onClick={cfg.alPrepararNueva}>Preparar otra corrida independiente</button>}
@@ -207,9 +231,13 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
     </Acordeon>
 
     <Acordeon titulo="Rendimiento del planificador" abierto={false}>
-      <PanelRendimiento key={ejecucion?.id || 'sin-corrida'} id={ejecucion?.id} />
+      <PanelRendimiento key={ejecucion?.id || 'sin-corrida'} id={ejecucion?.id}
+        medicionInicio={medicionInicio} />
     </Acordeon>
-    <Acordeon titulo="Resumen de la corrida" abierto={false}>
+    <Acordeon titulo="Resumen y reporte de la corrida" abierto={false}>
+      <button type="button" className="btn btn-secondary btn-block reporte-abrir"
+        disabled={!ejecucion || !planes.length} onClick={alVerReporte}>
+        Ver reporte de la última planificación estable</button>
       {!ejecucion?.resumen ? <p className="vacio">El servidor publica el resumen al terminar la corrida o al detectar el colapso.</p>
         : <dl>
           <div><dt>Pedidos recibidos</dt><dd>{numero(ejecucion.resumen.pedidosRecibidos)}</dd></div>

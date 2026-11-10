@@ -158,3 +158,33 @@ test('la búsqueda al origen utiliza los minutos publicados y no el tiempo desde
   assert.deepEqual(filtrarUnidades(filas, { minutosAlOrigen: 12 }).map(v => v.id), ['TA02']);
   assert.equal(filtrarUnidades(filas, { minutosAlOrigen: 11 }).length, 0);
 });
+
+test('distancias en km: al destino inmediato, al origen y recorridas (E08, E09, E11, E16, E17)', () => {
+  const vehiculos = [
+    { id: 'TA01', tipo: 'AUTO', estado: 'EN_RUTA', ubicacion: { x: 10, y: 10 }, capacidad: 24,
+      cargaAbordo: 12, kmAlOrigen: 21.5, kmRecorridos: 30 },
+    { id: 'TA02', tipo: 'AUTO', estado: 'EN_RUTA', ubicacion: { x: 0, y: 0 }, capacidad: 24,
+      cargaAbordo: 6, kmAlOrigen: 4, kmRecorridos: 2 },
+    { id: 'TA03', tipo: 'AUTO', estado: 'DISPONIBLE', ubicacion: { x: 5, y: 5 }, capacidad: 24, cargaAbordo: 0 }
+  ];
+  const ruta = (id, vehiculoId, x, y) => ({ id, vehiculoId, salidaPrevista: '2029-01-15T08:00:00',
+    llegadasPrevistas: { [`P-${id}`]: '2029-01-15T10:00:00' },
+    paradas: [{ id: `P-${id}`, cantidad: 6, destino: { x, y } }] });
+  const filas = filasDeUnidades(vehiculos, [ruta('R1', 'TA01', 14, 13), ruta('R2', 'TA02', 20, 5)],
+    null, '2029-01-15T09:00:00');
+  const porId = Object.fromEntries(filas.map(f => [f.id, f]));
+  assert.equal(porId.TA01.kmAlDestino, 7);
+  assert.equal(porId.TA02.kmAlDestino, 25);
+  assert.equal(porId.TA03.kmAlDestino, null);
+  assert.equal(porId.TA01.kmAlOrigen, 21.5);
+  assert.equal(porId.TA03.kmRecorridos, null);
+
+  assert.deepEqual(filtrarUnidades(filas, { kmAlDestino: 10 }).map(f => f.id), ['TA01']);
+  assert.deepEqual(filtrarUnidades(filas, { kmAlOrigen: 5 }).map(f => f.id), ['TA02']);
+  assert.deepEqual(filtrarUnidades(filas, { rangoKm: '20-40' }).map(f => f.id), ['TA02']);
+  assert.deepEqual(filtrarUnidades(filas, { rangoKm: '0-10' }).map(f => f.id), ['TA01']);
+  // Sin dato de distancia la unidad queda al final en los dos sentidos.
+  assert.deepEqual(ordenarUnidades(filas, 'km-destino-asc').map(f => f.id), ['TA01', 'TA02', 'TA03']);
+  assert.deepEqual(ordenarUnidades(filas, 'km-destino-desc').map(f => f.id), ['TA02', 'TA01', 'TA03']);
+  assert.deepEqual(ordenarUnidades(filas, 'km-recorridos-desc').map(f => f.id), ['TA01', 'TA02', 'TA03']);
+});

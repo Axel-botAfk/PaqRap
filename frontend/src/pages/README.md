@@ -10,6 +10,10 @@ Una por vista del prototipo v6:
 - `PedidoCargaMasiva.jsx` — lectura y validación del archivo mensual de ventas (imagen 10).
 - `PedidoSeguimiento.jsx` — línea de tiempo y asignaciones de un pedido (imagen 11).
 - `HojaAverias.jsx` — hoja de averías y excepciones de la corrida.
+- `HojaFlota.jsx` — mantenimiento de unidades de transporte: alta, baja, activación, nodo de
+  partida y atributos por tipo. Guarda en el servidor (`/api/flota`).
+- `ReportePlan.jsx` — reporte de la última planificación estable; se abre al terminar la
+  corrida y desde «Resumen y reporte de la corrida». La lógica vive en `src/reporte.js`.
 
 Las reglas del pedido (formato del archivo, plazos, retícula) viven en `src/pedidos.js`, no
 en estos componentes: así se prueban sin montar React.

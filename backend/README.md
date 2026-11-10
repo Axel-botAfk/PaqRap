@@ -42,6 +42,12 @@ resultados **todavía no** se persisten.
 | `POST /api/ejecuciones/{id}/cancelar` | Detiene la corrida (estado `CANCELADA`). |
 | `POST /api/ejecuciones/{id}/pausar` | Congela el ritmo; estado `PAUSADA`. |
 | `POST /api/ejecuciones/{id}/reanudar` | Retoma la ventana donde quedó; estado `EN_CURSO`. |
+| `GET /api/flota` | Flota vigente: atributos por tipo (capacidad, velocidad, costo) y unidades con su nodo de partida y estado. |
+| `PUT /api/flota/tipos/{tipo}` | Cambia capacidad, velocidad o costo de un tipo (`AUTO`, `MOTO`, `BICICLETA`). |
+| `POST /api/flota/unidades` | Agrega una unidad; el código TTNN lo asigna el servidor. |
+| `PUT /api/flota/unidades/{id}` | Activa o desactiva una unidad, o cambia su nodo de partida. |
+| `DELETE /api/flota/unidades/{id}` | Elimina una unidad agregada (las de la flota base solo se desactivan). |
+| `POST /api/flota/restablecer` | Vuelve a la flota y a los valores del caso. |
 | `GET /api/ejecuciones/{id}/eventos?desde=N` | Hechos de la operación: `AVERIA_REGISTRADA`, `AVERIA_APLICADA`, `REPLANIFICACION` (pedido, unidad anterior y nueva o por planificar) y `COLAPSO`. |
 | `WS /ws/ejecuciones/{id}` | Instantanea inicial y eventos posteriores. |
 
@@ -131,3 +137,12 @@ GUI React consume este contrato; el HTML v6 permanece como referencia visual.
   multiusuario sin esos controles.
 
 La guia de decisiones y pruebas pendientes esta en [GUIA_IMPLEMENTACION.md](GUIA_IMPLEMENTACION.md).
+
+## Mantenimiento de flota
+
+`FlotaService` guarda en memoria los cambios hechos desde la pantalla «Mantenimiento de flota»
+sobre la flota base de la fuente de datos. Cada corrida toma una copia al crearse, con su propia
+`ConfiguracionFlota`: los cambios rigen para las corridas que se inicien después y no alteran una
+corrida en marcha. Como las corridas, se pierden al reiniciar el servidor. `VehiculoVista` publica
+además `kmAlOrigen` (por calles, con los bloqueos del instante) y `kmRecorridos` (desde la última
+carga en almacén) para las búsquedas y ordenamientos por distancia de la lista de unidades.

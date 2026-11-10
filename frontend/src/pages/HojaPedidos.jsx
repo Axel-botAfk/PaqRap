@@ -28,7 +28,7 @@ const LIMITE = 100;
  * cada una dice en su pie hasta dónde llega.
  */
 export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo, mapaDatos, fuente,
-  pedidosDelInstante = null, instante = null }) {
+  pedidosDelInstante = null, instante = null, alVerEnMapa = null }) {
   const [pestana, setPestana] = useState('registrados');
   const [filtro, setFiltro] = useState('');
   const [seguido, setSeguido] = useState(null);
@@ -61,7 +61,8 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
       ? <PedidoSeguimiento pedido={enSeguimiento} planes={planes}
         situacion={enSeguimiento.situacion} alVolver={() => setSeguido(null)} />
       : <>
-        <EnviosOriginales planes={planes} instante={instante || ejecucion?.reloj} />
+        <EnviosOriginales planes={planes} instante={instante || ejecucion?.reloj}
+          alVerEnMapa={ejecucion ? alVerEnMapa : null} />
         <div className="kpis">
           <div className="kpi" style={{ '--k': 'var(--navy)' }}><span>CONOCIDOS HASTA ESTE INSTANTE</span><b>{numero(filas.length)}</b><IconoUI nombre="caja" className="kpi-icono" size={32} /></div>
           <div className="kpi" style={{ '--k': 'var(--success)' }}><span>ENTREGADOS HASTA ESTE INSTANTE</span><b>{numero(cuenta('ENTREGADO'))}</b><IconoUI nombre="camion" className="kpi-icono" size={32} /></div>

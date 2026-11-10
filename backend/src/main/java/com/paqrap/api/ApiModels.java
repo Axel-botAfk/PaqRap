@@ -75,11 +75,15 @@ public final class ApiModels {
 
     public record VehiculoVista(
             String id, String tipo, Coordenada ubicacion, String estado, int capacidad,
-            int cargaAbordo, String origenId, Double minutosAlOrigen
+            int cargaAbordo, String origenId, Double minutosAlOrigen,
+            /** Km por calles hasta el almacén de la última carga, con los bloqueos del instante. */
+            Double kmAlOrigen,
+            /** Km recorridos desde la última carga en almacén, sumados entre hitos del trayecto. */
+            Double kmRecorridos
     ) {
         public VehiculoVista(String id, String tipo, Coordenada ubicacion, String estado,
                              int capacidad, int cargaAbordo) {
-            this(id, tipo, ubicacion, estado, capacidad, cargaAbordo, null, null);
+            this(id, tipo, ubicacion, estado, capacidad, cargaAbordo, null, null, null, null);
         }
     }
 
@@ -206,6 +210,22 @@ public final class ApiModels {
             String periodo, int pedidos, int bloqueos, int jornadasMantenimiento,
             boolean mantenimientoDisponible, LocalDate primeraFechaPedido
     ) { }
+
+    /** Valores vigentes de un tipo de unidad junto con los del caso, para poder compararlos. */
+    public record TipoFlotaVista(String tipo, int capacidad, double velocidadKmH,
+                                 double costoPorKm, int capacidadDelCaso,
+                                 double velocidadDelCaso, double costoDelCaso,
+                                 int unidades, int activas) { }
+    public record UnidadFlotaVista(String id, String tipo, Coordenada ubicacionInicial,
+                                   boolean activa, boolean agregada, int capacidad,
+                                   double velocidadKmH, double costoPorKm) { }
+    public record FlotaVista(List<TipoFlotaVista> tipos, List<UnidadFlotaVista> unidades,
+                             boolean modificada) { }
+    public record ActualizarTipoFlotaRequest(Integer capacidad, Double velocidadKmH,
+                                             Double costoPorKm) { }
+    public record NuevaUnidadRequest(@NotNull com.paqrap.modelo.TipoVehiculo tipo,
+                                     Coordenada ubicacion) { }
+    public record ActualizarUnidadRequest(Boolean activa, Coordenada ubicacion) { }
 
     public record AlmacenVista(String id, String tipo, Coordenada ubicacion,
                                int stockInicial) { }

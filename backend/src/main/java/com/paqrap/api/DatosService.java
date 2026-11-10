@@ -78,6 +78,22 @@ final class DatosService implements DatosFuente {
         }
     }
 
+    public DatosEntrada entorno(YearMonth mes) {
+        try {
+            Path bloqueos = carpeta.resolve(DatosReales.nombreDeBloqueos(mes));
+            Path mantenimiento = carpeta.resolve(DatosReales.nombreDeMantenimiento(mes));
+            return new DatosEntrada(List.of(),
+                    Files.isRegularFile(bloqueos) ? com.paqrap.datos.LectorBloqueos.leer(bloqueos)
+                            : List.of(),
+                    Files.isRegularFile(mantenimiento)
+                            ? com.paqrap.datos.LectorMantenimiento.leer(mantenimiento)
+                            : PlanMantenimiento.vacio());
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "DATOS_NO_DISPONIBLES",
+                    "No se pudieron leer los bloqueos o el mantenimiento del periodo.");
+        }
+    }
+
     public List<Almacen> almacenes() { return DatosCaso.almacenes(); }
 
     public List<Vehiculo> flota() { return DatosCaso.flota(); }

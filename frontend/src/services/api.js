@@ -9,11 +9,18 @@ async function solicitud(ruta, opciones = {}) {
     ...opciones,
     headers: { Accept: 'application/json', ...(opciones.headers || {}) }
   }).catch(() => { throw new Error('No se pudo conectar con el servidor.'); });
+  if (respuesta.status === 204) return null;
   let cuerpo;
   try {
     cuerpo = await respuesta.json();
   } catch {
-    throw new Error('El servidor devolvió una respuesta no válida.');
+    // nginx responde en HTML cuando el cuerpo supera su client_max_body_size.
+    const error = new Error(respuesta.status === 413
+      ? 'El archivo supera el tamaño que acepta el servidor (límite de nginx o de la API).'
+      : respuesta.ok ? 'El servidor devolvió una respuesta no válida.'
+        : `Error HTTP ${respuesta.status}`);
+    error.status = respuesta.status;
+    throw error;
   }
   if (!respuesta.ok) {
     const error = new Error(cuerpo.mensaje || `Error HTTP ${respuesta.status}`);
@@ -53,6 +60,12 @@ export const api = {
   }),
   pausar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/pausar`, { method: 'POST' }),
   reanudar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/reanudar`, { method: 'POST' }),
+  cargasVentas: () => solicitud('/api/datos/ventas'),
+  cargarVentas: (periodo, nombre, contenido) => solicitud(
+    `/api/datos/ventas?periodo=${encodeURIComponent(periodo)}&nombre=${encodeURIComponent(nombre || '')}`, {
+      method: 'POST', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: contenido
+    }),
+  quitarVentas: (periodo) => solicitud(`/api/datos/ventas/${encodeURIComponent(periodo)}`, { method: 'DELETE' }),
   flota: () => solicitud('/api/flota'),
   actualizarTipoFlota: (tipo, datos) => solicitud(`/api/flota/tipos/${encodeURIComponent(tipo)}`, {
     method: 'PUT', headers: JSON_CUERPO, body: JSON.stringify(datos)

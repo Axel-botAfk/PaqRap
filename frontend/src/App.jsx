@@ -56,6 +56,8 @@ export default function App() {
   const vistaActual = useRef('operacion');
   const [escenario, setEscenario] = useState('OPERACION_DIARIA');
   const [periodos, setPeriodos] = useState([]);
+  // Sube al cargar o quitar un mes de ventas, para releer el catálogo y el periodo elegido.
+  const [versionDatos, setVersionDatos] = useState(0);
   const [detalle, setDetalle] = useState(null);
   const [mapaDatos, setMapaDatos] = useState(null);
   const [fuente, setFuente] = useState('ARCHIVOS');
@@ -144,7 +146,7 @@ export default function App() {
     api.periodos().then(lista => { if (activo) setPeriodos(lista); })
       .catch(e => { if (activo) setError(`No se pudo cargar el catálogo: ${e.message}`); });
     return () => { activo = false; };
-  }, []);
+  }, [versionDatos]);
 
   // Sin fecha todavía: la fecha y hora actuales si el catálogo tiene datos de este mes —la
   // operación día a día empieza «ahora»—; si no, el primer día con datos.
@@ -178,7 +180,7 @@ export default function App() {
     api.mapa(periodo).then(info => { if (activo) setMapaDatos(info); })
       .catch(e => { if (activo) { setMapaDatos(null); setError(e.message); } });
     return () => { activo = false; };
-  }, [periodo, periodos]);
+  }, [periodo, periodos, versionDatos]);
 
   // El descubrimiento pertenece al servidor y al escenario, no al almacenamiento del navegador.
   // Una sola corrida se recupera sin crear otra; con varias se espera una elección explícita.
@@ -907,6 +909,7 @@ export default function App() {
         instante={instanteReproducido}
         pedidosDelInstante={pedidosDelInstante}
         periodo={periodo} mapaDatos={mapaDatos} fuente={fuente}
+        alActualizarDatos={() => setVersionDatos(v => v + 1)}
         alVerEnMapa={seleccion => {
           setRutaSeleccionada(null);
           setSeleccionEnvio(seleccion);

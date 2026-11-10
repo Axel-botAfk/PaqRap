@@ -1,44 +1,86 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { fecha, numero } from '../formato.js';
 import { parsearVentas, periodoDelNombre } from '../pedidos.js';
+import { api } from '../services/api.js';
 import IconoUI from '../components/IconoUI.jsx';
 
 const MUESTRA = 50;
 
 /**
- * Carga masiva del archivo mensual de ventas (imagen 10 del prototipo). La exigencia pide
- * validar la estructura *antes* de incorporar los registros, y eso es exactamente lo que se
- * puede hacer sin servidor: se lee el archivo en el navegador y se reporta línea por línea.
- *
- * El backend lee sus propios TXT del disco al arrancar; no hay endpoint de subida, así que la
- * incorporación todavía es manual. Lo que esta pantalla ahorra es descubrir el archivo roto
- * a la mitad de una corrida.
+ * Carga masiva del archivo mensual de ventas (imagen 10 del prototipo). Primero se valida en el
+ * navegador, línea por línea, como pide la exigencia; luego «Incorporar» lo envía al servidor,
+ * que repite la validación con las mismas reglas y reemplaza los pedidos de ese mes. Las líneas
+ * con error se descartan. Rige para las corridas que se inicien después.
  */
-export default function PedidoCargaMasiva({ periodo = '' }) {
+export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = () => {} }) {
   const [aaaamm, setAaaamm] = useState(periodo);
   const [archivo, setArchivo] = useState('');
   const [resultado, setResultado] = useState(null);
   const [leyendo, setLeyendo] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [incorporada, setIncorporada] = useState(null);
+  const [error, setError] = useState('');
+  const [cargas, setCargas] = useState(null);
   const entrada = useRef(null);
+
+  const refrescarCargas = () => api.cargasVentas().then(setCargas).catch(() => setCargas(null));
+  useEffect(() => { refrescarCargas(); }, []);
 
   async function tomar(evento) {
     const elegido = evento.target.files?.[0];
     if (!elegido) return;
     setLeyendo(true);
     try {
-      const texto = await elegido.text();
+      const contenido = await elegido.text();
       const delNombre = periodoDelNombre(elegido.name);
       const usado = delNombre || aaaamm;
       setArchivo(elegido.name);
       setAaaamm(usado);
-      setResultado({ ...parsearVentas(texto, usado), periodo: usado, delNombre: !!delNombre });
+      setTexto(contenido);
+      setIncorporada(null);
+      setError('');
+      setResultado({ ...parsearVentas(contenido, usado), periodo: usado, delNombre: !!delNombre });
     } finally {
       setLeyendo(false);
     }
   }
 
+  // Si el periodo se corrige a mano, la vista previa se vuelve a calcular con él.
+  function cambiarPeriodo(valor) {
+    setAaaamm(valor);
+    if (texto && resultado && !resultado.delNombre) {
+      setResultado({ ...parsearVentas(texto, valor), periodo: valor, delNombre: false });
+    }
+  }
+
+  async function incorporar() {
+    setEnviando(true);
+    setError('');
+    try {
+      const respuesta = await api.cargarVentas(resultado.periodo, archivo, texto);
+      setIncorporada(respuesta);
+      refrescarCargas();
+      alActualizarDatos();
+    } catch (e) { setError(e.message); }
+    finally { setEnviando(false); }
+  }
+
+  async function quitar(periodoCarga) {
+    setError('');
+    try {
+      await api.quitarVentas(periodoCarga);
+      if (incorporada?.periodo === periodoCarga) setIncorporada(null);
+      refrescarCargas();
+      alActualizarDatos();
+    } catch (e) { setError(e.message); }
+  }
+
   function limpiar() {
     setResultado(null);
+    setTexto('');
+    setIncorporada(null);
+    setError('');
     setArchivo('');
     if (entrada.current) entrada.current.value = '';
   }
@@ -57,7 +99,7 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
               onChange={tomar} /></div>
           <div className="field"><label htmlFor="cm-periodo">Periodo (aaaamm)</label>
             <input id="cm-periodo" className="input" value={aaaamm} placeholder="202601"
-              onChange={e => setAaaamm(e.target.value.trim())}
+              onChange={e => cambiarPeriodo(e.target.value.trim())}
               disabled={resultado?.delNombre} /></div>
         </div>
         <p className="nota nota-carga"><IconoUI nombre="info" size={24} /><span>Un registro por línea, con el formato
@@ -67,6 +109,47 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
         {leyendo && <p className="nota" role="status">Leyendo el archivo…</p>}
       </div>
     </div>
+
+    {error && <div role="alert" className="flota-mensaje flota-error">{error}</div>}
+
+    {resultado && <div className="card carga-incorporar">
+      <header><h2>INCORPORAR AL SISTEMA</h2></header>
+      <div className="card-cuerpo">
+        {incorporada ? <div role="status" className="flota-mensaje">
+          Se incorporaron {numero(incorporada.registros)} pedidos de {incorporada.periodo.slice(0, 4)}-{incorporada.periodo.slice(4)}
+          {incorporada.descartados ? ` y se descartaron ${numero(incorporada.descartados)} línea(s) con error` : ''}.
+          {incorporada.reemplazo ? ' Reemplazan los pedidos que el sistema tenía para ese mes.' : ' El mes se agregó al calendario.'}
+          {' '}Rige para las corridas que se inicien a partir de ahora.
+          {!incorporada.persistente && ' Atención: el servidor no pudo guardarlo en disco y se perderá al reiniciarse.'}
+        </div> : <>
+          <p className="nota">Se enviarán {numero(resultado.pedidos.length)} pedidos válidos de
+            {' '}{resultado.periodo ? `${resultado.periodo.slice(0, 4)}-${resultado.periodo.slice(4)}` : '—'}
+            {resultado.errores.length ? `; las ${numero(resultado.errores.length)} línea(s) con error se descartan` : ''}.
+            Reemplazan los pedidos de ese mes; los bloqueos y el mantenimiento no cambian.</p>
+          <button type="button" className="btn btn-primary"
+            disabled={enviando || !resultado.pedidos.length || !/^\d{6}$/.test(resultado.periodo || '')}
+            onClick={incorporar}>
+            {enviando ? 'Incorporando…' : `Incorporar ${numero(resultado.pedidos.length)} pedidos`}</button>
+        </>}
+      </div>
+    </div>}
+
+    {cargas?.length > 0 && <div className="card">
+      <header><h2>MESES CARGADOS DESDE ESTA PANTALLA</h2></header>
+      <div className="tabla-wrap"><table>
+        <thead><tr><th>Periodo</th><th>Archivo</th><th>Pedidos</th><th>Descartados</th><th>Primer / último pedido</th><th>Cargado</th><th /></tr></thead>
+        <tbody>{cargas.map(c => <tr key={c.periodo}>
+          <td><b>{c.periodo.slice(0, 4)}-{c.periodo.slice(4)}</b></td>
+          <td>{c.nombre}{!c.persistente && <span className="pill a flota-nueva">Solo en memoria</span>}</td>
+          <td>{numero(c.registros)}</td>
+          <td>{numero(c.descartados)}</td>
+          <td>{fecha(c.primerPedido)} · {fecha(c.ultimoPedido)}</td>
+          <td>{fecha(c.cargadoEn)}</td>
+          <td><button type="button" className="enlace-fila" onClick={() => quitar(c.periodo)}>Quitar carga</button></td>
+        </tr>)}</tbody>
+      </table></div>
+      <div className="card-pie"><span>Quitar una carga devuelve ese mes a los datos originales del sistema.</span></div>
+    </div>}
 
     {resultado && <>
       <div className="kpis">
@@ -110,9 +193,8 @@ export default function PedidoCargaMasiva({ periodo = '' }) {
           </table></div>}
         <div className="card-pie">
           {resultado.pedidos.length > MUESTRA && <span>Se muestran los primeros {MUESTRA} de {numero(resultado.pedidos.length)} pedidos.</span>}
-          <span>El servidor no recibe archivos: esta pantalla valida la estructura, no incorpora los
-            pedidos. El archivo se deja en el directorio de datos del servidor
-            (<code>PAQRAP_DATA_DIR</code>) y se inicia una corrida con una fecha de ese mes.</span>
+          <span>Vista previa de la validación. Usa «Incorporar» para enviar los pedidos al
+            servidor, que vuelve a validarlos con las mismas reglas.</span>
         </div>
       </div>
     </>}

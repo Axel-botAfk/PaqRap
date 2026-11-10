@@ -108,6 +108,16 @@ final class MysqlDatosService implements DatosFuente {
     }
 
     @Override
+    public DatosEntrada entorno(YearMonth mes) {
+        LocalDateTime desde = mes.atDay(1).atStartOfDay();
+        LocalDateTime hasta = mes.plusMonths(1).atDay(1).atStartOfDay();
+        try (Connection conexion = dataSource.getConnection()) {
+            return new DatosEntrada(List.of(), bloqueos(conexion, desde, hasta),
+                    mantenimiento(conexion, desde, hasta));
+        } catch (SQLException e) { throw errorBase(); }
+    }
+
+    @Override
     public List<Almacen> almacenes() {
         try (Connection conexion = dataSource.getConnection()) {
             return almacenes(conexion);

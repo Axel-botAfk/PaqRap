@@ -6,6 +6,7 @@ After=network.target
 User=paqrap
 WorkingDirectory=/opt/paqrap
 Environment=PAQRAP_DATA_DIR=/opt/paqrap/datos/reales
+Environment=PAQRAP_UPLOAD_DIR=/opt/paqrap/cargas
 Environment=PAQRAP_PORT=8081
 Environment=PAQRAP_BIND_ADDRESS=127.0.0.1
 ExecStart=/usr/bin/java -Xmx1g -jar /opt/paqrap/paqrap.jar

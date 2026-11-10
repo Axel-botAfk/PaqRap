@@ -33,3 +33,7 @@ db.properties
 # ---------- Logs y temporales ----------
 *.log
 tmp/
+
+# ---------- Cargas masivas de ventas del servidor local ----------
+cargas/
+backend/cargas/

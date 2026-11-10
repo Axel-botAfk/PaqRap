@@ -42,6 +42,9 @@ resultados **todavía no** se persisten.
 | `POST /api/ejecuciones/{id}/cancelar` | Detiene la corrida (estado `CANCELADA`). |
 | `POST /api/ejecuciones/{id}/pausar` | Congela el ritmo; estado `PAUSADA`. |
 | `POST /api/ejecuciones/{id}/reanudar` | Retoma la ventana donde quedó; estado `EN_CURSO`. |
+| `GET /api/datos/ventas` | Meses de ventas cargados desde la pantalla. |
+| `POST /api/datos/ventas?periodo=aaaamm&nombre=…` | Carga masiva del archivo mensual (cuerpo `text/plain`, hasta 4 MB); reemplaza los pedidos de ese mes. |
+| `DELETE /api/datos/ventas/{aaaamm}` | Quita la carga y vuelve a los datos originales del mes. |
 | `GET /api/flota` | Flota vigente: atributos por tipo (capacidad, velocidad, costo) y unidades con su nodo de partida y estado. |
 | `PUT /api/flota/tipos/{tipo}` | Cambia capacidad, velocidad o costo de un tipo (`AUTO`, `MOTO`, `BICICLETA`). |
 | `POST /api/flota/unidades` | Agrega una unidad; el código TTNN lo asigna el servidor. |
@@ -146,3 +149,13 @@ sobre la flota base de la fuente de datos. Cada corrida toma una copia al crears
 corrida en marcha. Como las corridas, se pierden al reiniciar el servidor. `VehiculoVista` publica
 además `kmAlOrigen` (por calles, con los bloqueos del instante) y `kmRecorridos` (desde la última
 carga en almacén) para las búsquedas y ordenamientos por distancia de la lista de unidades.
+
+## Carga masiva de ventas
+
+`CargasDePedidos` valida el archivo con las reglas de `frontend/src/pedidos.js` y lo guarda en
+`paqrap.upload-dir` (`PAQRAP_UPLOAD_DIR`, por defecto `cargas/` en el directorio de trabajo);
+al arrancar se vuelven a leer. `DatosConCargas` es la `DatosFuente` primaria: sobre la fuente
+base (archivos o MySQL) reemplaza los pedidos de los meses cargados y conserva sus bloqueos y
+mantenimiento. No escribe en MySQL, así que el usuario de la aplicación sigue siendo de solo
+lectura. Si la carpeta no se puede escribir, la carga queda en memoria y la respuesta trae
+`persistente: false`.

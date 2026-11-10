@@ -11,6 +11,9 @@ import { UMBRALES_POR_OMISION } from '../umbrales.js';
 import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
+const NOMBRE_ESCENARIO = { OPERACION_DIARIA: 'Operación diaria', PERIODO_5_DIAS: 'Simulación 5 días',
+  COLAPSO: 'Colapso logístico' };
+
 const ESCENARIOS_SIMULACION = [
   ['PERIODO_5_DIAS', 'Semanal (5 días)', 'Cinco jornadas en 30 a 60 minutos reales.'],
   ['COLAPSO', 'Colapso logístico', 'Avanza hasta el primer pedido vencido.']
@@ -32,11 +35,16 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   medicionInicio = null }) {
   const simulacion = vista === 'simulacion';
   const activa = controlesDeCorrida(ejecucion?.estado).activa;
-  const [corridaElegida, setCorridaElegida] = useState('');
+  const [corridaSeleccionada, setCorridaElegida] = useState('');
+  // Con una sola corrida ofrecida ya viene elegida: basta pulsar «Abrir».
+  const corridaElegida = cfg.corridasActivas?.some(c => c.id === corridaSeleccionada) ? corridaSeleccionada
+    : cfg.corridasActivas?.length === 1 ? cfg.corridasActivas[0].id : '';
   const preparandoNueva = !!cfg.crearIndependiente;
   const bloquearConfiguracion = activa && !preparandoNueva;
+  // Solo una corrida activa del mismo escenario impide iniciar otra sin pedirlo expresamente.
   const puedeIniciar = !cfg.consultandoCorridas
-    && (preparandoNueva || !cfg.corridasActivas?.length);
+    && (preparandoNueva || ejecucion || !cfg.corridasActivas?.some(c => c.escenario === cfg.escenario));
+  const sinCorridaEnVivo = !ejecucion || !activa;
   const { escenario, detalle, dia, hora, horizonte, limites,
     unidadAveriada, tipoAveria, flota } = cfg;
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
@@ -49,15 +57,17 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   return <>
     <ControlesCorrida key={ejecucion?.id || 'sin-corrida'} ejecucion={ejecucion} ocupado={ocupado}
       alControlar={cfg.alControlar} progreso={progreso} />
-    {!ejecucion && !preparandoNueva && cfg.corridasActivas?.length > 1 &&
+    {sinCorridaEnVivo && !preparandoNueva && cfg.corridasActivas?.length > 0 &&
       <div className="corridas-activas" role="region" aria-label="Elegir corrida activa">
-        <label htmlFor="corrida-activa">Hay varias corridas activas. Elige cuál visualizar:</label>
+        <label htmlFor="corrida-activa">{cfg.corridasActivas.length === 1
+          ? 'Hay una corrida activa iniciada desde otro dispositivo o escenario:'
+          : 'Hay varias corridas activas. Elige cuál visualizar:'}</label>
         <div className="row">
           <select id="corrida-activa" className="input" value={corridaElegida}
             onChange={evento => setCorridaElegida(evento.target.value)}>
             <option value="">Seleccionar corrida</option>
             {cfg.corridasActivas.map(corrida => <option key={corrida.id} value={corrida.id}>
-              {fecha(corrida.inicio)} · {corrida.estado === 'PAUSADA' ? 'Pausada'
+              {NOMBRE_ESCENARIO[corrida.escenario] || corrida.escenario} · {fecha(corrida.inicio)} · {corrida.estado === 'PAUSADA' ? 'Pausada'
                 : corrida.estado === 'PENDIENTE' ? 'Preparando' : 'En curso'} · {corrida.id.slice(0, 8)}
             </option>)}
           </select>

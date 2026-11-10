@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api, esFinal, urlWebSocket } from './services/api.js';
-import { corridaRecuperable, unicaCorridaActiva } from './conexionCorridas.js';
+import { corridaRecuperable, unicaCorridaActiva, decidirCorrida, esActiva } from './conexionCorridas.js';
 import { planVigenteEn, estadosDePedido, vehiculosObservadosEn } from './mapa.js';
 import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
@@ -168,8 +168,12 @@ export default function App() {
 
   // El descubrimiento pertenece al servidor y al escenario, no al almacenamiento del navegador.
   // Una sola corrida se recupera sin crear otra; con varias se espera una elección explícita.
+  // Se consultan las corridas de todos los escenarios: quien entra desde otro dispositivo no
+  // sabe cuál se inició en el primero. Mientras se mira una corrida ya finalizada también se
+  // consulta, pero solo para ofrecer la que esté activa, sin quitar la que se está viendo.
+  const viendoFinalizada = !!id && !!ejecucion && ejecucion.id === id && esFinal(ejecucion.estado);
   useEffect(() => {
-    if (!ES_MAPA(vista) || id || ocupado || crearIndependiente) return undefined;
+    if (!ES_MAPA(vista) || (id && !viendoFinalizada) || ocupado || crearIndependiente) return undefined;
     let activo = true;
     let consultando = false;
     const consultarActivas = async () => {
@@ -177,14 +181,18 @@ export default function App() {
       consultando = true;
       setConsultandoCorridas(true);
       try {
-        const lista = await api.activas(escenario);
-        if (!activo || idActual.current || vistaActual.current !== vista) return;
-        setCorridasActivas(lista);
-        const unica = unicaCorridaActiva(lista, escenario);
-        if (unica) {
-          const recuperada = await api.consultar(unica.id);
-          if (activo && !idActual.current && vistaActual.current === vista
-              && corridaRecuperable(recuperada, escenario)) {
+        const lista = await api.activas();
+        if (!activo || vistaActual.current !== vista) return;
+        if (viendoFinalizada) {
+          if (idActual.current === id) setCorridasActivas(lista.filter(esActiva));
+          return;
+        }
+        if (idActual.current) return;
+        const decision = decidirCorrida(lista, escenario, restaurarVistaInicial.current);
+        setCorridasActivas(decision.ofrecer);
+        if (decision.adoptar) {
+          const recuperada = await api.consultar(decision.adoptar.id);
+          if (activo && !idActual.current && vistaActual.current === vista && esActiva(recuperada)) {
             adoptarCorrida(recuperada);
           }
         }
@@ -198,7 +206,7 @@ export default function App() {
     consultarActivas();
     const intervalo = setInterval(consultarActivas, 5000);
     return () => { activo = false; clearInterval(intervalo); };
-  }, [vista, escenario, id, ocupado, crearIndependiente]);
+  }, [vista, escenario, id, viendoFinalizada, ocupado, crearIndependiente]);
 
   useEffect(() => {
     if (!id) return undefined;
@@ -585,6 +593,7 @@ export default function App() {
   }
 
   function cambiarEscenario(valor) {
+    restaurarVistaInicial.current = false;
     escenarioSimulacion.current = valor;
     try { localStorage.setItem('paqrap.escenario.simulacion', valor); } catch { /* sin almacenamiento */ }
     setEscenario(valor);
@@ -626,7 +635,7 @@ export default function App() {
     evento.preventDefault();
     if (ocupado || consultandoCorridas || accionCorrida.current
         || (controlesDeCorrida(ejecucion?.estado).activa && !crearIndependiente)
-        || (!id && corridasActivas.length && !crearIndependiente)) return;
+        || (!id && corridasActivas.some(c => c.escenario === escenario) && !crearIndependiente)) return;
     setError('');
     const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
     const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
@@ -715,7 +724,7 @@ export default function App() {
     setError('');
     try {
       const recuperada = await api.consultar(uuid);
-      if (!corridaRecuperable(recuperada, escenario)) {
+      if (!esActiva(recuperada)) {
         setCorridasActivas(actuales => actuales.filter(corrida => corrida.id !== uuid));
         setError('Esta corrida ya no está activa. Elige otra corrida disponible.');
         return;

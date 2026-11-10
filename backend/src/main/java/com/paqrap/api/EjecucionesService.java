@@ -169,7 +169,8 @@ final class EjecucionesService {
         return ejecuciones.values().stream().map(ejecucion -> {
             synchronized (ejecucion) {
                 EjecucionVista vista = ejecucion.vista;
-                if (vista.escenario() != escenario || (vista.estado() != Estado.PENDIENTE
+                // Sin escenario se listan todas: otro dispositivo aún no sabe cuál se inició.
+                if ((escenario != null && vista.escenario() != escenario) || (vista.estado() != Estado.PENDIENTE
                         && vista.estado() != Estado.EN_CURSO && vista.estado() != Estado.PAUSADA)) {
                     return null;
                 }

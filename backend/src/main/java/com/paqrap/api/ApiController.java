@@ -94,7 +94,7 @@ class ApiController {
     EjecucionVista consultar(@PathVariable UUID id) { return ejecuciones.consultar(id); }
 
     @GetMapping("/ejecuciones/activas")
-    List<CorridaActivaVista> activas(@RequestParam Escenario escenario) {
+    List<CorridaActivaVista> activas(@RequestParam(required = false) Escenario escenario) {
         return ejecuciones.activas(escenario);
     }
 

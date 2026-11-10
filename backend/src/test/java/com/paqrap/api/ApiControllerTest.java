@@ -30,6 +30,9 @@ class ApiControllerTest {
         mvc.perform(get("/api/ejecuciones/activas").param("escenario", "OPERACION_DIARIA"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
+        mvc.perform(get("/api/ejecuciones/activas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
         mvc.perform(get("/api/ejecuciones/activas").param("escenario", "DESCONOCIDO"))
                 .andExpect(status().isBadRequest());
     }

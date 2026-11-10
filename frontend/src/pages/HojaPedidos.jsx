@@ -28,7 +28,7 @@ const LIMITE = 100;
  * cada una dice en su pie hasta dónde llega.
  */
 export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo, mapaDatos, fuente,
-  pedidosDelInstante = null, instante = null, alVerEnMapa = null }) {
+  pedidosDelInstante = null, instante = null, alVerEnMapa = null, alActualizarDatos = () => {} }) {
   const [pestana, setPestana] = useState('registrados');
   const [filtro, setFiltro] = useState('');
   const [seguido, setSeguido] = useState(null);
@@ -55,7 +55,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
     </div>
 
     {pestana === 'nuevo' && <PedidoNuevo almacenes={mapaDatos?.almacenes || []} />}
-    {pestana === 'masiva' && <PedidoCargaMasiva periodo={periodo} />}
+    {pestana === 'masiva' && <PedidoCargaMasiva periodo={periodo} alActualizarDatos={alActualizarDatos} />}
 
     {pestana === 'registrados' && (enSeguimiento
       ? <PedidoSeguimiento pedido={enSeguimiento} planes={planes}
@@ -98,7 +98,7 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
           <div className="card-pie">
             {visibles.length > LIMITE && <span>Se muestran los primeros {LIMITE} de {numero(visibles.length)} registros.</span>}
             <span>Los pedidos se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}: esta
-              beta no registra ni cancela pedidos. Se conservan los pedidos y fracciones conocidos hasta el reloj visible, incluidos los de planes anteriores. Cada ID de fracción ocupa una fila; no equivale a un original completo. El historial disponible limita la cobertura de corridas muy largas.</span>
+              beta no cancela pedidos; los meses completos se incorporan desde «Carga masiva». Se conservan los pedidos y fracciones conocidos hasta el reloj visible, incluidos los de planes anteriores. Cada ID de fracción ocupa una fila; no equivale a un original completo. El historial disponible limita la cobertura de corridas muy largas.</span>
           </div>
         </div>
       </>)}

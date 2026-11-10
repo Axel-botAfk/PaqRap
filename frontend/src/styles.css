@@ -1536,3 +1536,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 .unidades-rango > span { font: 800 10.5px Archivo; letter-spacing: .04em; color: var(--suave); }
 .ut-km { display: flex; align-items: center; gap: 5px; }
 .rendimiento-inicio { margin-bottom: 10px; }
+
+/* ---------- Carga masiva de ventas ---------- */
+.sheet-pedidos .card + .card, .sheet-pedidos .card + .flota-mensaje, .sheet-pedidos .flota-mensaje + .card { margin-top: 16px; }
+.carga-incorporar .flota-mensaje { margin: 0; }
+.carga-incorporar .btn { margin-top: 10px; }

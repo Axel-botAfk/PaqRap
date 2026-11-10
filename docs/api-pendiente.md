@@ -40,10 +40,17 @@ GET /api/ejecuciones
 -> 200 [ { "id", "escenario", "algoritmo", "estado", "inicio", "reloj", "actualizadoEn" } ]
 ```
 
-## 3. Carga de archivos del mes
+## 3. Carga de archivos del mes — VENTAS RESUELTO
 
 **Para:** la pestaña «Carga masiva del mes» en Pedidos.
 **Alcance acordado:** ventas y calles bloqueadas. Mantenimiento no por ahora.
+
+Las ventas ya se cargan con `POST /api/datos/ventas?periodo=aaaamm&nombre=…` (cuerpo
+`text/plain`), `GET /api/datos/ventas` y `DELETE /api/datos/ventas/{aaaamm}`. El servidor valida
+con las mismas reglas que la pantalla, descarta las líneas con error y guarda el archivo en
+`PAQRAP_UPLOAD_DIR` (por defecto `cargas/` junto al proceso) con un nombre armado por él. Un mes
+cargado reemplaza los pedidos de la fuente base; bloqueos y mantenimiento no cambian. nginx
+admite 4 MB solo en esa ruta. Siguen pendientes los bloqueos. El texto original del pedido era:
 
 La validación de formato va en el servidor, que es quien conoce `LectorVentas` y
 `LectorBloqueos`. El cliente solo comprueba el nombre antes de subir.

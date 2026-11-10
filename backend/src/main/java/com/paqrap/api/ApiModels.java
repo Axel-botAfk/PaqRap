@@ -227,6 +227,13 @@ public final class ApiModels {
                                      Coordenada ubicacion) { }
     public record ActualizarUnidadRequest(Boolean activa, Coordenada ubicacion) { }
 
+    public record LineaRechazadaVista(int numero, String linea, String motivo) { }
+    /** Resultado de una carga masiva de ventas; {@code reemplazo} indica si el mes ya tenía datos. */
+    public record CargaVentasVista(String periodo, String nombre, int leidas, int registros,
+                                   int descartados, List<LineaRechazadaVista> errores,
+                                   LocalDateTime primerPedido, LocalDateTime ultimoPedido,
+                                   LocalDateTime cargadoEn, boolean persistente, Boolean reemplazo) { }
+
     public record AlmacenVista(String id, String tipo, Coordenada ubicacion,
                                int stockInicial) { }
     public record BloqueoVista(LocalDateTime inicio, LocalDateTime fin,

@@ -36,11 +36,55 @@ class ApiController {
     private final DatosFuente datos;
     private final EjecucionesService ejecuciones;
     private final FlotaService flota;
+    private final CargasDePedidos cargas;
 
-    ApiController(DatosFuente datos, EjecucionesService ejecuciones, FlotaService flota) {
+    ApiController(DatosFuente datos, EjecucionesService ejecuciones, FlotaService flota,
+                  CargasDePedidos cargas) {
         this.datos = datos;
         this.ejecuciones = ejecuciones;
         this.flota = flota;
+        this.cargas = cargas;
+    }
+
+    /** Carga masiva del archivo mensual de ventas: reemplaza los pedidos de ese mes. */
+    @GetMapping("/datos/ventas")
+    List<ApiModels.CargaVentasVista> cargas() {
+        return cargas.todas().stream().map(ApiController::vista).toList();
+    }
+
+    @PostMapping(value = "/datos/ventas", consumes = "text/plain")
+    ResponseEntity<ApiModels.CargaVentasVista> cargarVentas(@RequestParam String periodo,
+            @RequestParam(required = false) String nombre, @RequestBody String contenido) {
+        var mes = DatosService.parsearPeriodo(periodo);
+        boolean habiaDatos;
+        try { habiaDatos = datos.periodos().contains(periodo); }
+        catch (ApiException e) { habiaDatos = false; }
+        var carga = cargas.guardar(mes, nombre, contenido);
+        var vista = vista(carga);
+        return ResponseEntity.status(HttpStatus.CREATED).body(new ApiModels.CargaVentasVista(
+                vista.periodo(), vista.nombre(), vista.leidas(), vista.registros(),
+                vista.descartados(), vista.errores(), vista.primerPedido(), vista.ultimoPedido(),
+                vista.cargadoEn(), vista.persistente(), habiaDatos));
+    }
+
+    @DeleteMapping("/datos/ventas/{aaaamm}")
+    ResponseEntity<Void> eliminarVentas(@PathVariable String aaaamm) {
+        if (!cargas.eliminar(DatosService.parsearPeriodo(aaaamm))) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "CARGA_NO_ENCONTRADA",
+                    "No hay una carga de ventas para ese periodo.");
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    private static ApiModels.CargaVentasVista vista(CargasDePedidos.Carga carga) {
+        var registros = carga.pedidos().stream().map(p -> p.getFechaRegistro()).sorted().toList();
+        return new ApiModels.CargaVentasVista(DatosConCargas.aaaamm(carga.periodo()), carga.nombre(),
+                carga.leidas(), carga.pedidos().size(), carga.errores().size(),
+                CargasDePedidos.primeros(carga.errores()).stream().map(e ->
+                        new ApiModels.LineaRechazadaVista(e.numero(), e.linea(), e.motivo())).toList(),
+                registros.isEmpty() ? null : registros.get(0),
+                registros.isEmpty() ? null : registros.get(registros.size() - 1),
+                carga.cargadoEn(), carga.persistente(), null);
     }
 
     /** Mantenimiento de unidades de transporte; aplica a las corridas que se inicien después. */

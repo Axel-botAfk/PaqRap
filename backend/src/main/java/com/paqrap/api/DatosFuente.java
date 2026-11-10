@@ -18,6 +18,8 @@ interface DatosFuente {
     PeriodoVista periodo(String aaaamm);
     MapaDatosVista mapa(String aaaamm);
     DatosEntrada cargar(LocalDateTime inicio, int dias);
+    /** Bloqueos y mantenimiento de un mes, sin exigir ventas; vacíos si no hay datos. */
+    DatosEntrada entorno(java.time.YearMonth mes);
     List<Almacen> almacenes();
     List<Vehiculo> flota();
 

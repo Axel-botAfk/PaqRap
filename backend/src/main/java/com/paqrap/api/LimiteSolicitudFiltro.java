@@ -17,7 +17,10 @@ class LimiteSolicitudFiltro extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        if (request.getContentLengthLong() > MAX_BYTES) {
+        // La carga masiva de ventas es la única ruta que recibe un archivo mensual.
+        long limite = "/api/datos/ventas".equals(request.getRequestURI())
+                ? CargasDePedidos.MAX_CARACTERES + 1024 : MAX_BYTES;
+        if (request.getContentLengthLong() > limite) {
             response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
             return;
         }

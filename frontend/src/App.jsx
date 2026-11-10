@@ -16,6 +16,8 @@ import RielCorrida from './pages/RielCorrida.jsx';
 import { controlesDeCorrida } from './controlesCorrida.js';
 import HojaPedidos from './pages/HojaPedidos.jsx';
 import HojaAverias from './pages/HojaAverias.jsx';
+import HojaFlota from './pages/HojaFlota.jsx';
+import ReportePlan from './pages/ReportePlan.jsx';
 import { inventarioEn } from './stock.js';
 import { enviosEn, rutasDeEnvioEnMapa } from './envios.js';
 import { leerUmbrales, guardarUmbrales, olvidarUmbrales } from './umbrales.js';
@@ -108,6 +110,11 @@ export default function App() {
   // Cortes del semáforo configurables (B06); se recuerdan en este navegador.
   const [umbrales, setUmbrales] = useState(leerUmbrales);
   const [tipoAveria, setTipoAveria] = useState('TIPO_1');
+  // Reporte de la última planificación estable (G08 a G10): se abre solo al finalizar.
+  const [reporteAbierto, setReporteAbierto] = useState(false);
+  // Latencia desde «Iniciar» medida en este navegador (C03 y C04).
+  const [medicionInicio, setMedicionInicio] = useState(null);
+  const estadoPrevio = useRef(null);
   const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
   const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
@@ -489,7 +496,34 @@ export default function App() {
     enviosDelInstante, seleccionEnvio, rutasVisibles),
   [enviosDelInstante, seleccionEnvio, rutasVisibles]);
 
-  useEffect(() => { setSeleccionEnvio(null); }, [id]);
+  // Primer plan dibujado y primera unidad en movimiento, contados desde que se pulsó «Iniciar».
+  const hayRutasDibujadas = rutasVisibles.length > 0;
+  const hayMovimiento = modoVivo && Number.isFinite(instanteVivoMs)
+    && (ejecucion.trayectos || LISTA_VACIA).some(trayecto => {
+      const pasos = trayecto.pasos || LISTA_VACIA;
+      return pasos.length > 1 && aMs(pasos[0].instante) < instanteVivoMs
+        && pasos.some(paso => paso.ubicacion.x !== pasos[0].ubicacion.x
+          || paso.ubicacion.y !== pasos[0].ubicacion.y);
+    });
+  useEffect(() => {
+    if (!medicionInicio || medicionInicio.id !== id) return;
+    if (hayRutasDibujadas && medicionInicio.planMs === null) {
+      setMedicionInicio(m => ({ ...m, planMs: performance.now() - m.t0 }));
+    } else if (hayMovimiento && medicionInicio.movimientoMs === null) {
+      setMedicionInicio(m => ({ ...m, movimientoMs: performance.now() - m.t0 }));
+    }
+  }, [medicionInicio, id, hayRutasDibujadas, hayMovimiento]);
+
+  useEffect(() => { setSeleccionEnvio(null); setReporteAbierto(false); estadoPrevio.current = null; }, [id]);
+
+  // Solo al presenciar el final: abrir una corrida que ya había terminado no interrumpe.
+  useEffect(() => {
+    const estado = ejecucion?.estado || null;
+    const previo = estadoPrevio.current;
+    estadoPrevio.current = estado;
+    if ((previo === 'EN_CURSO' || previo === 'PAUSADA')
+        && (estado === 'TERMINADA' || estado === 'COLAPSADA')) setReporteAbierto(true);
+  }, [ejecucion?.estado]);
 
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
   const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
@@ -604,6 +638,7 @@ export default function App() {
     setDia(diaIngresado);
     setHora(horaIngresada);
     setOcupado(true);
+    const pulsado = performance.now();
     try {
       if (!crearIndependiente) {
         const activas = await api.activas(escenario);
@@ -625,6 +660,7 @@ export default function App() {
         ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
         ...(escenario === 'OPERACION_DIARIA' ? { velocidad: VELOCIDAD_DIA_A_DIA } : {})
       });
+      setMedicionInicio({ id: nueva.id, t0: pulsado, planMs: null, movimientoMs: null });
       const claveCorrida = claveDeEscenario(nueva.escenario);
       setCrearIndependiente(false);
       setCorridasActivas([]);
@@ -795,6 +831,15 @@ export default function App() {
             setReproduciendo(!reproduciendo);
           }} alCambiarPaso={setPasoMs}
           instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} />
+        {seleccionEnvio && <div className="envio-en-mapa" role="status">
+          <span><b>{seleccionEnvio.tipo === 'original' ? 'Envío' : 'Fracción'} {seleccionEnvio.id}</b>
+            {rutasDelEnvio.rutas.length
+              ? ` · ${rutasDelEnvio.rutas.length} ruta(s) resaltada(s): ${rutasDelEnvio.rutas.join(', ')}`
+              : ' · sin ruta visible en este instante'}
+            {rutasDelEnvio.sinRutaVisible.length > 0 && rutasDelEnvio.rutas.length > 0
+              ? ` · ${rutasDelEnvio.sinRutaVisible.length} fracción(es) sin ruta visible` : ''}</span>
+          <button type="button" onClick={() => setSeleccionEnvio(null)}>Quitar resaltado</button>
+        </div>}
       </section>
 
       <Riel titulo={vista === 'simulacion' ? 'Simulación' : 'Operación'} abierto={rielAbierto}
@@ -819,18 +864,30 @@ export default function App() {
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
           umbrales={umbrales} estadosPedido={estadosPedido}
           alGuardarUmbrales={valores => setUmbrales(guardarUmbrales(valores))}
-          alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())} />
+          alRestablecerUmbrales={() => setUmbrales(olvidarUmbrales())}
+          alVerReporte={() => setReporteAbierto(true)}
+          medicionInicio={medicionInicio?.id === id ? medicionInicio : null} />
       </Riel>
+      {reporteAbierto && ejecucion && <ReportePlan ejecucion={ejecucion} planes={planes}
+        alCerrar={() => setReporteAbierto(false)} />}
     </>}
 
     {vista === 'pedidos' && <div className="sheet sheet-pedidos">
       <HojaPedidos ejecucion={ejecucion} estadosPedido={estadosPedido} planes={planes}
         instante={instanteReproducido}
         pedidosDelInstante={pedidosDelInstante}
-        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente} />
+        periodo={periodo} mapaDatos={mapaDatos} fuente={fuente}
+        alVerEnMapa={seleccion => {
+          setRutaSeleccionada(null);
+          setSeleccionEnvio(seleccion);
+          if (ejecucion) cambiarVista(vistaDeEscenario(ejecucion.escenario));
+        }} />
     </div>}
     {vista === 'averias' && <div className="sheet sheet-averias">
       <HojaAverias ejecucion={ejecucion} averias={averias} eventosOperacion={eventosOperacion} />
+    </div>}
+    {vista === 'flota' && <div className="sheet sheet-flota">
+      <HojaFlota almacenes={mapaDatos?.almacenes || LISTA_VACIA} />
     </div>}
   </div>;
 }

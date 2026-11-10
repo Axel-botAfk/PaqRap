@@ -23,8 +23,8 @@ GET /api/ejecuciones/{id}/inventario
          "almacenes": [ { "id", "tipo", "ubicacion", "disponible", "ilimitado" } ] }
 ```
 
-Sigue sin publicarse la **capacidad** de cada almacén: el llenado se mide contra el
-`stockInicial` que da `GET /api/datos/mapa/{aaaamm}`.
+El inventario publica también la `capacidad` de cada almacén intermedio; el llenado se mide
+contra ella y el `stockInicial` queda como referencia para servidores anteriores.
 
 ## 2. Listado de ejecuciones
 
@@ -94,6 +94,15 @@ GET /api/ejecuciones/{id}/pedidos/{pedidoId}
          "fracciones": [ { "orden": 1, "de": 2, "vehiculoId", "cantidad",
                            "almacenId", "eta", "estado" } ] }
 ```
+
+## 6. Mantenimiento de unidades de transporte — RESUELTO
+
+**Para:** la pantalla «Mantenimiento de flota».
+
+Lo cubren `GET /api/flota` y sus operaciones (`PUT /api/flota/tipos/{tipo}`,
+`POST|PUT|DELETE /api/flota/unidades`, `POST /api/flota/restablecer`). Los cambios se guardan en
+memoria del servidor y rigen para las corridas que se inicien después. Queda pendiente
+persistirlos en la base de datos: el usuario de la aplicación es de solo lectura.
 
 ## Lo que no hace falta
 

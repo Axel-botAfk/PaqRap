@@ -92,7 +92,8 @@ const ESTADOS_VEHICULO = {
 export const tipoVehiculo = tipo => TIPOS_VEHICULO[tipo] || tipo;
 export const estadoVehiculo = estado => ESTADOS_VEHICULO[estado] || estado;
 export const tipoAveria = tipo => ({ TIPO_1: 'Tipo 1', TIPO_2: 'Tipo 2', TIPO_3: 'Tipo 3' })[tipo] || tipo;
-export const estadoAveria = estado => ({ REGISTRADA: 'Registrada', APLICADA: 'Aplicada' })[estado] || estado;
+export const estadoAveria = estado => ({ REGISTRADA: 'Registrada', APLICADA: 'Aplicada',
+  NO_APLICADA: 'No aplicada' })[estado] || estado;
 export const motivoPedido = motivo => ({
   SIN_RUTA_FACTIBLE: 'Sin ruta factible', VENCIDO: 'Plazo vencido sin entrega'
 })[motivo] || motivo;

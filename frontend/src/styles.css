@@ -1466,3 +1466,73 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 @media (max-width: 480px) {
   .confirmar-acciones .btn { flex: 1 1 100%; }
 }
+
+/* ---------- Mantenimiento de flota (B04) ---------- */
+.flota-mensaje { margin: 0 0 14px; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; background: #e8f6ee; color: #086044; border: 1px solid #b9e3cb; }
+.flota-mensaje.flota-error { background: var(--red-100); color: var(--red-d); border-color: var(--red-200); }
+.flota-tipos { margin-bottom: 18px; }
+.flota-tipos-lista { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.flota-tipo { padding: 14px 16px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); display: grid; gap: 10px; align-content: start; }
+.flota-tipo-titulo { display: flex; align-items: center; gap: 10px; }
+.flota-tipo-titulo svg { width: 34px; height: 34px; flex: none; }
+.flota-tipo-titulo b { display: block; font: 800 14px Archivo; }
+.flota-tipo-titulo small, .flota-tipo-pie small { color: var(--suave); font-size: 11px; line-height: 1.4; }
+.flota-tipo-titulo .pill { margin-left: auto; }
+.flota-tipo-campos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.flota-tipo-campos .field { margin: 0; }
+.flota-tipo-pie { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.flota-columnas { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.flota-inactiva td { color: var(--suave); }
+.flota-nueva { margin-left: 8px; }
+.flota-acciones { white-space: nowrap; text-align: right; }
+.flota-acciones .enlace-fila + .enlace-fila { margin-left: 12px; }
+.flota-ubicacion { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.flota-ubicacion .input { width: 68px; height: 32px !important; padding: 4px 6px; }
+.flota-ubicacion select.input { width: 110px; }
+.sheet-flota .tabla-wrap { max-height: calc(100vh - var(--hdr) - 190px); }
+@media (max-width: 900px) {
+  .flota-columnas { grid-template-columns: 1fr; }
+  .flota-tipo-campos { grid-template-columns: 1fr; }
+}
+
+/* ---------- Reporte de la última planificación estable (G08 a G10) ---------- */
+.reporte-fondo { position: fixed; inset: 0; z-index: 80; background: rgba(15, 23, 42, .55); display: grid; place-items: center; padding: 24px; }
+.reporte { background: #fff; border-radius: 12px; box-shadow: 0 24px 60px rgba(15, 23, 42, .35); width: min(1180px, 100%); max-height: 100%; display: flex; flex-direction: column; overflow: hidden; outline: none; }
+.reporte-cabecera { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.reporte-cabecera h2 { margin: 0; font: 800 17px Archivo; color: #14254e; }
+.reporte-cabecera p { margin: 4px 0 0; font-size: 12px; color: var(--suave); }
+.reporte-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.reporte-cuerpo { padding: 16px 20px 20px; overflow: auto; }
+.reporte-cuerpo h3 { margin: 18px 0 10px; font: 800 12px Archivo; letter-spacing: .06em; color: #14254e; }
+.reporte-cuerpo h3:first-child { margin-top: 0; }
+.reporte-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 8px; margin: 0 0 6px; }
+.reporte-kpis div { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--ground); }
+.reporte-kpis dt { font: 800 9.5px Archivo; letter-spacing: .08em; color: var(--suave); text-transform: uppercase; }
+.reporte-kpis dd { margin: 3px 0 0; font: 800 16px Archivo; color: var(--ink); }
+.reporte-aviso, .reporte-colapso { margin: 0 0 14px; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; line-height: 1.5; background: #fff7df; color: #6b4a00; border: 1px solid #f1d58a; }
+.reporte-colapso { background: var(--red-100); color: var(--red-d); border-color: var(--red-200); display: grid; gap: 3px; }
+.reporte-tabla { max-height: none; border: 1px solid var(--line); border-radius: 8px; }
+.reporte-tabla td { vertical-align: top; }
+.reporte-tabla td small { display: block; color: var(--suave); font-size: 10.5px; margin-top: 2px; }
+.reporte-tabla tbody + tbody tr:first-child td { border-top: 2px solid var(--line-strong); }
+.reporte-abrir { margin-bottom: 12px; }
+@media print {
+  body { overflow: visible; }
+  .app > *:not(.reporte-fondo) { display: none !important; }
+  .reporte-fondo { position: static; background: none; padding: 0; display: block; }
+  .reporte { box-shadow: none; max-height: none; width: 100%; overflow: visible; display: block; }
+  .reporte-cuerpo, .reporte-tabla { overflow: visible; }
+  .reporte-acciones { display: none; }
+}
+
+/* ---------- Envío resaltado en el mapa (F02 y F03) ---------- */
+.envio-en-mapa { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 12; max-width: calc(100% - 140px); display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 8px 12px; border-radius: 10px; background: #fff; border: 1px solid #a9c7ff; box-shadow: var(--sombra-sm); font-size: 12px; color: #14254e; }
+.envio-en-mapa button { border: 0; background: transparent; padding: 0; font: 800 11px Archivo; color: #1d4ed8; }
+.envio-en-mapa button:hover { text-decoration: underline; }
+.envio-ver-mapa { margin-left: 14px; }
+
+/* ---------- Distancias en la lista de unidades (E08, E09, E11, E16, E17) ---------- */
+.unidades-rango { display: grid; gap: 6px; margin: 4px 0 10px; }
+.unidades-rango > span { font: 800 10.5px Archivo; letter-spacing: .04em; color: var(--suave); }
+.ut-km { display: flex; align-items: center; gap: 5px; }
+.rendimiento-inicio { margin-bottom: 10px; }

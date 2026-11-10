@@ -15,7 +15,9 @@ import com.paqrap.api.ApiModels.EventosOperacionVista;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,11 +35,41 @@ import java.util.UUID;
 class ApiController {
     private final DatosFuente datos;
     private final EjecucionesService ejecuciones;
+    private final FlotaService flota;
 
-    ApiController(DatosFuente datos, EjecucionesService ejecuciones) {
+    ApiController(DatosFuente datos, EjecucionesService ejecuciones, FlotaService flota) {
         this.datos = datos;
         this.ejecuciones = ejecuciones;
+        this.flota = flota;
     }
+
+    /** Mantenimiento de unidades de transporte; aplica a las corridas que se inicien después. */
+    @GetMapping("/flota")
+    ApiModels.FlotaVista flota() { return flota.consultar(); }
+
+    @PutMapping("/flota/tipos/{tipo}")
+    ApiModels.FlotaVista actualizarTipo(@PathVariable String tipo,
+            @RequestBody ApiModels.ActualizarTipoFlotaRequest cambios) {
+        return flota.actualizarTipo(tipo, cambios);
+    }
+
+    @PostMapping("/flota/unidades")
+    ResponseEntity<ApiModels.FlotaVista> agregarUnidad(
+            @Valid @RequestBody ApiModels.NuevaUnidadRequest solicitud) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(flota.agregar(solicitud));
+    }
+
+    @PutMapping("/flota/unidades/{id}")
+    ApiModels.FlotaVista actualizarUnidad(@PathVariable String id,
+            @RequestBody ApiModels.ActualizarUnidadRequest cambios) {
+        return flota.actualizarUnidad(id, cambios);
+    }
+
+    @DeleteMapping("/flota/unidades/{id}")
+    ApiModels.FlotaVista eliminarUnidad(@PathVariable String id) { return flota.eliminar(id); }
+
+    @PostMapping("/flota/restablecer")
+    ApiModels.FlotaVista restablecerFlota() { return flota.restablecer(); }
 
     @GetMapping("/salud")
     Map<String, String> salud() { return Map.of("estado", "OK", "fuente", datos.tipo()); }

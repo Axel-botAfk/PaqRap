@@ -28,7 +28,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   unidadSeleccionada = null, alSeleccionarUnidad = () => {},
   almacenSeleccionado = null, alSeleccionarAlmacen = () => {}, trayectos = null,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
-  alRestablecerUmbrales = () => {}, estadosPedido = null }) {
+  alRestablecerUmbrales = () => {}, estadosPedido = null, alVerReporte = () => {},
+  medicionInicio = null }) {
   const simulacion = vista === 'simulacion';
   const activa = controlesDeCorrida(ejecucion?.estado).activa;
   const [corridaElegida, setCorridaElegida] = useState('');
@@ -207,9 +208,13 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
     </Acordeon>
 
     <Acordeon titulo="Rendimiento del planificador" abierto={false}>
-      <PanelRendimiento key={ejecucion?.id || 'sin-corrida'} id={ejecucion?.id} />
+      <PanelRendimiento key={ejecucion?.id || 'sin-corrida'} id={ejecucion?.id}
+        medicionInicio={medicionInicio} />
     </Acordeon>
-    <Acordeon titulo="Resumen de la corrida" abierto={false}>
+    <Acordeon titulo="Resumen y reporte de la corrida" abierto={false}>
+      <button type="button" className="btn btn-secondary btn-block reporte-abrir"
+        disabled={!ejecucion || !planes.length} onClick={alVerReporte}>
+        Ver reporte de la última planificación estable</button>
       {!ejecucion?.resumen ? <p className="vacio">El servidor publica el resumen al terminar la corrida o al detectar el colapso.</p>
         : <dl>
           <div><dt>Pedidos recibidos</dt><dd>{numero(ejecucion.resumen.pedidosRecibidos)}</dd></div>

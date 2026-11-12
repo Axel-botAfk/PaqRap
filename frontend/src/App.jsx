@@ -6,7 +6,7 @@ import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA,
+import { fecha, fechaConSegundos, numero, duracion,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
@@ -64,13 +64,6 @@ export default function App() {
   const [dia, setDia] = useState('');
   const [hora, setHora] = useState('00:00');
   const [horizonte, setHorizonte] = useState(30);
-  // Ritmo de la operación día a día: tiempo real salvo que se elija la demostración acelerada.
-  const [velocidadDiaria, setVelocidadDiaria] = useState(() => {
-    try {
-      const guardada = Number(localStorage.getItem('paqrap.velocidad.diaria'));
-      return VELOCIDADES_DIA_A_DIA.some(([valor]) => valor === guardada) ? guardada : VELOCIDAD_DIA_A_DIA;
-    } catch { return VELOCIDAD_DIA_A_DIA; }
-  });
   const [ejecucion, setEjecucion] = useState(null);
   const [id, setId] = useState(() => {
     const valor = new URLSearchParams(location.search).get('ejecucion');
@@ -128,7 +121,8 @@ export default function App() {
   // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
   const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
 
-  const periodo = periodoDe(dia);
+  // La operación día a día empieza ahora: su mes es el actual, no el de la fecha del formulario.
+  const periodo = periodoDe(vista === 'operacion' ? ahoraLocal().dia : dia);
   // El calendario se acota al catálogo: así no se puede pedir un mes sin datos.
   const limites = useMemo(() => {
     if (!periodos.length) return SIN_LIMITES;
@@ -170,7 +164,9 @@ export default function App() {
     if (!periodos.includes(periodo)) {
       setDetalle(null);
       setMapaDatos(null);
-      setError(`No hay datos para ${periodo.slice(0, 4)}-${periodo.slice(4)}. Elige una fecha dentro del catálogo.`);
+      setError(vista === 'operacion'
+        ? `No hay pedidos cargados para el mes actual (${periodo.slice(0, 4)}-${periodo.slice(4)}). Carga su archivo de ventas para operar.`
+        : `No hay datos para ${periodo.slice(0, 4)}-${periodo.slice(4)}. Elige una fecha dentro del catálogo.`);
       return undefined;
     }
     let activo = true;
@@ -180,7 +176,7 @@ export default function App() {
     api.mapa(periodo).then(info => { if (activo) setMapaDatos(info); })
       .catch(e => { if (activo) { setMapaDatos(null); setError(e.message); } });
     return () => { activo = false; };
-  }, [periodo, periodos, versionDatos]);
+  }, [periodo, periodos, versionDatos, vista]);
 
   // El descubrimiento pertenece al servidor y al escenario, no al almacenamiento del navegador.
   // Una sola corrida se recupera sin crear otra; con varias se espera una elección explícita.
@@ -653,15 +649,21 @@ export default function App() {
         || (controlesDeCorrida(ejecucion?.estado).activa && !crearIndependiente)
         || (!id && corridasActivas.some(c => c.escenario === escenario) && !crearIndependiente)) return;
     setError('');
-    const diaIngresado = evento.currentTarget.elements.namedItem('dia').value;
-    const horaIngresada = evento.currentTarget.elements.namedItem('hora').value;
+    // La operación día a día no elige fecha: empieza en la fecha y hora actuales del servidor.
+    const enTiempoReal = escenario === 'OPERACION_DIARIA';
+    const diaIngresado = enTiempoReal ? ahoraLocal().dia : evento.currentTarget.elements.namedItem('dia').value;
+    const horaIngresada = enTiempoReal ? null : evento.currentTarget.elements.namedItem('hora').value;
     const periodoElegido = periodoDe(diaIngresado);
     if (!periodoElegido || !periodos.includes(periodoElegido)) {
-      setError('Elige una fecha dentro de un mes con datos cargados.');
+      setError(enTiempoReal
+        ? 'No hay pedidos cargados para el mes actual. Carga su archivo de ventas para operar.'
+        : 'Elige una fecha dentro de un mes con datos cargados.');
       return;
     }
-    setDia(diaIngresado);
-    setHora(horaIngresada);
+    if (!enTiempoReal) {
+      setDia(diaIngresado);
+      setHora(horaIngresada);
+    }
     setOcupado(true);
     const pulsado = performance.now();
     try {
@@ -680,10 +682,10 @@ export default function App() {
         }
       }
       const nueva = await api.iniciar({
-        escenario, algoritmo: ALGORITMO, inicio: `${diaIngresado}T${horaIngresada}:00`,
+        escenario, algoritmo: ALGORITMO,
+        ...(enTiempoReal ? {} : { inicio: `${diaIngresado}T${horaIngresada}:00` }),
         ...(escenario === 'COLAPSO' ? { horizonteDias: Number(horizonte) } : {}),
-        ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {}),
-        ...(escenario === 'OPERACION_DIARIA' ? { velocidad: velocidadDiaria } : {})
+        ...(escenario === 'PERIODO_5_DIAS' ? { duracionObjetivoMin: DURACION_5_DIAS_MIN } : {})
       });
       setMedicionInicio({ id: nueva.id, t0: pulsado, planMs: null, movimientoMs: null });
       const claveCorrida = claveDeEscenario(nueva.escenario);
@@ -807,13 +809,7 @@ export default function App() {
   const configuracion = {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
     dia, setDia, hora, setHora, horizonte, setHorizonte,
-    velocidadDiaria,
-    setVelocidadDiaria: valor => {
-      setVelocidadDiaria(valor);
-      try { localStorage.setItem('paqrap.velocidad.diaria', String(valor)); } catch { /* sin almacenamiento */ }
-    },
-    ahoraDisponible: periodos.includes(periodoDe(ahoraLocal().dia)),
-    alUsarAhora: () => { const actual = ahoraLocal(); setDia(actual.dia); setHora(actual.hora); },
+    mes: periodo ? `${periodo.slice(0, 4)}-${periodo.slice(4)}` : '',
     unidadAveriada, setUnidadAveriada, tipoAveria, setTipoAveria,
     flota: flotaParaAveria, alIniciar: iniciar, alElegirCorrida: elegirCorrida,
     corridasActivas, consultandoCorridas, crearIndependiente,

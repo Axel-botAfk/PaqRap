@@ -73,8 +73,9 @@ respaldo. Si la VM del curso no debe pedir recursos externos, hay que servirla d
 - El usuario solo elige fecha y hora de inicio, y en Simulación el tipo de escenario. El mes
   de datos sale de la fecha; el calendario está acotado a los periodos con datos cargados.
 - El planificador es siempre Vecino Más Cercano + Búsqueda Tabú; no se elige desde la pantalla.
-- El ritmo es fijo por escenario y tampoco se configura: 5 días en unos 40 min reales,
-  día a día a 60× y colapso a 2 h simuladas cada 10 s.
+- El ritmo es fijo por escenario y tampoco se configura: 5 días en unos 40 min reales y
+  colapso a 2 h simuladas cada 10 s. El día a día no es una simulación: no pide fecha ni
+  velocidad, empieza en la fecha y hora actuales y avanza en tiempo real (K = 1).
 - La corrida solo se inicia. No hay Pausar ni Detener: para cambiar de escenario se inicia otra.
   La anterior sigue viva en el servidor hasta que termina por sí sola.
 - El reloj en vivo se ancla al tiempo real (`src/reloj.js`): el instante sale
@@ -155,27 +156,12 @@ Es una deducción fiel a los hitos, pero depende de que el historial de planes e
 el cliente. Si el backend llega a publicar el estado real por pedido, conviene usarlo y dejar
 `estadosDePedido()` solo como respaldo.
 
-### 2. La jornada del día a día no cabe en los 30 a 60 min pedidos — **pendiente**
+### 2. El día a día va en tiempo real — **resuelto**
 
-La pantalla ya no deja elegir velocidad y la corrida debería durar entre 30 y 60 min reales en
-todos los escenarios. En dos de los tres se cumple:
-
-| Escenario | Duración real | ¿Entre 30 y 60 min? |
-|---|---|---|
-| Simulación de 5 días | `duracionObjetivoMin`, fijado en 40 | sí |
-| Colapso logístico | se corta en el primer pedido vencido, tope ~1 h para 30 días | por su naturaleza |
-| **Operación diaria** | **24 min** | **no** |
-
-En el día a día la duración real es `24 h / velocidad`, y `RitmoEscenario.VELOCIDADES` solo
-admite `{1, 10, 60, 240}`: 60× da 24 min y 10× da 144 min. Para caer dentro de la banda haría
-falta una velocidad entre 24 y 48 (1440/60 = 24 min … 1440/30 = 48 min), que el backend
-rechaza. `segundosPorVentana` no sirve: cambia el tamaño de la ventana, no la duración total.
-
-Se usa 60× (24 min) por ser lo más cercano y quedarse corto en vez de pasarse.
-
-Arreglo pendiente, del lado del backend: añadir un valor entre 24 y 48 a
-`RitmoEscenario.VELOCIDADES` — por ejemplo `30`, que da 48 min. Es una línea. Cuando exista,
-cambiar `VELOCIDAD_DIA_A_DIA` en `src/formato.js` y borrar esta nota.
+La operación diaria no es una simulación y no tiene que caber en 30 a 60 min: K vale 1, empieza
+en la fecha y hora actuales del servidor y su reloj es el de la pared. Por eso la pantalla no
+pide fecha inicial ni velocidad en esa vista; solo las simulaciones (5 días y colapso) se
+comprimen. El detalle del ritmo está en `docs/diagramas/consumo-sc-sa.md`.
 
 ### 3. Los cuatro indicadores de la barra superior
 

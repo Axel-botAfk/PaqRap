@@ -8,7 +8,7 @@ import ControlesCorrida from '../components/ControlesCorrida.jsx';
 import IconoUI from '../components/IconoUI.jsx';
 import { controlesDeCorrida } from '../controlesCorrida.js';
 import { UMBRALES_POR_OMISION } from '../umbrales.js';
-import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta, VELOCIDADES_DIA_A_DIA,
+import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeRuta,
   tipoVehiculo, tipoAveria as etiquetaTipoAveria, estadoAveria } from '../formato.js';
 
 const NOMBRE_ESCENARIO = { OPERACION_DIARIA: 'Operación diaria', PERIODO_5_DIAS: 'Simulación 5 días',
@@ -87,41 +87,33 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           </label>)}
         </div>}
 
-        {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. */}
-        <div className="row">
-          <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
-            <input id="c-dia" className="input" name="dia" type="date" value={dia} required
-              disabled={bloquearConfiguracion || ocupado}
-              min={limites.desde} max={limites.hasta}
-              onChange={e => cfg.setDia(e.target.value)} /></div>
-          <div className="field"><label htmlFor="c-hora">Hora inicial</label>
-            <input id="c-hora" className="input" name="hora" type="time" value={hora} required
-              disabled={bloquearConfiguracion || ocupado}
-              onChange={e => cfg.setHora(e.target.value)} /></div>
-        </div>
+        {/* El día a día no es una simulación: empieza ahora, así que no hay fecha que elegir. */}
+        {simulacion
+          ? <div className="row">
+            {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. */}
+            <div className="field"><label htmlFor="c-dia">Fecha inicial</label>
+              <input id="c-dia" className="input" name="dia" type="date" value={dia} required
+                disabled={bloquearConfiguracion || ocupado}
+                min={limites.desde} max={limites.hasta}
+                onChange={e => cfg.setDia(e.target.value)} /></div>
+            <div className="field"><label htmlFor="c-hora">Hora inicial</label>
+              <input id="c-hora" className="input" name="hora" type="time" value={hora} required
+                disabled={bloquearConfiguracion || ocupado}
+                onChange={e => cfg.setHora(e.target.value)} /></div>
+          </div>
+          : <p className="dato-periodo">Empieza en la fecha y hora actuales y avanza con el reloj real.</p>}
         {detalle
-          ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
-          : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
-
-        {escenario === 'OPERACION_DIARIA' && <>
-          <button type="button" className="corrida-nueva-enlace"
-            disabled={bloquearConfiguracion || ocupado || !cfg.ahoraDisponible}
-            title={cfg.ahoraDisponible ? undefined : 'No hay datos cargados para el mes actual.'}
-            onClick={cfg.alUsarAhora}>Usar la fecha y hora actuales</button>
-          <div className="field"><label htmlFor="c-ritmo">Ritmo de la jornada</label>
-            <select id="c-ritmo" className="input" value={cfg.velocidadDiaria}
-              disabled={bloquearConfiguracion || ocupado}
-              onChange={e => cfg.setVelocidadDiaria(Number(e.target.value))}>
-              {VELOCIDADES_DIA_A_DIA.map(([valor, texto]) => <option key={valor} value={valor}>{texto}</option>)}
-            </select></div>
-        </>}
+          ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {cfg.mes}</p>
+          : simulacion
+            ? <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>
+            : <p className="dato-periodo">No hay pedidos cargados para {cfg.mes || 'el mes actual'}.</p>}
 
         {escenario === 'COLAPSO' && <div className="field"><label htmlFor="c-hor">Horizonte máximo (días)</label>
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
             disabled={bloquearConfiguracion || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
 
-        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario, cfg.velocidadDiaria)}</p>
+        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario)}</p>
 
         {ejecucion && !preparandoNueva && <button type="button" className="corrida-nueva-enlace"
           onClick={cfg.alPrepararNueva}>Preparar otra corrida independiente</button>}

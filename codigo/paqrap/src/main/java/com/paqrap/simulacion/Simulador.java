@@ -167,6 +167,7 @@ public final class Simulador {
     private MapaBloqueos bloqueos = MapaBloqueos.vacio();
     private Duration intervaloMinimo = INTERVALO_MINIMO_POR_DEFECTO;
     private boolean leePorBloques;
+    private boolean completaLaCuadraEnCurso;
 
     public Simulador(
             Planificador planificador,
@@ -297,6 +298,21 @@ public final class Simulador {
      */
     public Simulador conEventosDeBloqueo(MapaBloqueos mapa) {
         this.bloqueos = Objects.requireNonNull(mapa);
+        return this;
+    }
+
+    /**
+     * La unidad que el corte sorprende a mitad de cuadra termina esa cuadra en vez de volver a
+     * la esquina anterior.
+     *
+     * Hace falta cuando el salto es corto, como en la operación día a día: una bicicleta tarda
+     * cinco minutos en recorrer una cuadra y, con saltos de un minuto, volver a la esquina
+     * anterior en cada corte la dejaría sin avanzar nunca. Es además lo que ocurre en la calle:
+     * a una unidad no se la redirige a mitad de cuadra sino en la esquina siguiente. Queda
+     * comprometida hasta llegar a ella y desde ahí la toma la planificación que sigue.
+     */
+    public Simulador completandoLaCuadraEnCurso() {
+        this.completaLaCuadraEnCurso = true;
         return this;
     }
 
@@ -723,6 +739,7 @@ public final class Simulador {
         Ubicacion posicion = camino.get(0);
         LocalDateTime instante = salida;
         double kilometros = 0.0;
+        int alcanzada = 0;
 
         for (int i = 1; i < camino.size(); i++) {
             LocalDateTime siguiente = Turnos.avanzar(instante, horasPorCuadra);
@@ -730,11 +747,19 @@ public final class Simulador {
                 break;
             }
             posicion = camino.get(i);
+            alcanzada = i;
             instante = siguiente;
             kilometros += Ciudad.KM_POR_ARISTA;
         }
 
         boolean llego = posicion.equals(destino);
+        if (!llego && completaLaCuadraEnCurso) {
+            // Ya entró a la cuadra siguiente: la termina, aunque llegue después del corte. No
+            // cuenta como llegada al destino; eso lo resuelve la planificación que sigue.
+            return new Avance(camino.get(alcanzada + 1),
+                    Turnos.avanzar(instante, horasPorCuadra),
+                    kilometros + Ciudad.KM_POR_ARISTA, false);
+        }
         return new Avance(posicion, llego ? instante : corte, kilometros, llego);
     }
 

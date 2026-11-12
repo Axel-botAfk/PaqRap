@@ -55,18 +55,24 @@ class MarcapasosTest {
     }
 
     @Test
-    void elDiaADiaVaALaVelocidadElegida() {
-        RitmoEscenario tiempoReal = RitmoEscenario.para(new CrearEjecucionRequest(
-                Escenario.OPERACION_DIARIA, Algoritmo.GRASP, INICIO, null, null, null,
-                null, 1, null, null), 1);
-        assertEquals(Duration.ofSeconds(20), tiempoReal.saltoDelConsumo());
+    void elDiaADiaVaEnTiempoRealConKIgualAUno() {
+        RitmoEscenario tiempoReal = RitmoEscenario.para(solicitud(Escenario.OPERACION_DIARIA, null), 1);
+        assertEquals(1.0, tiempoReal.ritmo().proporcionalidad());
+        assertEquals(60_000, tiempoReal.saMs());
+        // Sc = Sa: lo que avanza la operación en un salto es lo que dura el salto.
+        assertEquals(Duration.ofSeconds(60), tiempoReal.saltoDelConsumo());
         assertEquals(Duration.ofDays(1), tiempoReal.duracionEstimada(Duration.ofDays(1)));
-        RitmoEscenario rapido = RitmoEscenario.para(solicitud(Escenario.OPERACION_DIARIA, null), 1);
-        assertEquals(Duration.ofMinutes(20), rapido.saltoDelConsumo());
-        assertEquals(Duration.ofMinutes(24), rapido.duracionEstimada(Duration.ofDays(1)));
+        RitmoEscenario conOtroSa = RitmoEscenario.para(new CrearEjecucionRequest(
+                Escenario.OPERACION_DIARIA, Algoritmo.GRASP, INICIO, null, null, null,
+                null, 1, null, 30), 1);
+        assertEquals(Duration.ofSeconds(30), conOtroSa.saltoDelConsumo());
+        // No se acelera: ni otra velocidad ni un Sc distinto de Sa.
         assertThrows(ApiException.class, () -> RitmoEscenario.para(new CrearEjecucionRequest(
                 Escenario.OPERACION_DIARIA, Algoritmo.GRASP, INICIO, null, null, null,
-                null, 7, null, null), 1));
+                null, 60, null, null), 1));
+        assertThrows(ApiException.class, () -> RitmoEscenario.para(new CrearEjecucionRequest(
+                Escenario.OPERACION_DIARIA, Algoritmo.GRASP, INICIO, null, null, null,
+                null, null, 20, null), 1));
     }
 
     @Test

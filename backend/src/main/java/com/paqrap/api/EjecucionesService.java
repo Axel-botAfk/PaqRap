@@ -49,6 +49,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -71,12 +74,17 @@ import java.util.concurrent.TimeUnit;
 /**
  * Una ejecucion es un trabajo acotado, no una peticion HTTP bloqueante.
  *
- * El simulador conserva su propia cadencia de replanificación (latido de 30 min, mínimo de 15
- * y cortes por llegadas, bloqueos y averías), de modo que la velocidad de pantalla no cambia
- * ninguna decisión. Lo que marca el {@link Marcapasos} es la publicación: las iteraciones se
- * juntan hasta cruzar el siguiente límite de una grilla fija de Sc minutos simulados, la ventana
- * se publica entera (planes, recorridos, posiciones e inventario) y se espera n × Sa antes de
- * seguir, con n los límites cruzados. Así N límites duran N × Sa.
+ * En las simulaciones el simulador conserva su propia cadencia de replanificación (latido de
+ * 30 min, mínimo de 15 y cortes por llegadas, bloqueos y averías), de modo que la velocidad de
+ * pantalla no cambia ninguna decisión. Lo que marca el {@link Marcapasos} es la publicación: las
+ * iteraciones se juntan hasta cruzar el siguiente límite de una grilla fija de Sc minutos
+ * simulados, la ventana se publica entera (planes, recorridos, posiciones e inventario) y se
+ * espera n × Sa antes de seguir, con n los límites cruzados. Así N límites duran N × Sa.
+ *
+ * La operación día a día no es una simulación: empieza en la fecha y hora actuales, K vale 1 y
+ * el reloj de la operación es el de la pared. Cada Sa reales se planifica una vez con lo que se
+ * sabe en ese momento (lo que tarda es Ta) y ese plan se ejecuta durante el Sc = Sa que sigue.
+ * El tiempo nunca salta: no hay ventanas de varios saltos ni fecha inicial elegida.
  */
 @Service
 final class EjecucionesService {
@@ -117,18 +125,24 @@ final class EjecucionesService {
     }
 
     EjecucionVista crear(CrearEjecucionRequest request) {
-        if (request == null || request.escenario() == null || request.algoritmo() == null
-                || request.inicio() == null) {
+        if (request == null || request.escenario() == null || request.algoritmo() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA",
-                    "Escenario, algoritmo e inicio son obligatorios.");
+                    "Escenario y algoritmo son obligatorios.");
         }
+        boolean diaria = request.escenario() == Escenario.OPERACION_DIARIA;
+        if (!diaria && request.inicio() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "SOLICITUD_INVALIDA",
+                    "El inicio es obligatorio en las simulaciones.");
+        }
+        // La operación día a día empieza ahora; solo una simulación elige desde cuándo.
+        LocalDateTime inicio = diaria ? ahora() : request.inicio();
         int dias = dias(request);
         if (request.pausaMs() != null && (request.pausaMs() < 0 || request.pausaMs() > 500)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PAUSA_INVALIDA",
                     "La pausa de demostración debe estar entre 0 y 500 ms.");
         }
         RitmoEscenario ritmo = RitmoEscenario.para(request, dias);
-        DatosFuente.DatosEntrada entrada = datos.cargar(request.inicio(), dias);
+        DatosFuente.DatosEntrada entrada = datos.cargar(inicio, dias);
         limpiarAntiguas();
         if (ejecuciones.size() >= MAX_REGISTROS) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "CAPACIDAD_AGOTADA",
@@ -137,12 +151,12 @@ final class EjecucionesService {
 
         UUID id = UUID.randomUUID();
         Ejecucion ejecucion = new Ejecucion(ritmo, new Marcapasos(reloj, ritmo.saMs()),
-                Duration.ofDays(dias), request.inicio());
+                Duration.ofDays(dias), inicio);
         ejecucion.vista = new EjecucionVista(id, Estado.PENDIENTE,
-                request.escenario(), request.algoritmo(), request.inicio(), request.inicio(),
+                request.escenario(), request.algoritmo(), inicio, inicio,
                 LocalDateTime.now(), null, List.of(), List.of(), List.of(), null, null, null,
                 false, ritmoVista(ejecucion), List.of(), null);
-        ejecucion.inventario = new InventarioVista(request.inicio(),
+        ejecucion.inventario = new InventarioVista(inicio,
                 datos.almacenes().stream().map(Vistas::stock).toList());
         // La flota se fija al crear la corrida: el mantenimiento posterior no la altera.
         ejecucion.flota = flota.vigente();
@@ -374,18 +388,24 @@ final class EjecucionesService {
                     .filter(a -> a.getUbicacion().equals(v.getUbicacion())).findFirst()
                     .ifPresent(a -> origenes.put(v.getId(), a));
             Map<String, Double> kmRecorridos = new HashMap<>();
+            Map<String, List<ApiModels.PasoVista>> cuadraEnCurso = new HashMap<>();
             Map<String, ApiModels.Coordenada> ultimaPosicion = new HashMap<>();
             for (Vehiculo v : flota) ultimaPosicion.put(v.getId(), Vistas.coordenada(v.getUbicacion()));
             ejecucion.inicioRealMs = reloj.ahoraMs();
-            registrarFotograma(ejecucion, request.inicio(),
+            registrarFotograma(ejecucion, ejecucion.inicio,
                     flota.stream().map(Vistas::vehiculo).toList(), ejecucion.inventario);
+            // Día a día: un corte por cada Sc = Sa, ni antes ni después, para que cada salto
+            // real tenga exactamente una planificación. Las simulaciones cortan por eventos.
+            boolean diaria = request.escenario() == Escenario.OPERACION_DIARIA;
+            Duration salto = ejecucion.ritmo.saltoDelConsumo();
             Simulador simulador = new Simulador(planificador, ruteo,
-                    almacenesBase, parametros, Duration.ofMinutes(30),
+                    almacenesBase, parametros, diaria ? salto : Duration.ofMinutes(30),
                     request.escenario() == Escenario.COLAPSO)
                     .conMantenimiento(entrada.mantenimiento())
                     .conEventosDeBloqueo(mapa)
-                    .conIntervaloMinimo(Duration.ofMinutes(15))
-                    .observadoPor(new Observador() {
+                    .conIntervaloMinimo(diaria ? salto : Duration.ofMinutes(15));
+            if (diaria) simulador.completandoLaCuadraEnCurso();
+            simulador.observadoPor(new Observador() {
                     @Override
                     public void alIniciarPlanificacion(LocalDateTime reloj) {
                         verificarCancelacion(ejecucion);
@@ -412,10 +432,19 @@ final class EjecucionesService {
                     public void alEjecutar(LocalDateTime desde, LocalDateTime hasta,
                                            List<Trayecto> trayectos) {
                         Ventana ventana = ejecucion.ventanaEnCurso;
-                        ventana.trayectosIteracion = trayectos.stream().map(Vistas::trayecto).toList();
+                        List<TrayectoVista> recorridos = trayectos.stream().map(Vistas::trayecto).toList();
+                        ventana.trayectosIteracion = conCuadrasEnCurso(cuadraEnCurso, recorridos, desde, hasta);
                         for (TrayectoVista trayecto : ventana.trayectosIteracion) {
-                            ventana.trayectos.computeIfAbsent(trayecto.vehiculoId(),
-                                    clave -> new ArrayList<>()).addAll(trayecto.pasos());
+                            // La cuadra que venía de antes entra una sola vez por ventana.
+                            List<ApiModels.PasoVista> acumulados = ventana.trayectos.get(trayecto.vehiculoId());
+                            if (acumulados == null) {
+                                ventana.trayectos.put(trayecto.vehiculoId(), new ArrayList<>(trayecto.pasos()));
+                            } else {
+                                recorridos.stream().filter(r -> r.vehiculoId().equals(trayecto.vehiculoId()))
+                                        .findFirst().ifPresent(r -> acumulados.addAll(r.pasos()));
+                            }
+                        }
+                        for (TrayectoVista trayecto : recorridos) {
                             // Distancia entre hitos consecutivos; la carga en almacén inicia otro viaje.
                             var previa = ultimaPosicion.get(trayecto.vehiculoId());
                             double km = kmRecorridos.getOrDefault(trayecto.vehiculoId(), 0.0);
@@ -508,9 +537,9 @@ final class EjecucionesService {
             // una operación que empieza en ese momento. Los anteriores del mes no son un atraso
             // heredado; incluirlos saturaba el primer plan con pedidos ya vencidos.
             List<com.paqrap.modelo.Pedido> ventasDesdeElInicio = entrada.ventas().stream()
-                    .filter(pedido -> !pedido.getFechaRegistro().isBefore(request.inicio()))
+                    .filter(pedido -> !pedido.getFechaRegistro().isBefore(ejecucion.inicio))
                     .toList();
-            ResumenSimulacion resumen = simulador.correr(request.inicio(),
+            ResumenSimulacion resumen = simulador.correr(ejecucion.inicio,
                     Duration.ofDays(dias), ventasDesdeElInicio, flota);
             if (ejecucion.vista.estado() == Estado.CANCELADA) return;
             // Lo que quedó sin publicar: el colapso corta antes del siguiente límite, que cuenta
@@ -580,6 +609,52 @@ final class EjecucionesService {
             actualizar(ejecucion, cambiarEstado(ejecucion.vista, Estado.FALLIDA,
                     "ERROR_DE_EJECUCION", "La simulación no pudo completarse."), "FALLIDA");
         }
+    }
+
+    /** Fecha y hora actuales del servidor, sin fracciones de segundo. */
+    private LocalDateTime ahora() {
+        return LocalDateTime.ofInstant(Instant.ofEpochMilli(reloj.ahoraMs()), ZoneId.systemDefault())
+                .truncatedTo(ChronoUnit.SECONDS);
+    }
+
+    /**
+     * Completa los recorridos de un tramo con la cuadra que cada unidad traía empezada del
+     * tramo anterior y recuerda las que quedan empezadas en este.
+     *
+     * Una unidad que el corte encuentra a mitad de cuadra la termina después del corte. Sin esto
+     * quien dibuja solo vería el punto de llegada y la unidad saltaría hasta la esquina; con el
+     * tramo completo se la ve avanzar por la cuadra al ritmo del reloj.
+     */
+    private static List<TrayectoVista> conCuadrasEnCurso(
+            Map<String, List<ApiModels.PasoVista>> cuadraEnCurso, List<TrayectoVista> recorridos,
+            LocalDateTime desde, LocalDateTime hasta) {
+        cuadraEnCurso.values().removeIf(pasos -> !pasos.get(1).instante().isAfter(desde));
+        List<TrayectoVista> completos = new ArrayList<>();
+        Set<String> conRecorrido = new HashSet<>();
+        for (TrayectoVista recorrido : recorridos) {
+            conRecorrido.add(recorrido.vehiculoId());
+            List<ApiModels.PasoVista> previa = cuadraEnCurso.get(recorrido.vehiculoId());
+            if (previa == null) {
+                completos.add(recorrido);
+            } else {
+                List<ApiModels.PasoVista> pasos = new ArrayList<>(previa);
+                pasos.addAll(recorrido.pasos());
+                completos.add(new TrayectoVista(recorrido.vehiculoId(), List.copyOf(pasos)));
+            }
+        }
+        cuadraEnCurso.forEach((unidad, pasos) -> {
+            if (!conRecorrido.contains(unidad)) completos.add(new TrayectoVista(unidad, pasos));
+        });
+        for (TrayectoVista recorrido : recorridos) {
+            int n = recorrido.pasos().size();
+            if (n < 2) continue;
+            ApiModels.PasoVista origen = recorrido.pasos().get(n - 2);
+            ApiModels.PasoVista destino = recorrido.pasos().get(n - 1);
+            if (destino.instante().isAfter(hasta) && !destino.ubicacion().equals(origen.ubicacion())) {
+                cuadraEnCurso.put(recorrido.vehiculoId(), List.of(origen, destino));
+            }
+        }
+        return completos;
     }
 
     /** Límites de la grilla de Sc alcanzados al llegar el reloj a {@code reloj}. */

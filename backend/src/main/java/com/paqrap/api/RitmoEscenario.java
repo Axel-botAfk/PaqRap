@@ -5,7 +5,6 @@ import com.paqrap.simulacion.Ritmo;
 import org.springframework.http.HttpStatus;
 
 import java.time.Duration;
-import java.util.Set;
 
 /**
  * Ritmo de cada escenario: cuánto tiempo real dura una ventana (Sa) y cuánta operación
@@ -17,7 +16,8 @@ import java.util.Set;
  * <ul>
  *   <li>Cinco días: se fija la duración objetivo (30 a 60 min, 40 por defecto) y con Sa de
  *       20 s sale Sc. Con 40 min son 120 ventanas de una hora simulada.</li>
- *   <li>Día a día: se elige la velocidad (1×, 10×, 60× o 240×); 1× es tiempo real.</li>
+ *   <li>Día a día: no es una simulación. K vale 1, así que Sc = Sa (un minuto por defecto):
+ *       el reloj de la operación es el de la pared y cada Sa se planifica una vez.</li>
  *   <li>Colapso: Sa de 10 s y dos horas por ventana, de modo que 30 días se recorren como
  *       máximo en una hora y la corrida se corta en el primer incumplimiento.</li>
  * </ul>
@@ -31,9 +31,13 @@ record RitmoEscenario(Ritmo ritmo, Integer duracionObjetivoMin, Integer velocida
     static final int DURACION_5_DIAS_MINIMA_MIN = 30;
     static final int DURACION_5_DIAS_MAXIMA_MIN = 60;
     static final Duration SA_5_DIAS = Duration.ofSeconds(20);
-    static final Duration SA_DIA_A_DIA = Duration.ofSeconds(20);
-    static final int VELOCIDAD_POR_DEFECTO = 60;
-    static final Set<Integer> VELOCIDADES = Set.of(1, 10, 60, 240);
+    /**
+     * Cada cuánto se planifica en el día a día. Tiene que quedar por encima de Ta, que crece
+     * con la cola, y por debajo de lo que se tolera esperar para que entre un pedido o una avería.
+     */
+    static final Duration SA_DIA_A_DIA = Duration.ofSeconds(60);
+    /** K del día a día: el tiempo de la operación no se acelera ni salta. */
+    static final int K_DIA_A_DIA = 1;
     static final Duration SA_COLAPSO = Duration.ofSeconds(10);
     static final Duration SC_COLAPSO = Duration.ofMinutes(120);
 
@@ -71,13 +75,13 @@ record RitmoEscenario(Ritmo ritmo, Integer duracionObjetivoMin, Integer velocida
                         Ritmo.para(horizonte, Duration.ofMinutes(objetivo), SA_5_DIAS), objetivo, null);
             }
             case OPERACION_DIARIA -> {
-                int velocidad = solicitud.velocidad() == null
-                        ? VELOCIDAD_POR_DEFECTO : solicitud.velocidad();
-                if (!VELOCIDADES.contains(velocidad)) {
-                    throw invalido("La velocidad del día a día debe ser 1, 10, 60 o 240.");
+                if (solicitud.velocidad() != null && solicitud.velocidad() != K_DIA_A_DIA
+                        || minutos != null) {
+                    throw invalido("La operación día a día va en tiempo real (K = 1): "
+                            + "no admite velocidad ni minutos por ventana.");
                 }
                 Duration sa = segundos == null ? SA_DIA_A_DIA : Duration.ofSeconds(segundos);
-                yield new RitmoEscenario(new Ritmo(sa, velocidad), null, velocidad);
+                yield new RitmoEscenario(new Ritmo(sa, K_DIA_A_DIA), null, K_DIA_A_DIA);
             }
             case COLAPSO -> {
                 Duration sa = segundos == null ? SA_COLAPSO : Duration.ofSeconds(segundos);

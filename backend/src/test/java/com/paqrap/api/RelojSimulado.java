@@ -20,4 +20,9 @@ final class RelojSimulado implements Marcapasos.Reloj {
     }
 
     void avanzar(long ms) { ahora.addAndGet(ms); }
+
+    /** Pone el reloj de pared en una fecha: la operación día a día empieza «ahora». */
+    void fijar(java.time.LocalDateTime fecha) {
+        ahora.set(fecha.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli());
+    }
 }

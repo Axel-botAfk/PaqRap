@@ -23,13 +23,17 @@ public final class ApiModels {
     public record CrearEjecucionRequest(
             @NotNull Escenario escenario,
             @NotNull Algoritmo algoritmo,
-            @NotNull LocalDateTime inicio,
+            /**
+             * Obligatorio en las simulaciones. La operación día a día lo ignora: empieza en la
+             * fecha y hora actuales del servidor.
+             */
+            LocalDateTime inicio,
             Integer horizonteDias,
             Long semilla,
             Integer pausaMs,
             /** Solo 5 días: minutos reales que debe durar la corrida (30 a 60). */
             Integer duracionObjetivoMin,
-            /** Solo día a día: veces más rápido que el reloj real (1, 10, 60 o 240). */
+            /** Solo día a día: K, que siempre es 1 (tiempo real); cualquier otro valor se rechaza. */
             Integer velocidad,
             /** Opcional: minutos simulados por ventana (Sc); se combina con Sa. */
             Integer minutosPorVentana,

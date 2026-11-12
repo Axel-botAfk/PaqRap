@@ -57,8 +57,12 @@ resultados **todavía no** se persisten.
 Ejemplo de cuerpo para operacion diaria:
 
 ```json
-{"escenario":"OPERACION_DIARIA","algoritmo":"GRASP","inicio":"2026-09-01T00:00:00","semilla":20260901}
+{"escenario":"OPERACION_DIARIA","algoritmo":"GRASP","semilla":20260901}
 ```
+
+La operacion diaria no es una simulacion: empieza en la fecha y hora actuales del servidor
+(`inicio` se ignora si se envia) y su reloj es el de la pared. `inicio` solo es obligatorio
+en `PERIODO_5_DIAS` y `COLAPSO`.
 
 Para cinco dias usar `PERIODO_5_DIAS`; para colapso usar `COLAPSO` y,
 opcionalmente, `horizonteDias` entre 1 y 60. El segundo algoritmo se llama
@@ -109,7 +113,7 @@ el cálculo. Así la duración total es N × Sa.
 | Escenario | Por defecto | Campos opcionales |
 | --- | --- | --- |
 | `PERIODO_5_DIAS` | 40 min reales: 120 ventanas de 1 h cada 20 s | `duracionObjetivoMin` (30 a 60) o `minutosPorVentana` + `segundosPorVentana` (el total debe quedar entre 30 y 60 min) |
-| `OPERACION_DIARIA` | 60×: 20 min simulados cada 20 s (24 min el día) | `velocidad` 1, 10, 60 o 240 (1 = tiempo real) |
+| `OPERACION_DIARIA` | Tiempo real, K = 1: Sa = Sc = 60 s, una planificación por salto; empieza en la hora actual del servidor | `segundosPorVentana` (Sa). `velocidad` distinta de 1 o `minutosPorVentana` → `400 RITMO_INVALIDO` |
 | `COLAPSO` | 2 h simuladas cada 10 s (30 días ≤ 1 h); se corta en el primer pedido vencido | `minutosPorVentana`, `segundosPorVentana` |
 
 `ejecucion.ritmo` trae `saMs`, `minutosPorVentana`, `ventana`/`ventanas`,

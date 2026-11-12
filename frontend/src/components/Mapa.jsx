@@ -832,7 +832,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       <div className="reproduccion-tiempos">
         <div className="reproduccion-tiempo reproduccion-momento">
           <IconoUI nombre="calendario" size={22} />
-          <span><small>Fecha y hora de simulación</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
+          <span><small>{modoOperacion ? "Fecha y hora" : "Fecha y hora de simulación"}</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
         </div>
         <div className="reproduccion-tiempo reproduccion-real">
           <IconoUI nombre="reloj" size={22} />

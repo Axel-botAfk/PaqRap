@@ -27,25 +27,56 @@ Valores por omisión, calculados por `RitmoEscenario.para(...)`:
 
 | Escenario | Sa | K | Sc | Ventanas | Duración real |
 | --- | --- | --- | --- | --- | --- |
-| Operación diaria (`OPERACION_DIARIA`) | 20 s | 60 (velocidad) | **20 min** | 72 por día | 24 min por día |
+| Operación diaria (`OPERACION_DIARIA`) | 60 s | **1** (fijo) | **60 s** | 1 440 por día | 24 h por día (tiempo real) |
 | Cinco días (`PERIODO_5_DIAS`) | 20 s | 180 | **60 min** | 120 | 40 min |
 | Colapso (`COLAPSO`) | 10 s | 720 | **120 min** | 360 (30 días) | hasta 60 min |
 
 Los grados de libertad que acepta la API:
 
-- **Operación diaria**: `velocidad` ∈ {1, 10, 60, 240}. Con 1× el reloj de la operación va al
-  ritmo del de la pared (Sc = Sa = 20 s); con 240× cada ventana consume 80 min.
+- **Operación diaria**: ninguno sobre K. Solo `segundosPorVentana` cambia Sa (y con él Sc);
+  `velocidad` distinta de 1 o `minutosPorVentana` responden `400 RITMO_INVALIDO`.
 - **Cinco días**: se pide la `duracionObjetivoMin` (30 a 60, por omisión 40) y de ahí sale K con
   Sa fijo en 20 s. A 30 min, Sc = 80 min y 90 ventanas; a 60 min, Sc = 40 min y 180 ventanas.
   Fuera de ese rango la API responde `400 RITMO_INVALIDO`.
-- **Los tres**: `segundosPorVentana` (1 a 600) y `minutosPorVentana` (1 a 1440) fijan Sa y Sc
-  directamente. `RitmoEscenario.saltoDelConsumo()` redondea Sc a segundos enteros, porque los
+- **Las dos simulaciones**: `segundosPorVentana` (1 a 600) y `minutosPorVentana` (1 a 1440)
+  fijan Sa y Sc directamente. `RitmoEscenario.saltoDelConsumo()` redondea Sc a segundos enteros, porque los
   cortes del reloj de la operación no llevan fracciones.
 
-## Los dos ejes
+## La operación diaria no es una simulación
 
-Un salto de Sa en el eje real equivale a un salto de Sc en el eje de la operación. Con los
-valores del día a día (Sa = 20 s, K = 60):
+Empieza en la fecha y hora actuales del servidor —no se elige— y K vale 1, así que Sc = Sa y el
+reloj de la operación es el de la pared: nunca salta ni se acelera.
+
+```
+eje real        18:50      18:51      18:52      18:53      18:54
+(Sa)              |----------|----------|----------|----------|
+                  [Ta]       [Ta]       [Ta]       [Ta]
+                   | plan     | plan     | plan     | plan
+                   v          v          v          v
+eje de la       18:50      18:51      18:52      18:53      18:54
+operación (Sc)    |----------|----------|----------|----------|
+```
+
+En cada Sa se planifica **una vez** con los pedidos registrados hasta ese instante; lo que
+tarda es Ta, que se mide. Ese plan se ejecuta durante el Sc que empieza ahí mismo. Lo que se
+registra dentro de un salto —un pedido, una avería— entra en la planificación del siguiente.
+
+Dos consecuencias en el código:
+
+- `EjecucionesService` arma el simulador con latido e intervalo mínimo iguales a Sc, de modo
+  que hay exactamente un corte por salto. En las simulaciones los cortes siguen los eventos.
+- Con saltos de un minuto una bicicleta (5 min por cuadra) no llegaría nunca a la esquina
+  siguiente si cada corte la devolviera a la anterior. Por eso el día a día usa
+  `Simulador.completandoLaCuadraEnCurso()`: la unidad termina la cuadra que empezó y recién
+  ahí puede ser redirigida.
+
+Medido con los datos de septiembre (15/09, 24 h): 1 435 planificaciones, Ta medio 187 ms y
+máximo 725 ms frente a un Sa de 60 000 ms, sin saltos rebasados ni pedidos vencidos.
+
+## Los dos ejes en las simulaciones
+
+Un salto de Sa en el eje real equivale a un salto de Sc en el eje de la operación. Con una
+ventana de 20 min simulados cada 20 s (K = 60):
 
 ```
 eje real          0s        20s        40s        60s        80s

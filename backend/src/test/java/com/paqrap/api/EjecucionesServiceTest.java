@@ -124,11 +124,35 @@ class EjecucionesServiceTest {
     void operacionDiariaRegistraPosicionesEjecutadas() throws Exception {
         prepararDatosMinimos();
         servicio = crearServicio();
+        // No se elige cuándo empieza: toma la hora del servidor e ignora la que se le envíe.
+        reloj.fijar(LocalDateTime.of(2026, 9, 1, 0, 0));
+        long arranque = reloj.ahoraMs();
         UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
-                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L)).id();
+                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 3, 10, 0), null, 7L)).id();
         var fin = esperar(id);
         assertEquals(Estado.TERMINADA, fin.estado());
+        assertEquals(LocalDateTime.of(2026, 9, 1, 0, 0), fin.inicio());
         assertEquals(LocalDateTime.of(2026, 9, 2, 0, 0), fin.reloj());
+        // K = 1: un día de operación toma un día de reloj, en ventanas de un Sa cada una.
+        assertEquals(1, fin.ritmo().velocidad());
+        assertEquals(60_000, fin.ritmo().saMs());
+        assertEquals(1.0, fin.ritmo().minutosPorVentana());
+        assertEquals(1440, fin.ritmo().ventanas());
+        assertEquals(1440, fin.ritmo().ventana());
+        long transcurrido = reloj.ahoraMs() - arranque;
+        assertTrue(Math.abs(transcurrido - 86_400_000L) < 120_000L, "duró " + transcurrido + " ms");
+        var cortes = new ArrayList<ApiModels.FotogramaVista>();
+        for (long desde = 0; ; ) {
+            var parte = servicio.fotogramas(id, desde);
+            cortes.addAll(parte.fotogramas());
+            if (parte.fotogramas().size() < 100) break;
+            desde = parte.siguiente();
+        }
+        assertEquals(1441, cortes.size());
+        for (int i = 1; i < cortes.size(); i++) {
+            assertEquals(cortes.get(i - 1).reloj().plusSeconds(60), cortes.get(i).reloj(),
+                    "el reloj de la operación avanza de Sa en Sa, sin saltos");
+        }
         var pagina = servicio.fotogramas(id, 0);
         assertTrue(pagina.fotogramas().size() > 1);
         assertEquals(0, pagina.fotogramas().get(0).indice());
@@ -139,8 +163,9 @@ class EjecucionesServiceTest {
     void averiaEnMarchaSeAplicaYElInventarioTieneRelojYStock() throws Exception {
         prepararDatosMinimos();
         servicio = crearServicio();
+        reloj.fijar(LocalDateTime.of(2026, 9, 1, 0, 0));
         UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
-                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L, 20)).id();
+                Algoritmo.GRASP, null, null, 7L, 20)).id();
         for (int intento = 0; intento < 100 && servicio.consultar(id).estado() == Estado.PENDIENTE;
                 intento++) Thread.sleep(10);
         String unidad = new DatosService(datosTemporales.toString()).flota().get(0).getId();
@@ -167,12 +192,12 @@ class EjecucionesServiceTest {
         servicio = new EjecucionesService(new DatosService(reales.toString()),
                 new EventosWebSocket(new ObjectMapper()), reloj);
         LocalDateTime inicio = LocalDateTime.of(2026, 9, 1, 0, 0);
-        var rapida = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
-                Algoritmo.GRASP, inicio, null, 7L, null, null, 240, null, null)).id());
-        var lenta = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
-                Algoritmo.GRASP, inicio, null, 7L, null, null, 10, null, null)).id());
+        var rapida = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.COLAPSO,
+                Algoritmo.GRASP, inicio, 1, 7L, null, null, null, 80, null)).id());
+        var lenta = esperar(servicio.crear(new CrearEjecucionRequest(Escenario.COLAPSO,
+                Algoritmo.GRASP, inicio, 1, 7L, null, null, null, 20, null)).id());
         assertEquals(18, rapida.ritmo().ventanas());
-        assertEquals(432, lenta.ritmo().ventanas());
+        assertEquals(72, lenta.ritmo().ventanas());
         assertEquals(rapida.estado(), lenta.estado());
         assertEquals(rapida.resumen(), lenta.resumen());
         assertEquals(rapida.vehiculos(), lenta.vehiculos());
@@ -182,8 +207,9 @@ class EjecucionesServiceTest {
     void pausaReanudaYDetieneConEstadosClaros() throws Exception {
         prepararDatosMinimos();
         servicio = crearServicio();
+        reloj.fijar(LocalDateTime.of(2026, 9, 1, 0, 0));
         UUID id = servicio.crear(new CrearEjecucionRequest(Escenario.OPERACION_DIARIA,
-                Algoritmo.GRASP, LocalDateTime.of(2026, 9, 1, 0, 0), null, 7L, 20)).id();
+                Algoritmo.GRASP, null, null, 7L, 20)).id();
         esperarEstado(id, Estado.EN_CURSO);
         assertEquals(id, servicio.activas(Escenario.OPERACION_DIARIA).get(0).id());
         assertTrue(servicio.activas(Escenario.PERIODO_5_DIAS).isEmpty());

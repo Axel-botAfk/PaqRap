@@ -2,11 +2,11 @@ import React from 'react';
 import IconoUI from './IconoUI.jsx';
 
 export const VISTAS = [
-  ['pedidos', 'Pedidos'],
-  ['averias', 'Averías de la flota'],
-  ['flota', 'Mantenimiento de flota'],
   ['operacion', 'Operación diaria'],
-  ['simulacion', 'Simulación']
+  ['simulacion', 'Simulación'],
+  ['pedidos', 'Pedidos'],
+  ['flota', 'Mantenimiento de la flota'],
+  ['averias', 'Averías de la flota']
 ];
 
 /** Menú lateral. Se pliega con el burger: en el mapa recupera 224 px de ancho útil. */

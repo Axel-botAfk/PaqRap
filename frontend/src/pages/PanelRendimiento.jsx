@@ -28,8 +28,6 @@ export default function PanelRendimiento({ id, medicionInicio = null }) {
       <div><dt>De «Iniciar» a la primera unidad en movimiento</dt>
         <dd>{medicionInicio ? segundos(medicionInicio.movimientoMs) : '—'}</dd></div>
     </dl>
-    {!medicionInicio && <p className="nota">Estos dos tiempos se miden cuando la corrida se inicia
-      desde este navegador; el mapa base ya está visible antes de iniciar.</p>}
     <button type="button" className="btn" disabled={!id || ocupado} onClick={consultar}>
       {ocupado ? 'Consultando…' : 'Consultar mediciones del servidor'}</button>
     {error && <p role="alert">{error}</p>}

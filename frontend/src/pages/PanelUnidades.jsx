@@ -150,10 +150,5 @@ export default function PanelUnidades({ vehiculos, rutas, averias, seleccionada,
         </>}
       </div>;
     })}</div>
-    <p className="nota">{numero(filas.length)}{hayBusqueda || rangoKm ? ` de ${numero(todas.length)}` : ''} unidad(es) del corte{reloj ? `, a las ${fecha(reloj)}` : ''}.
-      Retorno: consulta del motor desde ese nodo al último almacén de carga con bloqueos y turnos;
-      no ordena regresar ni sustituye el próximo destino. Sin origen o camino conocido no se estima.
-      La distancia al destino se mide por calles desde el nodo del corte, sin desvíos por bloqueos;
-      la recorrida se cuenta desde la última carga en almacén.</p>
   </>;
 }

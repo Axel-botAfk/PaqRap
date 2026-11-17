@@ -124,9 +124,8 @@ export default function App() {
   // Latencia desde «Iniciar» medida en este navegador (C03 y C04).
   const [medicionInicio, setMedicionInicio] = useState(null);
   const estadoPrevio = useRef(null);
-  const [menuAbierto, setMenuAbierto] = useState(() => !esPantallaAngosta());
-  // En pantallas angostas el riel ocupa todo el ancho: arranca cerrado para no tapar el mapa.
-  const [rielAbierto, setRielAbierto] = useState(() => !esPantallaAngosta());
+  const [menuAbierto, setMenuAbierto] = useState(false);
+  const [rielAbierto, setRielAbierto] = useState(false);
 
   const periodo = periodoDe(dia);
   // El calendario se acota al catálogo: así no se puede pedir un mes sin datos.
@@ -603,6 +602,10 @@ export default function App() {
       }
     }
     setVista(destino);
+    if (ES_MAPA(destino) && destino !== vista) {
+      setMenuAbierto(false);
+      setRielAbierto(false);
+    }
     if (destino === 'operacion') setEscenario('OPERACION_DIARIA');
     else if (destino === 'simulacion') setEscenario(escenarioSimulacion.current);
     if (esPantallaAngosta()) setMenuAbierto(false);
@@ -828,7 +831,7 @@ export default function App() {
   return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${vista === 'operacion' ? 'vista-operacion' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
     <BarraSuperior titulo={TITULOS[vista]} menuAbierto={menuAbierto} ejecucion={ejecucion}
       alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta}
-      modoOperacion={enMapa} />
+      modoOperacion={enMapa} ahoraReal={enMapa ? ahora : null} />
 
     <BarraLateral vista={vista} alCambiar={cambiarVista} fuente={fuente} />
     {menuAbierto && <div className="scrim" onClick={() => setMenuAbierto(false)} />}
@@ -849,7 +852,7 @@ export default function App() {
           estadosPedido={estadosPedido}
           pedidosDelInstante={pedidosDelInstante}
           modoOperacion={vista === 'operacion'} transcurridoMs={tiempoRealMs}
-          ahoraReal={ahora} stockDelInstante={!!inventarioDelInstante} averias={averias}
+          stockDelInstante={!!inventarioDelInstante} averias={averias}
           unidadSeleccionada={unidadSeleccionada} alSeleccionarUnidad={setUnidadSeleccionada}
           almacenSeleccionado={almacenSeleccionado} alSeleccionarAlmacen={setAlmacenSeleccionado}
           umbrales={umbrales} enVivo={modoVivo} trayectosEnVivo={modoVivo ? ejecucion.trayectos || LISTA_VACIA : null}

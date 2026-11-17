@@ -79,8 +79,6 @@ export default function PedidoNuevo({ almacenes = [] }) {
           <span className={`pill ${NIVEL[c.nivel][1]}`}>{NIVEL[c.nivel][0]}</span>
           <span>{c.texto}</span>
         </li>)}</ul>
-        <p className="nota">El almacén de despacho, la unidad y la hora estimada son campos
-          calculados: los decide el planificador al incorporar el pedido, no el operador.</p>
       </div>
 
       {registrados.length > 0 && <>

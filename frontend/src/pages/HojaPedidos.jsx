@@ -95,11 +95,6 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
                   onClick={() => setSeguido(pedido.id)}>Seguir</button></td>
               </tr>)}</tbody>
             </table></div>}
-          <div className="card-pie">
-            {visibles.length > LIMITE && <span>Se muestran los primeros {LIMITE} de {numero(visibles.length)} registros.</span>}
-            <span>Los pedidos se leen de {fuente === 'MYSQL' ? 'MySQL' : 'los archivos del curso'}: esta
-              beta no cancela pedidos; los meses completos se incorporan desde «Carga masiva». Se conservan los pedidos y fracciones conocidos hasta el reloj visible, incluidos los de planes anteriores. Cada ID de fracción ocupa una fila; no equivale a un original completo. El historial disponible limita la cobertura de corridas muy largas.</span>
-          </div>
         </div>
       </>)}
   </section>;

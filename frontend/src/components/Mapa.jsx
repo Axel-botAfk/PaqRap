@@ -73,7 +73,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   enVivo = false, trayectosEnVivo = null,
   trayectosDelInstante = null,
   alVolverEnVivo = null, noAsignadosDelInstante = null, estadosPedido = null,
-  modoOperacion = false, transcurridoMs = null, stockDelInstante = false, ahoraReal = null,
+  modoOperacion = false, transcurridoMs = null, stockDelInstante = false,
   pedidosDelInstante = [], averias = LISTA_VACIA,
   unidadSeleccionada = null, alSeleccionarUnidad = null,
   almacenSeleccionado = null, alSeleccionarAlmacen = null,
@@ -86,6 +86,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const rutasDelEnvio = new Set(rutasEnvioSeleccionadas);
   const [vista, setVista] = useState(VISTA_INICIAL);
+  const [tamanoLienzo, setTamanoLienzo] = useState({ ancho: 0, alto: 0 });
   const [arrastrando, setArrastrando] = useState(false);
   const [filtros, setFiltros] = useState(false);
   const [flota, setFlota] = useState('');
@@ -94,54 +95,95 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [nivelStock, setNivelStock] = useState('');
   // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
   const [pieAbierto, setPieAbierto] = useState(false);
-  const [estadoAbierto, setEstadoAbierto] = useState(false);
-  const [estadoBase, setEstadoBase] = useState(150);
-  const estadoPanelId = useId();
+  const [reproductorAbierto, setReproductorAbierto] = useState(false);
+  const reproductorId = useId();
+  const [estadoAbierto, setEstadoAbierto] = useState(true);
+  const [estadoPos, setEstadoPos] = useState(() => ({ x: 16,
+    y: typeof window !== 'undefined' && window.innerWidth <= 600 ? 184 : 140 }));
+  const estadoRef = useRef(null);
+  const arrastreEstado = useRef(null);
+  const estadoMovido = useRef(false);
   const svgRef = useRef(null);
   const lienzoRef = useRef(null);
   const tipRef = useRef(null);
   const [tip, setTip] = useState(null);
   const arrastre = useRef(null);
   const animacionZoom = useRef(null);
+  const zoomObjetivo = useRef(null);
   const animacionGiro = useRef(null);
   const iconosVehiculos = useRef(new Map());
   const angulosMostrados = useRef(new Map());
   const vistaActual = useRef(vista);
   vistaActual.current = vista;
 
+  useEffect(() => { setReproductorAbierto(false); }, [modoOperacion]);
+
+  function limitarEstado(x, y) {
+    const lienzo = lienzoRef.current?.getBoundingClientRect();
+    const panel = estadoRef.current?.getBoundingClientRect();
+    if (!lienzo || !panel) return { x, y };
+    return { x: limitar(x, 0, Math.max(0, lienzo.width - panel.width)),
+      y: limitar(y, 0, Math.max(0, lienzo.height - panel.height)) };
+  }
+
+  useEffect(() => {
+    const ajustar = () => setEstadoPos(actual => limitarEstado(actual.x, actual.y));
+    window.addEventListener('resize', ajustar);
+    return () => window.removeEventListener('resize', ajustar);
+  }, [estadoAbierto]);
+
   useEffect(() => {
     const lienzo = lienzoRef.current;
-    const leyenda = lienzo?.querySelector('.mapa-pie');
-    const reproductor = lienzo?.querySelector('.mapa-reproductor');
-    if (!lienzo || !leyenda) return undefined;
-    const ubicar = () => {
-      if (!window.matchMedia('(max-width: 768px)').matches) return;
-      const base = Math.ceil(lienzo.getBoundingClientRect().bottom
-        - leyenda.getBoundingClientRect().top + 8);
-      setEstadoBase(anterior => anterior === base ? anterior : base);
+    if (!lienzo) return undefined;
+    const medir = () => {
+      const { width, height } = lienzo.getBoundingClientRect();
+      setTamanoLienzo({ ancho: width, alto: height });
     };
-    const observador = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(ubicar);
+    const observador = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(medir);
     observador?.observe(lienzo);
-    observador?.observe(leyenda);
-    if (reproductor) observador?.observe(reproductor);
-    window.addEventListener('resize', ubicar);
-    ubicar();
-    return () => { observador?.disconnect(); window.removeEventListener('resize', ubicar); };
-  }, [pieAbierto]);
+    window.addEventListener('resize', medir);
+    medir();
+    return () => { observador?.disconnect(); window.removeEventListener('resize', medir); };
+  }, []);
+
+  function iniciarArrastreEstado(evento, desdeBoton = false) {
+    if (evento.button !== 0 || (!desdeBoton && evento.target.closest('button'))) return;
+    estadoMovido.current = false;
+    arrastreEstado.current = { clientX: evento.clientX, clientY: evento.clientY,
+      x: estadoPos.x, y: estadoPos.y };
+    evento.currentTarget.setPointerCapture(evento.pointerId);
+  }
+
+  function moverEstado(evento) {
+    if (!arrastreEstado.current) return;
+    const inicio = arrastreEstado.current;
+    if (Math.hypot(evento.clientX - inicio.clientX, evento.clientY - inicio.clientY) > 4)
+      estadoMovido.current = true;
+    if (!estadoMovido.current) return;
+    setEstadoPos(limitarEstado(inicio.x + evento.clientX - inicio.clientX,
+      inicio.y + evento.clientY - inicio.clientY));
+  }
 
   const marco = encuadre(vista);
+  // Extender solo la retícula decorativa hasta los bordes sin estirar sus cuadrados.
+  const escalaFondo = tamanoLienzo.ancho && tamanoLienzo.alto
+    ? Math.min(tamanoLienzo.ancho / marco.ancho, tamanoLienzo.alto / marco.alto) : 1;
+  const anchoFondo = tamanoLienzo.ancho ? tamanoLienzo.ancho / escalaFondo : marco.ancho;
+  const altoFondo = tamanoLienzo.alto ? tamanoLienzo.alto / escalaFondo : marco.alto;
 
   // Píxeles de pantalla por unidad del lienzo. Con preserveAspectRatio por omisión el
   // contenido se centra y sobra margen en el lado largo, así que manda el lado que ajusta.
   function escalaEnPantalla() {
     const caja = svgRef.current?.getBoundingClientRect();
     if (!caja?.width) return null;
-    return { caja, px: Math.min(caja.width / marco.ancho, caja.height / marco.alto) };
+    const actual = encuadre(vistaActual.current);
+    return { caja, px: Math.min(caja.width / actual.ancho, caja.height / actual.alto), actual };
   }
 
-  function cancelarZoom() {
+  function cancelarZoom(limpiarObjetivo = true) {
     if (animacionZoom.current !== null) cancelAnimationFrame(animacionZoom.current);
     animacionZoom.current = null;
+    if (limpiarObjetivo) zoomObjetivo.current = null;
   }
 
   function aplicarVista(siguiente) {
@@ -149,37 +191,43 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     setVista(siguiente);
   }
 
-  function acercar(factor, hacia = null, animar = false) {
-    cancelarZoom();
+  function animarVista(destino, hacia = null) {
+    cancelarZoom(false);
     const actual = vistaActual.current;
-    const previo = encuadre(actual);
-    const z = limitar(actual.z * factor, ZOOM_MIN, ZOOM_MAX);
-    if (z === actual.z) return;
-    // El punto bajo el cursor se queda donde está: el resto se abre a su alrededor.
-    const proporcion = actual.z / z;
-    const destino = hacia ? {
-      z, cx: hacia.x - (hacia.x - previo.cx) * proporcion,
-      cy: hacia.y - (hacia.y - previo.cy) * proporcion
-    } : { ...actual, z };
-    const final = encuadre(destino);
-    if (!animar || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      aplicarVista({ cx: final.cx, cy: final.cy, z });
+    zoomObjetivo.current = destino;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      aplicarVista(destino);
+      zoomObjetivo.current = null;
       return;
     }
     const inicio = performance.now();
     const paso = ahora => {
       const avance = limitar((ahora - inicio) / DURACION_ZOOM_MS, 0, 1);
       const suave = avance * avance * (3 - 2 * avance);
+      const z = actual.z + (destino.z - actual.z) * suave;
       const centro = encuadre({
-        z: actual.z + (z - actual.z) * suave,
-        cx: actual.cx + (final.cx - actual.cx) * suave,
-        cy: actual.cy + (final.cy - actual.cy) * suave
+        z,
+        cx: hacia ? hacia.x - (hacia.x - actual.cx) * actual.z / z
+          : actual.cx + (destino.cx - actual.cx) * suave,
+        cy: hacia ? hacia.y - (hacia.y - actual.cy) * actual.z / z
+          : actual.cy + (destino.cy - actual.cy) * suave
       });
-      aplicarVista({ z: LIENZO_ANCHO / centro.ancho, cx: centro.cx, cy: centro.cy });
+      aplicarVista({ z, cx: centro.cx, cy: centro.cy });
       if (avance < 1) animacionZoom.current = requestAnimationFrame(paso);
-      else animacionZoom.current = null;
+      else { animacionZoom.current = null; zoomObjetivo.current = null; }
     };
     animacionZoom.current = requestAnimationFrame(paso);
+  }
+
+  function acercar(factor, hacia = null) {
+    const actual = vistaActual.current;
+    const z = limitar((zoomObjetivo.current?.z ?? actual.z) * factor, ZOOM_MIN, ZOOM_MAX);
+    if (z === actual.z && !animacionZoom.current) return;
+    const destino = encuadre(hacia ? {
+      z, cx: hacia.x - (hacia.x - actual.cx) * actual.z / z,
+      cy: hacia.y - (hacia.y - actual.cy) * actual.z / z
+    } : { ...actual, z });
+    animarVista({ z, cx: destino.cx, cy: destino.cy }, hacia);
   }
 
   useEffect(() => () => cancelarZoom(), []);
@@ -192,23 +240,23 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       evento.preventDefault();
       const medida = escalaEnPantalla();
       if (!medida) return;
-      const { caja, px } = medida;
+      const { caja, px, actual } = medida;
       const hacia = {
-        x: marco.cx + (evento.clientX - (caja.left + caja.width / 2)) / px,
-        y: marco.cy + (evento.clientY - (caja.top + caja.height / 2)) / px
+        x: actual.cx + (evento.clientX - (caja.left + caja.width / 2)) / px,
+        y: actual.cy + (evento.clientY - (caja.top + caja.height / 2)) / px
       };
       acercar(evento.deltaY < 0 ? 1.2 : 1 / 1.2, hacia);
     };
     svg.addEventListener('wheel', rodar, { passive: false });
     return () => svg.removeEventListener('wheel', rodar);
-  }, [marco.cx, marco.cy, marco.ancho, marco.alto]);
+  }, []);
 
   function empezarArrastre(evento) {
     cancelarZoom();
     const medida = escalaEnPantalla();
     if (!medida) return;
     arrastre.current = { clientX: evento.clientX, clientY: evento.clientY,
-      cx: marco.cx, cy: marco.cy, px: medida.px };
+      cx: medida.actual.cx, cy: medida.actual.cy, px: medida.px };
     setArrastrando(true);
     evento.currentTarget.setPointerCapture?.(evento.pointerId);
   }
@@ -216,9 +264,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   function mover(evento) {
     const inicio = arrastre.current;
     if (!inicio) return;
-    setVista(actual => ({ ...actual,
+    aplicarVista({ ...vistaActual.current,
       cx: inicio.cx - (evento.clientX - inicio.clientX) / inicio.px,
-      cy: inicio.cy - (evento.clientY - inicio.clientY) / inicio.px }));
+      cy: inicio.cy - (evento.clientY - inicio.clientY) / inicio.px });
   }
 
   function soltar(evento) {
@@ -520,36 +568,30 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const fichaAlmacen = almacenTip ? fichaDeAlmacen(almacenTip) : null;
 
   return <div className="mapa-lienzo" ref={lienzoRef}>
-    {/* Indicadores globales (G01-G04): el llenado del conjunto, con el mismo semáforo que cada
-        elemento individual. Sin corte publicado se declara, no se estima. */}
-    <div className="mapa-indicadores">
-      <IndicadoresMapa flotaGlobal={flotaGlobal} almacenesGlobal={almacenesGlobal}
-        etiquetasCarga={ETIQUETAS_CARGA} />
-    </div>
-    <div className={`mapa-estado-movil ${pieAbierto ? 'con-leyenda-abierta' : ''}`}
-      style={{ '--estado-base': `${estadoBase}px` }}>
-      <button type="button" className="mapa-estado-boton" aria-expanded={estadoAbierto}
-        aria-controls={estadoPanelId} onClick={() => setEstadoAbierto(!estadoAbierto)}>
-        <IconoUI nombre="metricas" size={15} /><span>Estado</span>
-        <b>{flotaGlobal.porcentaje === null ? '—' : `${flotaGlobal.porcentaje} %`} · {almacenesGlobal.porcentaje === null ? '—' : `${almacenesGlobal.porcentaje} %`}</b>
-        <i aria-hidden="true" />
-      </button>
-      {estadoAbierto && <section id={estadoPanelId} className="mapa-estado-panel"
-        aria-label="Estado de flota y almacenes">
-        <header><IconoUI nombre="metricas" size={17} /><strong>Estado</strong>
+    {/* El estado conserva los mismos cálculos y puede desplazarse dentro del lienzo. */}
+    <div ref={estadoRef} className={`mapa-estado-flotante ${estadoAbierto ? '' : 'mapa-estado-cerrado'}`}
+      style={{ left: estadoPos.x, top: estadoPos.y }}>
+      {estadoAbierto ? <section className="mapa-estado-panel" aria-label="Estado de flota y almacenes">
+        <header onPointerDown={iniciarArrastreEstado} onPointerMove={moverEstado}
+          onPointerUp={() => { arrastreEstado.current = null; }}
+          onPointerCancel={() => { arrastreEstado.current = null; }}>
+          <IconoUI nombre="metricas" size={18} /><strong>Estado</strong>
           <button type="button" aria-label="Cerrar estado" onClick={() => setEstadoAbierto(false)}>×</button>
         </header>
         <div className="mapa-estado-datos"><IndicadoresMapa flotaGlobal={flotaGlobal}
           almacenesGlobal={almacenesGlobal} etiquetasCarga={ETIQUETAS_CARGA} /></div>
-      </section>}
-    </div>
-    <div className="mapa-reloj-actual">
-      <time dateTime={ahoraReal ? new Date(ahoraReal).toISOString() : undefined}>
-        Ahora: {ahoraReal ? fecha(new Date(ahoraReal)) : '—'}
-      </time>
+      </section> : <button type="button" className="mapa-estado-reabrir"
+        onPointerDown={evento => iniciarArrastreEstado(evento, true)}
+        onPointerMove={moverEstado}
+        onPointerUp={() => { arrastreEstado.current = null; }}
+        onPointerCancel={() => { arrastreEstado.current = null; }}
+        onClick={() => { if (estadoMovido.current) estadoMovido.current = false;
+          else setEstadoAbierto(true); }} aria-label="Mostrar estado de flota y almacenes">
+        <IconoUI nombre="metricas" size={16} /> Estado
+      </button>}
     </div>
     <svg className="mapa-fondo-urbano"
-      viewBox={`${marco.x} ${marco.y} ${marco.ancho} ${marco.alto}`}
+      viewBox={`${marco.cx - anchoFondo / 2} ${marco.cy - altoFondo / 2} ${anchoFondo} ${altoFondo}`}
       aria-hidden="true" focusable="false" pointerEvents="none">
       <FondoUrbano />
     </svg>
@@ -708,9 +750,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     </svg>
 
     <div className="mapa-herramientas">
-      <button type="button" onClick={() => acercar(1.5, null, true)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
-      <button type="button" onClick={() => acercar(1 / 1.5, null, true)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
-      <button type="button" className="ancho" onClick={() => { cancelarZoom(); aplicarVista(VISTA_INICIAL); }} title="Ver toda la ciudad">
+      <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
+      <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
+      <button type="button" className="ancho" onClick={() => animarVista(VISTA_INICIAL)} title="Ver toda la ciudad">
         <svg className="mapa-todo-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
           <path d="M4 9V4h5M4 4l5 5M15 4h5v5M20 4l-5 5M4 15v5h5M4 20l5-5M15 20h5v-5M20 20l-5-5" />
@@ -761,7 +803,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     </div>}
 
     <div className="mapa-abajo">
-    {!modoOperacion ? <div className="mapa-reproductor">
+    {!modoOperacion ? <div id={reproductorId}
+      className={`mapa-reproductor ${reproductorAbierto ? '' : 'mapa-reproductor-cerrado'}`}
+      aria-hidden={!reproductorAbierto} inert={!reproductorAbierto}>
       <div className="reproduccion-controles">
         {enVivo
           ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
@@ -807,7 +851,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
         </select></label>
       </div>
-    </div> : <div className="mapa-reproductor">
+    </div> : <div id={reproductorId}
+      className={`mapa-reproductor ${reproductorAbierto ? '' : 'mapa-reproductor-cerrado'}`}
+      aria-hidden={!reproductorAbierto} inert={!reproductorAbierto}>
       <div className="reproduccion-controles">
         {enVivo
           ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
@@ -844,6 +890,14 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         </select></label>
       </div>
     </div>}
+
+    <button type="button" className="mapa-reproduccion-toggle"
+      aria-expanded={reproductorAbierto} aria-controls={reproductorId}
+      onClick={() => setReproductorAbierto(abierto => !abierto)}>
+      <span aria-hidden="true">{reproductorAbierto ? 'Ⅱ' : '▶'}</span>
+      {reproductorAbierto ? 'Contraer' : 'Reproducción'}
+      <i aria-hidden="true" />
+    </button>
 
     <div className={`mapa-pie ${pieAbierto ? '' : 'mapa-pie-cerrado'}`}>
       <button type="button" className="mapa-pie-tirador" aria-expanded={pieAbierto}

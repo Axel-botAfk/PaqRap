@@ -37,8 +37,5 @@ export default function EnviosOriginales({ planes, instante, alVerEnMapa = null 
         </tr>)}</tbody>
       </table></div>
     </details>)}
-    <p className="nota">Cantidades por fracción publicada, sin duplicar reasignaciones. Los planes
-      disponibles limitan la cobertura; no se afirma que un original esté completo solo por
-      observar una de sus partes. Los horarios futuros son previsiones del corte publicado.</p>
   </div>;
 }

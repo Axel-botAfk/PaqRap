@@ -64,8 +64,5 @@ export default function PanelUmbrales({ umbrales, alGuardar, alRestablecer }) {
       <button className="btn" type="button" disabled={porOmision}
         onClick={alRestablecer}>Restablecer</button>
     </div>
-    {aviso && <p className="nota nota-aviso" role="status">{aviso}</p>}
-    <p className="nota umbral-nota"><IconoUI nombre="info" size={15} />Valores del caso: carga 40 % y 70 %; stock 20 % y 60 %. Se guardan en este
-      navegador, no en el servidor, así que cada visualizador conserva los suyos.</p>
   </form>;
 }

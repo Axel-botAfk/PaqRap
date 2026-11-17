@@ -95,8 +95,7 @@ export default function HojaFlota({ almacenes = [] }) {
       inicien a partir de ahora.</div>}
 
     <div className="card flota-tipos">
-      <header><h2>ATRIBUTOS POR TIPO DE UNIDAD</h2>
-        <span className="muted">El caso los define por tipo, no por unidad</span></header>
+      <header><h2>ATRIBUTOS POR TIPO DE UNIDAD</h2></header>
       <div className="flota-tipos-lista">{flota.tipos.map(tipo => {
         const b = borradores[tipo.tipo] || {};
         const campo = (clave, valor) => setBorradores(previos => ({ ...previos,
@@ -122,7 +121,6 @@ export default function HojaFlota({ almacenes = [] }) {
                 value={b.costoPorKm ?? tipo.costoPorKm} onChange={e => campo('costoPorKm', e.target.value)} /></div>
           </div>
           <div className="flota-tipo-pie">
-            <small>Valores del caso: {numero(tipo.capacidadDelCaso)} productos · {decimal(tipo.velocidadDelCaso, ' km/h')} · S/ {decimal(tipo.costoDelCaso)} por km</small>
             <button className="btn btn-secondary" type="submit"
               disabled={ocupado || !borradores[tipo.tipo]}>Guardar</button>
           </div>
@@ -154,8 +152,6 @@ export default function HojaFlota({ almacenes = [] }) {
                 placeholder="Central" onChange={e => setNueva({ ...nueva, y: e.target.value })} /></div>
           </div>
           <button className="btn btn-primary btn-block" type="submit" disabled={ocupado}>Agregar unidad</button>
-          <p className="nota">El código (TA, TM o TB más correlativo) lo asigna el sistema. Sin nodo,
-            la unidad parte del almacén central, como el resto de la flota.</p>
         </div>
       </form>
 
@@ -212,9 +208,6 @@ export default function HojaFlota({ almacenes = [] }) {
           </tr>)}</tbody>
         </table></div>
         <div className="card-pie">
-          <span>Los cambios se guardan en el servidor y aplican a las corridas que se inicien después;
-            una corrida en marcha conserva la flota con la que arrancó. Se mantienen mientras el
-            servidor siga activo. Las unidades de la flota base no se eliminan: se desactivan.</span>
           {flota.modificada && <button type="button" className="enlace-fila" disabled={ocupado}
             onClick={() => ejecutar(() => api.restablecerFlota(), 'Flota restablecida a los valores del caso.')
               .then(() => { setBorradores({}); setEdicion(null); })}>

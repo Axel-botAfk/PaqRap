@@ -99,15 +99,12 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
               disabled={bloquearConfiguracion || ocupado}
               onChange={e => cfg.setHora(e.target.value)} /></div>
         </div>
-        {detalle
-          ? <p className="dato-periodo">{numero(detalle.pedidos)} pedidos · {numero(detalle.bloqueos)} bloqueos · {numero(detalle.jornadasMantenimiento)} jornadas de mantenimiento en {dia.slice(0, 7)}</p>
-          : <p className="dato-periodo">Elige una fecha entre {limites.desde || '—'} y {limites.hasta || '—'}; los datos del mes se cargan solos.</p>}
 
         {escenario === 'OPERACION_DIARIA' && <>
           <button type="button" className="corrida-nueva-enlace"
             disabled={bloquearConfiguracion || ocupado || !cfg.ahoraDisponible}
             title={cfg.ahoraDisponible ? undefined : 'No hay datos cargados para el mes actual.'}
-            onClick={cfg.alUsarAhora}>Usar la fecha y hora actuales</button>
+            onClick={cfg.alUsarAhora}></button>
           <div className="field"><label htmlFor="c-ritmo">Ritmo de la jornada</label>
             <select id="c-ritmo" className="input" value={cfg.velocidadDiaria}
               disabled={bloquearConfiguracion || ocupado}
@@ -120,8 +117,6 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           <input id="c-hor" className="input" type="number" min="1" max="60" value={horizonte} required
             disabled={bloquearConfiguracion || ocupado}
             onChange={e => cfg.setHorizonte(e.target.value)} /></div>}
-
-        <p className="nota">Planificador: Vecino Más Cercano + Búsqueda Tabú. {ritmoConfigurado(escenario, cfg.velocidadDiaria)}</p>
 
         {ejecucion && !preparandoNueva && <button type="button" className="corrida-nueva-enlace"
           onClick={cfg.alPrepararNueva}>Preparar otra corrida independiente</button>}
@@ -185,7 +180,6 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
           </select>
         </div>
         <button className="btn btn-primary btn-block" type="submit" disabled={ocupado || !unidadAveriada || !corriendo}>Guardar</button>
-        <p className="nota">El planificador gestiona la indisponibilidad y el traslado al almacén central según el tipo. Los pedidos afectados se replanifican en el siguiente corte.</p>
         {averias.length > 0 && <ul className="averias-lista">{averias.map(a => <li key={`${a.unidadId}-${a.instante}`}>
           {a.unidadId} · {etiquetaTipoAveria(a.tipo)} · {estadoAveria(a.estado)} · {fecha(a.instante)} · {numero(a.pedidosAfectados || 0)} pedido(s) replanificado(s)
         </li>)}</ul>}

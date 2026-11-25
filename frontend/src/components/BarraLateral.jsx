@@ -1,21 +1,15 @@
 import React from 'react';
 import IconoUI from './IconoUI.jsx';
-
-export const VISTAS = [
-  ['operacion', 'Operación diaria'],
-  ['simulacion', 'Simulación'],
-  ['pedidos', 'Pedidos'],
-  ['flota', 'Mantenimiento de la flota'],
-  ['averias', 'Averías de la flota']
-];
+import { SECCIONES, seccionActiva } from '../secciones.js';
 
 /** Menú lateral. Se pliega con el burger: en el mapa recupera 224 px de ancho útil. */
-export default function BarraLateral({ vista, alCambiar, fuente }) {
+export default function BarraLateral({ vista, escenario, alCambiar }) {
+  const activa = seccionActiva(vista, escenario);
   return <aside className="side">
     <nav aria-label="Secciones principales">
-      {VISTAS.map(([clave, titulo]) => <button key={clave} type="button"
-        data-on={vista === clave ? '' : undefined} onClick={() => alCambiar(clave)}>
-        <IconoUI nombre={{ pedidos: 'pedidos', averias: 'averias', flota: 'camion', operacion: 'calendario', simulacion: 'engranaje' }[clave]} size={18} />
+      {SECCIONES.map(([clave, titulo, icono]) => <button key={clave} type="button"
+        data-on={activa === clave ? '' : undefined} onClick={() => alCambiar(clave)}>
+        <IconoUI nombre={icono} size={18} />
         <span>{titulo}</span></button>)}
     </nav>
   </aside>;

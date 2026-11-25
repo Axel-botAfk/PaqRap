@@ -14,16 +14,11 @@ import { fecha, numero, decimal, minutos, textoRitmo, ritmoConfigurado, colorDeR
 const NOMBRE_ESCENARIO = { OPERACION_DIARIA: 'Operación diaria', PERIODO_5_DIAS: 'Simulación 5 días',
   COLAPSO: 'Colapso logístico' };
 
-const ESCENARIOS_SIMULACION = [
-  ['PERIODO_5_DIAS', 'Semanal (5 días)', 'Cinco jornadas en 30 a 60 minutos reales.'],
-  ['COLAPSO', 'Colapso logístico', 'Avanza hasta el primer pedido vencido.']
-];
-
 /**
- * Controles de la corrida, dentro del riel. Las dos vistas de mapa comparten este panel: la de
- * operación diaria fija el escenario y la de simulación deja elegir entre los otros dos.
+ * Controles de la corrida, dentro del riel. Las vistas de mapa comparten este panel; el escenario
+ * (operación diaria, simulación 5D o colapso logístico) lo fija la entrada elegida en el menú.
  */
-export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado, rutas,
+export default function RielCorrida({ cfg, ejecucion, corriendo, ocupado, rutas,
   calculandoRutas, rutaSeleccionada, alSeleccionarRuta,
   seleccionEnvio = null, rutasDelEnvio = null, alSeleccionarEnvio = () => {},
   inventario, mapaDatos, averias,
@@ -33,7 +28,6 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
   umbrales = UMBRALES_POR_OMISION, alGuardarUmbrales = () => {}, planes = [],
   alRestablecerUmbrales = () => {}, estadosPedido = null, alVerReporte = () => {},
   medicionInicio = null }) {
-  const simulacion = vista === 'simulacion';
   const activa = controlesDeCorrida(ejecucion?.estado).activa;
   const [corridaSeleccionada, setCorridaElegida] = useState('');
   // Con una sola corrida ofrecida ya viene elegida: basta pulsar «Abrir».
@@ -77,16 +71,8 @@ export default function RielCorrida({ vista, cfg, ejecucion, corriendo, ocupado,
         <button type="button" className="corrida-nueva-enlace"
           onClick={cfg.alPrepararNueva}>Iniciar una corrida independiente</button>
       </div>}
-    <Acordeon titulo={simulacion ? 'Tipo de simulación' : 'Configuración de la corrida'}>
+    <Acordeon titulo="Configuración de la corrida">
       <form onSubmit={cfg.alIniciar}>
-        {simulacion && <div className="radios">
-          {ESCENARIOS_SIMULACION.map(([valor, titulo, ayuda]) => <label key={valor}>
-            <input type="radio" name="escenario" value={valor} checked={escenario === valor}
-              disabled={activa || ocupado} onChange={() => cfg.setEscenario(valor)} />
-            <span><b>{titulo}</b><small>{ayuda}</small></span>
-          </label>)}
-        </div>}
-
         {/* El periodo sale de la fecha: elegir el mes aparte era pedir dos veces lo mismo. */}
         <div className="row">
           <div className="field"><label htmlFor="c-dia">Fecha inicial</label>

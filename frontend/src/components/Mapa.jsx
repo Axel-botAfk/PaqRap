@@ -30,6 +30,14 @@ const VISTA_INICIAL = { cx: LIENZO_ANCHO / 2, cy: LIENZO_ALTO / 2, z: 1 };
 const TIPOS_FLOTA = [['AUTO', 'Auto'], ['MOTO', 'Moto'], ['BICICLETA', 'Bicicleta'], ['CAMION', 'Camión']];
 const TIPOS_CON_GIRO = new Set(['AUTO', 'MOTO', 'BICICLETA']);
 const TIPOS_CENITALES = new Set(['AUTO', 'MOTO', 'BICICLETA']);
+/**
+ * Medidas del ícono de cada unidad, en px de pantalla antes de `escalaIcono`: lado del dibujo, radio
+ * del resalte y posición de la luz de carga y del triángulo de avería. Son relativas al centro del
+ * ícono, que es donde gira; cambiar el lado no altera ni la posición ni la orientación.
+ */
+const ICONO_CENITAL = { lado: 30, halo: 17, carga: { x: 8, y: -12 }, averia: { x: -8, y: -12 } };
+const ICONO_CIRCULAR = { lado: 26, halo: 18, carga: { x: 9, y: -9 }, averia: { x: -10, y: -10 } };
+const medidasDeIcono = tipo => TIPOS_CENITALES.has(tipo) ? ICONO_CENITAL : ICONO_CIRCULAR;
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
 
@@ -690,6 +698,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       {gruposVehiculos.map(grupo => {
         const elegible = grupo.length === 1 && !!alSeleccionarUnidad;
         const activa = grupo.some(v => v.id === unidadSeleccionada);
+        const medidas = medidasDeIcono(grupo[0].tipo);
         return <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''} ${activa ? 'unidad-activa' : ''}`}
         transform={icono(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
@@ -710,7 +719,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           else if (elegible) { e.preventDefault(); alSeleccionarUnidad(activa ? null : grupo[0].id); }
         }}>
         {/* Resalte de la unidad elegida, en el mapa o en la lista del riel (F01). */}
-        {activa && <circle className="unidad-halo" r={TIPOS_CENITALES.has(grupo[0].tipo) ? 25 : 18} />}
+        {activa && <circle className="unidad-halo" r={medidas.halo} />}
         {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
         <g ref={nodo => {
           if (nodo) {
@@ -718,23 +727,20 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
             nodo.setAttribute('transform', `rotate(${angulosMostrados.current.get(grupo[0].id) ?? 0})`);
           } else iconosVehiculos.current.delete(grupo[0].id);
         }}>
-          <svg x={TIPOS_CENITALES.has(grupo[0].tipo) ? -22 : -13} y={TIPOS_CENITALES.has(grupo[0].tipo) ? -22 : -13}
-            width={TIPOS_CENITALES.has(grupo[0].tipo) ? 44 : 26} height={TIPOS_CENITALES.has(grupo[0].tipo) ? 44 : 26} viewBox="0 0 32 32">
+          <svg x={-medidas.lado / 2} y={-medidas.lado / 2} width={medidas.lado} height={medidas.lado} viewBox="0 0 32 32">
             {!TIPOS_CENITALES.has(grupo[0].tipo) && <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />}
             <DibujoVehiculo tipo={grupo[0].tipo} />
           </svg>
         </g>
         <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
-          cx={TIPOS_CENITALES.has(grupo[0].tipo) ? 11 : 9} cy={TIPOS_CENITALES.has(grupo[0].tipo) ? -17 : -9}
-          r="4.5" pointerEvents="none" />
+          cx={medidas.carga.x} cy={medidas.carga.y} r="4.5" pointerEvents="none" />
         {/* Avería por tipo (D10-D12): triángulo en el hombro izquierdo, para no confundirse con
             el semáforo de carga —que es un círculo, al otro lado— ni con el color de la ruta. */}
         {(() => {
           const averia = averiaDeGrupo(grupo, averiasVigentes);
           if (!averia) return null;
-          const cenital = TIPOS_CENITALES.has(grupo[0].tipo);
           return <g className={`mapa-averia mapa-averia-${averia.tipo.toLowerCase()}`}
-            transform={`translate(${cenital ? -12 : -10}, ${cenital ? -17 : -10})`}
+            transform={`translate(${medidas.averia.x}, ${medidas.averia.y})`}
             pointerEvents="none">
             <title>{ETIQUETAS_AVERIA[averia.tipo]}</title>
             <path d="M0 -6.2 L5.6 4 H-5.6 Z" />

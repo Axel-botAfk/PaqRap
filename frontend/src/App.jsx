@@ -9,7 +9,8 @@ import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
 import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA,
   DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
-import BarraLateral, { VISTAS } from './components/BarraLateral.jsx';
+import BarraLateral from './components/BarraLateral.jsx';
+import { ESCENARIO_DE_SECCION, TITULOS_SECCION, seccionActiva } from './secciones.js';
 import Riel from './components/Riel.jsx';
 import Mapa from './components/Mapa.jsx';
 import RielCorrida from './pages/RielCorrida.jsx';
@@ -33,7 +34,6 @@ const SIN_LIMITES = { desde: '', hasta: '' };
 
 /** El periodo de datos (aaaamm) sale de la fecha elegida, no de un selector aparte. */
 const periodoDe = dia => (dia && dia.length >= 7 ? dia.slice(0, 4) + dia.slice(5, 7) : '');
-const TITULOS = Object.fromEntries(VISTAS);
 const ES_MAPA = vista => vista === 'operacion' || vista === 'simulacion';
 
 function guardarEjecucion(id) {
@@ -611,10 +611,31 @@ export default function App() {
     if (esPantallaAngosta()) setMenuAbierto(false);
   }
 
-  function cambiarEscenario(valor) {
-    restaurarVistaInicial.current = false;
+  /** Recuerda el escenario de simulación elegido, para volver a él al reabrir la vista. */
+  function recordarEscenarioSimulacion(valor) {
     escenarioSimulacion.current = valor;
     try { localStorage.setItem('paqrap.escenario.simulacion', valor); } catch { /* sin almacenamiento */ }
+  }
+
+  /**
+   * Entradas del menú lateral. «Simulación 5D» y «Colapso logístico» comparten la vista de mapa
+   * `simulacion`: lo que las distingue es el escenario con el que se abre.
+   */
+  function cambiarSeccion(seccion) {
+    const destino = ESCENARIO_DE_SECCION[seccion];
+    if (!destino) { cambiarVista(seccion); return; }
+    if (vista === 'simulacion' && escenario !== destino) {
+      cambiarEscenario(destino);
+      setMenuAbierto(false);
+      return;
+    }
+    recordarEscenarioSimulacion(destino);
+    cambiarVista('simulacion');
+  }
+
+  function cambiarEscenario(valor) {
+    restaurarVistaInicial.current = false;
+    recordarEscenarioSimulacion(valor);
     setEscenario(valor);
     setCorridasActivas([]);
     if (id && ejecucion?.escenario !== valor) {
@@ -829,11 +850,11 @@ export default function App() {
   const enMapa = ES_MAPA(vista);
 
   return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${vista === 'operacion' ? 'vista-operacion' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
-    <BarraSuperior titulo={TITULOS[vista]} menuAbierto={menuAbierto} ejecucion={ejecucion}
+    <BarraSuperior titulo={TITULOS_SECCION[seccionActiva(vista, escenario)]} menuAbierto={menuAbierto} ejecucion={ejecucion}
       alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta}
       modoOperacion={enMapa} ahoraReal={enMapa ? ahora : null} />
 
-    <BarraLateral vista={vista} alCambiar={cambiarVista} fuente={fuente} />
+    <BarraLateral vista={vista} escenario={escenario} alCambiar={cambiarSeccion} />
     {menuAbierto && <div className="scrim" onClick={() => setMenuAbierto(false)} />}
 
     {error && <div role="alert" className="mensaje-error">
@@ -877,9 +898,9 @@ export default function App() {
         </div>}
       </section>
 
-      <Riel titulo={vista === 'simulacion' ? 'Simulación' : 'Operación'} abierto={rielAbierto}
+      <Riel titulo={vista === 'simulacion' ? TITULOS_SECCION[seccionActiva(vista, escenario)] : 'Operación'} abierto={rielAbierto}
         alAlternar={() => setRielAbierto(!rielAbierto)}>
-        <RielCorrida vista={vista} cfg={configuracion} ejecucion={ejecucion} corriendo={corriendo}
+        <RielCorrida cfg={configuracion} ejecucion={ejecucion} corriendo={corriendo}
           ocupado={ocupado} rutas={rutasVisibles} calculandoRutas={calculandoRutas}
           rutaSeleccionada={rutaSeleccionada} alSeleccionarRuta={rutaId => {
             setSeleccionEnvio(null);

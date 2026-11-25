@@ -88,7 +88,7 @@ export function ritmoConfigurado(escenario, velocidad = VELOCIDAD_DIA_A_DIA) {
 
 export const ETIQUETAS = {
   PENDIENTE: 'En espera', EN_CURSO: 'En ejecución', PAUSADA: 'En pausa', TERMINADA: 'Terminada',
-  COLAPSADA: 'Colapso detectado', FALLIDA: 'Fallida', CANCELADA: 'Detenida'
+  COLAPSADA: 'Colapso detectado', FALLIDA: 'Fallida', CANCELADA: 'Cancelada'
 };
 
 const TIPOS_VEHICULO = { AUTO: 'Auto', MOTO: 'Moto', BICICLETA: 'Bicicleta', CAMION: 'Camión' };

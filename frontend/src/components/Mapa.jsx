@@ -37,6 +37,11 @@ const TIPOS_CENITALES = new Set(['AUTO', 'MOTO', 'BICICLETA']);
  */
 const ICONO_CENITAL = { lado: 30, halo: 17, carga: { x: 8, y: -12 }, averia: { x: -8, y: -12 } };
 const ICONO_CIRCULAR = { lado: 26, halo: 18, carga: { x: 9, y: -9 }, averia: { x: -10, y: -10 } };
+/**
+ * Bloqueos: puntos pequeños y de tono claro sobre cada nodo cerrado, para que se lean como una línea
+ * punteada que contrasta con las vías sin ocultar la cuadrícula. El color coincide con la leyenda.
+ */
+const BLOQUEO = { lado: 4, color: '#e8806f', opacidad: .75 };
 const medidasDeIcono = tipo => TIPOS_CENITALES.has(tipo) ? ICONO_CENITAL : ICONO_CIRCULAR;
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
@@ -609,8 +614,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       onPointerDown={empezarArrastre} onPointerMove={mover}
       onPointerUp={soltar} onPointerCancel={soltar}>
       {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
-        <rect key={`b${indice}-${n}`} x={x(nodo.x) - 4} y={y(nodo.y) - 4} width="8" height="8"
-          fill="#ce5647" fillOpacity=".75"><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
+        <rect key={`b${indice}-${n}`} x={x(nodo.x) - BLOQUEO.lado / 2} y={y(nodo.y) - BLOQUEO.lado / 2}
+          width={BLOQUEO.lado} height={BLOQUEO.lado} rx="1" fill={BLOQUEO.color} fillOpacity={BLOQUEO.opacidad}><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
       {segmentosDibujados.map(({ ruta, camino, recorrido, terminada, clave }) => {
         const coordenadas = camino.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
         const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;

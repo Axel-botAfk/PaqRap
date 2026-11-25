@@ -35,19 +35,19 @@ export default function ControlesCorrida({ ejecucion, ocupado, alControlar, prog
     <div className="controles-cabecera">
       <b>Control de la corrida</b>
       {ejecucion.estado !== 'EN_CURSO' && <span className={`control-estado control-${ejecucion.estado.toLowerCase()}`} role="status">
-        {pendiente ? 'Aplicando…' : ejecucion.estado === 'CANCELADA' ? 'Detenida' : ETIQUETAS[ejecucion.estado]}
+        {pendiente ? 'Aplicando…' : ETIQUETAS[ejecucion.estado]}
       </span>}
     </div>
     {controles.activa && <div className="controles-botones">
-      <button type="button" className="btn control-principal" disabled={bloqueado || !(controles.pausar || controles.reanudar)}
-        onClick={() => ejecutar(controles.reanudar ? 'reanudar' : 'pausar')}>
-        <IconoUI nombre={controles.reanudar ? 'reproducir' : 'pausa'} size={18} />
-        {pendiente === 'pausar' ? 'Pausando…' : pendiente === 'reanudar' ? 'Reanudando…'
-          : controles.reanudar ? 'Reanudar' : 'Pausar'}
-      </button>
+      {/* Cancelar es el único control de interrupción. «Reanudar» solo aparece si otro cliente o el
+          servidor dejó la corrida en pausa, para que nunca quede detenida sin salida. */}
+      {controles.reanudar && <button type="button" className="btn control-principal" disabled={bloqueado}
+        onClick={() => ejecutar('reanudar')}>
+        <IconoUI nombre="reproducir" size={18} />{pendiente === 'reanudar' ? 'Reanudando…' : 'Reanudar'}
+      </button>}
       <button type="button" className="btn control-detener" disabled={bloqueado}
         onClick={() => setConfirmar(true)}>
-        <IconoUI nombre="detener" size={16} />{pendiente === 'cancelar' ? 'Deteniendo…' : 'Detener corrida'}
+        <IconoUI nombre="detener" size={16} />{pendiente === 'cancelar' ? 'Cancelando…' : 'Cancelar'}
       </button>
     </div>}
     {ejecucion.ritmo && <>
@@ -57,19 +57,19 @@ export default function ControlesCorrida({ ejecucion, ocupado, alControlar, prog
     </>}
     <p className="control-ayuda">{controles.reanudar
       ? 'La corrida está pausada para todos los dispositivos. Reanuda para continuar desde el mismo punto.'
-      : controles.activa ? 'Pausar conserva el avance. Detener finaliza esta corrida para todos los dispositivos.'
-        : ejecucion.estado === 'CANCELADA' ? 'Corrida detenida. Puedes consultar el historial disponible o iniciar una nueva.'
+      : controles.activa ? 'Cancelar finaliza esta corrida para todos los dispositivos.'
+        : ejecucion.estado === 'CANCELADA' ? 'Corrida cancelada. Puedes consultar el historial disponible o iniciar una nueva.'
           : 'Corrida finalizada. Puedes consultar sus resultados o iniciar una nueva.'}</p>
     <dialog ref={dialogo} className="confirmar-detencion" aria-labelledby={tituloId} aria-describedby={descripcionId}
       onCancel={() => setConfirmar(false)} onClose={() => setConfirmar(false)}>
-      <h2 id={tituloId}>¿Detener esta corrida?</h2>
-      <p id={descripcionId}>Se detendrá para todos los dispositivos y no podrás reanudarla.
+      <h2 id={tituloId}>¿Cancelar esta corrida?</h2>
+      <p id={descripcionId}>Se cancelará para todos los dispositivos y no podrás reanudarla.
         Podrás consultar el historial disponible e iniciar una nueva corrida.</p>
       <div className="confirmar-acciones">
         <button type="button" className="btn control-principal" autoFocus onClick={() => setConfirmar(false)}>
           Volver a la corrida</button>
         <button type="button" className="btn control-detener-final" onClick={() => ejecutar('cancelar')}>
-          Sí, detener corrida</button>
+          Sí, cancelar corrida</button>
       </div>
     </dialog>
   </section>;

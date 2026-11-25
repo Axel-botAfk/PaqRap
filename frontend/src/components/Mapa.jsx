@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
-  prepararTrayectos, posicionEnTrayecto, cargaEnTrayecto, trazosConRecorrido,
+  prepararTrayectos, posicionEnTrayecto, posicionContinuaEnTrayecto, cargaEnTrayecto, trazosConRecorrido,
   segmentosEnInstante, rutaFinalizadaEn, orientacionEnTrayecto, orientacionEnFotogramas,
   giroMasCorto } from '../mapa.js';
 import { aMs } from '../reloj.js';
@@ -45,6 +45,8 @@ const ICONO_CIRCULAR = { lado: 26, halo: 18, carga: { x: 9, y: -9 }, averia: { x
 const BLOQUEO = { lado: 4, color: '#e8806f', opacidad: .75 };
 /** Medidas del ícono de almacén (centrado en su nodo) y de su resalte; mismas reglas que ICONO_*. */
 const ICONO_ALMACEN = { CENTRAL: { ancho: 30, alto: 33 }, INTERMEDIO: { ancho: 26, alto: 26 }, halo: 17 };
+/** Posición con la que se dibuja la unidad: deslizante en vivo, el nodo publicado en los demás casos. */
+const posicionDibujada = vehiculo => vehiculo.ubicacionVisual || vehiculo.ubicacion;
 const medidasDeIcono = tipo => TIPOS_CENITALES.has(tipo) ? ICONO_CENITAL : ICONO_CIRCULAR;
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
@@ -319,7 +321,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const vehiculosTodos = trayectosPreparados && !enCortePublicado ? posicionesObservadas.map(vehiculo => {
     const preparado = trayectosPreparados.get(vehiculo.id);
     const ubicacion = posicionEnTrayecto(preparado, instanteMs);
+    // `ubicacion` es el nodo (textos y filtros); `ubicacionVisual` desliza el ícono entre nodos.
     return { ...vehiculo, ubicacion: ubicacion || vehiculo.ubicacion,
+      ubicacionVisual: posicionContinuaEnTrayecto(preparado, instanteMs) || vehiculo.ubicacion,
       cargaAbordo: cargaEnTrayecto(preparado, instanteMs, vehiculo.cargaAbordo) };
   }) : posicionesObservadas;
 
@@ -392,7 +396,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const contadorOperacion = `Reproducción ${fotogramas.length ? (enVivo ? fotogramas.length : indiceFotograma + 1) : 0}/${fotogramas.length}`;
   const gruposVehiculos = [...vehiculos.reduce((grupos, vehiculo) => {
     if (!vehiculo.ubicacion) return grupos;
-    const clave = `${vehiculo.ubicacion.x},${vehiculo.ubicacion.y}`;
+    // Se agrupa por lugar dibujado: las unidades detenidas en un nodo se juntan, las que van por
+    // la calle (aunque pasen por el mismo nodo) se ven cada una en su sitio.
+    const { x, y } = posicionDibujada(vehiculo);
+    const clave = `${Math.round(x * 100)},${Math.round(y * 100)}`;
     if (!grupos.has(clave)) grupos.set(clave, []);
     grupos.get(clave).push(vehiculo);
     return grupos;
@@ -707,9 +714,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         const elegible = grupo.length === 1 && !!alSeleccionarUnidad;
         const activa = grupo.some(v => v.id === unidadSeleccionada);
         const medidas = medidasDeIcono(grupo[0].tipo);
+        const lugar = posicionDibujada(grupo[0]);
         return <g key={grupo[0].id}
         className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''} ${activa ? 'unidad-activa' : ''}`}
-        transform={icono(grupo[0].ubicacion.x, grupo[0].ubicacion.y)}
+        transform={icono(lugar.x, lugar.y)}
         role={grupo.length > DETALLE_MAXIMO || elegible ? 'button' : 'img'}
         tabIndex={grupo.length > DETALLE_MAXIMO || elegible ? 0 : undefined}
         aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}

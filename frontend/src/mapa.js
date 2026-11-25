@@ -139,6 +139,22 @@ export function posicionEnCamino(camino, origen, destino, progreso) {
   return camino[paso];
 }
 
+/**
+ * Misma marcha que `posicionEnCamino`, pero sin saltar de nodo en nodo: entre dos nodos
+ * consecutivos la posición se reparte de forma lineal. Siempre cae sobre una arista del camino
+ * (una coordenada entera) y coincide con el nodo exacto cuando el progreso lo alcanza. Es para
+ * dibujar; la lógica de rutas, tooltips y trazos sigue usando el nodo entero.
+ */
+export function posicionContinuaEnCamino(camino, origen, destino, progreso) {
+  if (camino.length < 2) return posicionEnCamino(camino, origen, destino, progreso);
+  const recorrido = Math.max(0, Math.min(1, progreso)) * (camino.length - 1);
+  const arista = Math.min(camino.length - 2, Math.floor(recorrido));
+  const fraccion = recorrido - arista;
+  const desde = camino[arista];
+  const hasta = camino[arista + 1];
+  return { x: desde.x + (hasta.x - desde.x) * fraccion, y: desde.y + (hasta.y - desde.y) * fraccion };
+}
+
 // Recorridos de la ventana (hitos con hora, informados por el simulador) listos para
 // interpolar: el camino de cada tramo se calcula una vez, no en cada cuadro.
 export function prepararTrayectos(trayectos, aMs, bloqueados = new Set()) {
@@ -234,8 +250,11 @@ export function rutaFinalizadaEn(ruta, preparado, instanteMs) {
   });
 }
 
-/** Dónde está la unidad en el instante dado según sus hitos; null si no tiene recorrido. */
-export function posicionEnTrayecto(preparado, instanteMs) {
+/**
+ * Posición de la unidad en el instante dado según sus hitos; null si no tiene recorrido.
+ * `colocar` decide cómo ubicarla sobre el camino del tramo vigente (por nodo o continua).
+ */
+function posicionSegunTrayecto(preparado, instanteMs, colocar) {
   if (!preparado?.pasos.length) return null;
   const { pasos, tramos } = preparado;
   if (!(instanteMs > pasos[0].ms)) return pasos[0].ubicacion;
@@ -243,11 +262,19 @@ export function posicionEnTrayecto(preparado, instanteMs) {
     if (instanteMs < destino.ms) {
       const duracion = destino.ms - origen.ms;
       const progreso = duracion > 0 ? (instanteMs - origen.ms) / duracion : 1;
-      return posicionEnCamino(camino, origen.ubicacion, destino.ubicacion, progreso);
+      return colocar(camino, origen.ubicacion, destino.ubicacion, progreso);
     }
   }
   return pasos[pasos.length - 1].ubicacion;
 }
+
+/** Dónde está la unidad en el instante dado según sus hitos, en el nodo que le corresponde. */
+export const posicionEnTrayecto = (preparado, instanteMs) =>
+  posicionSegunTrayecto(preparado, instanteMs, posicionEnCamino);
+
+/** Lo mismo, pero deslizándose entre nodos: la posición con la que se dibuja la unidad. */
+export const posicionContinuaEnTrayecto = (preparado, instanteMs) =>
+  posicionSegunTrayecto(preparado, instanteMs, posicionContinuaEnCamino);
 
 /** Dirección de la arista recorrida en el instante; las esperas conservan la última válida. */
 export function orientacionEnTrayecto(preparado, instanteMs) {

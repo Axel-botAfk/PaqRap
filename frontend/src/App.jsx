@@ -799,7 +799,7 @@ export default function App() {
       setEjecucion(resultado);
       if (accion === 'reanudar' && resultado.estado === 'EN_CURSO') setEnVivo(true);
       setAviso(resultado.estado === 'PAUSADA' ? 'Corrida pausada para todos los dispositivos.'
-        : resultado.estado === 'CANCELADA' ? 'Corrida detenida. Puedes iniciar una nueva.'
+        : resultado.estado === 'CANCELADA' ? 'Corrida cancelada. Puedes iniciar una nueva.'
           : resultado.estado === 'EN_CURSO' ? 'Corrida reanudada.' : 'La corrida ya finalizó.');
     } catch (e) {
       if (idActual.current === corridaId) setError(e.message);

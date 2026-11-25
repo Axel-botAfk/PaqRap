@@ -5,6 +5,7 @@ import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
   giroMasCorto } from '../mapa.js';
 import { aMs } from '../reloj.js';
 import { bloqueosEn } from '../bloqueos.js';
+import { ocupacionDeAlmacen, COLORES_OCUPACION, ETIQUETAS_OCUPACION, NIVELES_OCUPACION } from '../ocupacion.js';
 import { esFinal } from '../services/api.js';
 import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from '../formato.js';
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
@@ -42,6 +43,8 @@ const ICONO_CIRCULAR = { lado: 26, halo: 18, carga: { x: 9, y: -9 }, averia: { x
  * punteada que contrasta con las vías sin ocultar la cuadrícula. El color coincide con la leyenda.
  */
 const BLOQUEO = { lado: 4, color: '#e8806f', opacidad: .75 };
+/** Medidas del ícono de almacén (centrado en su nodo) y de su resalte; mismas reglas que ICONO_*. */
+const ICONO_ALMACEN = { CENTRAL: { ancho: 30, alto: 33 }, INTERMEDIO: { ancho: 26, alto: 26 }, halo: 17 };
 const medidasDeIcono = tipo => TIPOS_CENITALES.has(tipo) ? ICONO_CENITAL : ICONO_CIRCULAR;
 const ESTADOS_PEDIDO = [['PLANIFICADO', 'Planificados'], ['EN_RUTA', 'En ruta'],
   ['ENTREGADO', 'Entregados'], ['NO_ASIGNADO', 'Sin asignar']];
@@ -95,6 +98,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const estadoDeCarga = vehiculo => nivelDeCarga(vehiculo, umbrales.carga);
   const estadoDeGrupo = grupo => nivelDeGrupo(grupo, umbrales.carga);
   const estadoDeStockCon = (stock, inicial) => estadoDeStock(stock, inicial, umbrales.stock);
+  const ocupacionCon = (stock, inicial) => ocupacionDeAlmacen(stock, inicial, umbrales.stock);
   const ETIQUETAS_CARGA = etiquetasDeCarga(umbrales.carga);
   const [rutaEnFoco, setRutaEnFoco] = useState(null);
   const rutasDelEnvio = new Set(rutasEnvioSeleccionadas);
@@ -507,21 +511,21 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   function fichaDeAlmacen(almacen) {
     const stock = stockDe(almacen);
     const inicial = stock?.capacidad ?? (almacen.stockInicial > 0 ? almacen.stockInicial : null);
-    const estado = estadoDeStockCon(stock, almacen.stockInicial);
+    const ocupacion = ocupacionCon(stock, almacen.stockInicial);
     const nodo = `Nodo (${almacen.ubicacion.x}, ${almacen.ubicacion.y})`;
-    const lineas = [nodo, ETIQUETAS_STOCK[estado]];
-    if (stock?.ilimitado) lineas.push('Stock ilimitado');
-    else if (stock && Number.isFinite(stock.disponible)) {
-      lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} ${stock.capacidad ? 'de capacidad' : 'iniciales'}` : ''}`);
-      if (inventario?.reloj) lineas.push(`Último corte disponible: ${fecha(inventario.reloj)}`);
+    const estadoTexto = ocupacion.porcentaje === null ? ETIQUETAS_OCUPACION[ocupacion.nivel]
+      : `${ETIQUETAS_OCUPACION[ocupacion.nivel]} · ${ocupacion.porcentaje} %`;
+    const lineas = [nodo, estadoTexto];
+    if (!stock?.ilimitado && Number.isFinite(stock?.disponible)) {
+      lineas.push(`Stock ${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}`);
     }
     return {
       titulo: `${almacen.id} · ${almacen.tipo === 'CENTRAL' ? 'Central' : 'Intermedio'}`,
-      lineas, nodo, estado, estadoTexto: ETIQUETAS_STOCK[estado],
+      lineas, nodo, nivel: ocupacion.nivel,
+      estadoTexto,
       stockActual: stock?.ilimitado ? 'Ilimitado'
         : Number.isFinite(stock?.disponible)
-          ? `${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)} ${stock.capacidad ? 'de capacidad' : 'iniciales'}` : ''}` : '—',
-      ultimoCorte: inventario?.reloj && stock ? fecha(inventario.reloj) : '—'
+          ? `${numero(stock.disponible)}${inicial ? ` / ${numero(inicial)}` : ''}` : '—'
     };
   }
 
@@ -670,6 +674,7 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       })}
       {almacenesVisibles.map(almacen => {
         const activo = almacen.id === almacenSeleccionado;
+        const { nivel } = ocupacionCon(stockDe(almacen), almacen.stockInicial);
         return <g key={almacen.id} className={`mapa-almacen ${activo ? 'almacen-activo' : ''}`}
         transform={icono(almacen.ubicacion.x, almacen.ubicacion.y)}
         role={alSeleccionarAlmacen ? 'button' : 'img'}
@@ -687,11 +692,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           alSeleccionarAlmacen(activo ? null : almacen.id);
         }}>
         {/* Resalte del almacén elegido, en el mapa o en la lista de inventario (F05). */}
-        {activo && <circle className="almacen-halo" r="24" />}
-        <DibujoAlmacen tipo={almacen.tipo} />
-        <circle className={`mapa-stock mapa-stock-${estadoDeStockCon(stockDe(almacen), almacen.stockInicial)}`}
-          cx={almacen.tipo === 'CENTRAL' ? 21 : 17} cy={almacen.tipo === 'CENTRAL' ? -21 : -17}
-          r="4.5" pointerEvents="none" />
+        {activo && <circle className="almacen-halo" r={ICONO_ALMACEN.halo} />}
+        {/* El nivel de ocupación pinta todo el ícono: ya no hace falta la luz aparte. */}
+        <DibujoAlmacen tipo={almacen.tipo} nivel={nivel} />
       </g>;
       })}
       {salidas.map(punto => <g key={`salida-${punto.x}-${punto.y}`} className="mapa-salida"
@@ -929,6 +932,9 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
             </svg> Avería tipo {tipo.slice(-1)}</span>)}
           <span className="leyenda-almacen"><DibujoAlmacen tipo="CENTRAL" leyenda /> Central</span>
           <span className="leyenda-almacen"><DibujoAlmacen tipo="INTERMEDIO" leyenda /> Intermedio</span>
+          {NIVELES_OCUPACION.map(nivel => <span key={nivel} title="Ocupación del almacén intermedio">
+            <i className="punto" style={{ background: COLORES_OCUPACION[nivel].relleno,
+              boxShadow: `inset 0 0 0 1.5px ${COLORES_OCUPACION[nivel].contorno}` }} /> {ETIQUETAS_OCUPACION[nivel]}</span>)}
           <IconoLeyenda tipo="AUTO" texto="Auto" />
           <IconoLeyenda tipo="MOTO" texto="Moto" />
           <IconoLeyenda tipo="BICICLETA" texto="Bicicleta" />
@@ -960,13 +966,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       </> : fichaAlmacen ? <>
         <div className="mapa-tip-cabecera">
           <div><strong>{fichaAlmacen.titulo}</strong><span className="mapa-tip-nodo">{fichaAlmacen.nodo}</span></div>
-          <span className={`mapa-tip-estado mapa-tip-stock-${fichaAlmacen.estado}`}>
+          <span className={`mapa-tip-estado mapa-tip-ocupacion-${fichaAlmacen.nivel}`}>
             <i aria-hidden="true" />{fichaAlmacen.estadoTexto}
           </span>
         </div>
         <div className="mapa-tip-filas">
-          <div className="mapa-tip-fila"><IconoUI nombre="caja" size={17} /><span>Stock actual</span><strong>{fichaAlmacen.stockActual}</strong></div>
-          <div className="mapa-tip-fila"><span className="mapa-tip-calendario"><IconoUI nombre="calendario" size={17} /><IconoUI nombre="reloj" size={9} /></span><span>Último corte disponible</span><strong>{fichaAlmacen.ultimoCorte}</strong></div>
+          <div className="mapa-tip-fila"><IconoUI nombre="caja" size={17} /><span>Stock</span><strong>{fichaAlmacen.stockActual}</strong></div>
         </div>
       </> : <>
         {tip.fijo && <button type="button" aria-label="Cerrar detalle de unidades"
@@ -981,37 +986,54 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   </div>;
 }
 
-function DibujoAlmacen({ tipo, leyenda = false }) {
+/**
+ * Casa del almacén. Con `nivel` de ocupación (vacío, bajo, intermedio o alto) todo el ícono toma el
+ * color de la codificación; sin nivel conserva el morado propio de la leyenda, del almacén central
+ * (stock ilimitado) y del almacén sin corte de inventario.
+ */
+function DibujoAlmacen({ tipo, nivel = null, leyenda = false }) {
   const gradiente = useId();
-  if (tipo === 'CENTRAL') return <svg x={leyenda ? undefined : -26}
-    y={leyenda ? undefined : -28} width={leyenda ? 20 : 52} height={leyenda ? 20 : 56}
-    viewBox="0 0 36 40" overflow="visible" aria-hidden="true" focusable="false">
-    <defs><linearGradient id={gradiente} x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
-    </linearGradient></defs>
-    <path d="M18 1 Q19 1 20 2 L34.5 17 Q36 19 34.5 21 L20 37 Q18 39 16 37 L1.5 21 Q0 19 1.5 17 L16 2 Q17 1 18 1Z"
-      fill={`url(#${gradiente})`} />
-    <path d="M6 19 18 9 30 19 V34 H6Z" fill="#8E24AA" />
-    <path d="M5.5 19 18 8 30.5 19 M5.5 19v15 M30.5 19v15"
-      fill="none" stroke="white" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-    <text x="18" y="25.5" textAnchor="middle" fontFamily="Archivo, sans-serif" fontSize="9.5"
-      fontWeight="900" fill="white">C</text>
-    <rect x="10" y="27" width="16" height="8" rx="1.2" fill="white" />
-    <rect x="12" y="30" width="9" height="4" rx=".6" fill="#6A1B9A" />
-    <path d="M21 31h2l2 2v1h-4Z" fill="#8E24AA" />
-    <circle cx="14.5" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
-    <circle cx="23" cy="34" r="1.15" fill="#6A1B9A" stroke="white" strokeWidth=".5" />
-  </svg>;
-  return <svg x={leyenda ? undefined : -22} y={leyenda ? undefined : -22}
-    width={leyenda ? 20 : 44} height={leyenda ? 20 : 44} viewBox="0 0 20 20"
+  const paleta = COLORES_OCUPACION[nivel] || null;
+  const detalle = paleta ? paleta.detalle : 'white';
+  const contorno = paleta ? paleta.contorno : 'none';
+  if (tipo === 'CENTRAL') {
+    const { ancho, alto } = ICONO_ALMACEN.CENTRAL;
+    const cuerpo = paleta ? paleta.relleno : '#8E24AA';
+    return <svg x={leyenda ? undefined : -ancho / 2}
+      y={leyenda ? undefined : -alto / 2} width={leyenda ? 20 : ancho} height={leyenda ? 20 : alto}
+      viewBox="0 0 36 40" overflow="visible" aria-hidden="true" focusable="false">
+      <defs><linearGradient id={gradiente} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stopColor="#B667D0" /><stop offset="1" stopColor="#8E24AA" />
+      </linearGradient></defs>
+      <path d="M18 1 Q19 1 20 2 L34.5 17 Q36 19 34.5 21 L20 37 Q18 39 16 37 L1.5 21 Q0 19 1.5 17 L16 2 Q17 1 18 1Z"
+        fill={paleta ? paleta.relleno : `url(#${gradiente})`} stroke={contorno} strokeWidth="1.4" />
+      <path d="M6 19 18 9 30 19 V34 H6Z" fill={cuerpo} />
+      <path d="M5.5 19 18 8 30.5 19 M5.5 19v15 M30.5 19v15"
+        fill="none" stroke={detalle} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="18" y="25.5" textAnchor="middle" fontFamily="Archivo, sans-serif" fontSize="9.5"
+        fontWeight="900" fill={detalle}>C</text>
+      <rect x="10" y="27" width="16" height="8" rx="1.2" fill={detalle} />
+      <rect x="12" y="30" width="9" height="4" rx=".6" fill={paleta ? paleta.relleno : '#6A1B9A'} />
+      <path d="M21 31h2l2 2v1h-4Z" fill={cuerpo} />
+      <circle cx="14.5" cy="34" r="1.15" fill={paleta ? paleta.relleno : '#6A1B9A'} stroke={detalle} strokeWidth=".5" />
+      <circle cx="23" cy="34" r="1.15" fill={paleta ? paleta.relleno : '#6A1B9A'} stroke={detalle} strokeWidth=".5" />
+    </svg>;
+  }
+  const { ancho, alto } = ICONO_ALMACEN.INTERMEDIO;
+  const cuerpo = paleta ? paleta.relleno : '#9222B4';
+  return <svg x={leyenda ? undefined : -ancho / 2} y={leyenda ? undefined : -alto / 2}
+    width={leyenda ? 20 : ancho} height={leyenda ? 20 : alto} viewBox="0 0 20 20"
     overflow="visible" aria-hidden="true" focusable="false">
-    <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z" fill="#9222B4" />
+    {paleta && <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"
+      stroke={contorno} strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />}
+    <path d="M2.7 10.5 10 5.2l7.3 5.3V18q0 .6-.6.6H3.3q-.6 0-.6-.6Z" fill={cuerpo}
+      stroke={contorno} strokeWidth=".7" strokeLinejoin="round" />
     <path d="M1.7 7.9 9.5 2.3q.5-.4 1 0l7.8 5.6" fill="none"
-      stroke="#9222B4" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M2.4 9.2 10 4l7.6 5.2" fill="none" stroke="white"
+      stroke={cuerpo} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M2.4 9.2 10 4l7.6 5.2" fill="none" stroke={detalle}
       strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
     <path d="M8.5 10.5h3M10 10.5v5.2M8.5 15.7h3" fill="none"
-      stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      stroke={detalle} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>;
 }
 

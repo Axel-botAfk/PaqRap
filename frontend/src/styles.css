@@ -333,10 +333,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .mapa-tip .mapa-tip-estado-otro { background: #343a43; color: #d7deea; }
 .mapa-tip-almacen .mapa-tip-cabecera strong { overflow-wrap: anywhere; }
 .mapa-tip-almacen .mapa-tip-estado { max-width: 125px; white-space: normal; line-height: 1.2; }
-.mapa-tip-almacen .mapa-tip-stock-advertencia { background: #574019; color: #ffe19a; }
-.mapa-tip-almacen .mapa-tip-stock-critico { background: #5b2529; color: #ffadb3; }
-.mapa-tip-almacen .mapa-tip-stock-vacio,
-.mapa-tip-almacen .mapa-tip-stock-sin-datos { background: #343a43; color: #d7deea; }
+.mapa-tip-almacen .mapa-tip-ocupacion-intermedio { background: #574019; color: #ffe19a; }
+.mapa-tip-almacen .mapa-tip-ocupacion-alto { background: #5b2529; color: #ffadb3; }
+.mapa-tip-almacen .mapa-tip-ocupacion-vacio,
+.mapa-tip-almacen .mapa-tip-ocupacion-sin-datos { background: #343a43; color: #d7deea; }
+.mapa-tip-almacen .mapa-tip-ocupacion-ilimitado { background: #3b2352; color: #e3c4f2; }
 .mapa-tip-filas { display: grid; }
 .mapa-tip-fila { display: grid; grid-template-columns: 16px minmax(80px, 1fr) minmax(0, 1.35fr); align-items: center; gap: 6px; min-height: 32px; padding: 5px 0; }
 .mapa-tip-fila + .mapa-tip-fila { border-top: 1px solid #404650; }

@@ -1228,7 +1228,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .
 /* ── Panel de unidades de transporte (E02-E05, E13) y su enlace con el mapa (F01) ────────── */
 .mapview .acc h3 button span:has(> svg) { display: inline-flex; align-items: center; gap: 7px; }
 .mapview .acc h3 button span > svg { flex: none; box-sizing: content-box; padding: 5px;
-  border-radius: 9px; background: var(--red-100); color: var(--brand-red); }
+  border-radius: 9px; background: transparent; color: var(--brand-red); }
 .mapview .acc h3 button:has(> span > svg) em { padding: 3px 8px; border-radius: 999px;
   background: #eaf2ff; color: var(--navy); font-weight: 800; }
 .unidades-orden { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;

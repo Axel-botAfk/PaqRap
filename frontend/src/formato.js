@@ -10,6 +10,17 @@ const FORMATO_HORA = new Intl.DateTimeFormat('es-PE', {
   hour: '2-digit', minute: '2-digit', second: '2-digit'
 });
 
+/** Relojes de la cabecera: día y hora hasta el minuto, en 24 h para que ocupen poco. */
+const FORMATO_RELOJ = new Intl.DateTimeFormat('es-PE', {
+  day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+});
+
+export function fechaReloj(valor) {
+  if (!valor) return '—';
+  const fechaLocal = new Date(valor);
+  return Number.isNaN(fechaLocal.getTime()) ? valor : FORMATO_RELOJ.format(fechaLocal).replace(',', '');
+}
+
 /** Solo hora y minuto: en la lista de unidades el día ya lo da el reloj de la corrida. */
 const FORMATO_SOLO_HORA = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit' });
 
@@ -32,14 +43,16 @@ export function fechaConSegundos(valor) {
   return Number.isNaN(fechaLocal.getTime()) ? valor : FORMATO_HORA.format(fechaLocal);
 }
 
+// Un formateador por tipo: crearlo en cada llamada pesa cuando el mapa se redibuja 20 veces por segundo.
+const FORMATO_NUMERO = new Intl.NumberFormat('es-PE');
+const FORMATO_DECIMAL = new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 });
+
 export function numero(valor) {
-  return typeof valor === 'number' ? new Intl.NumberFormat('es-PE').format(valor) : '—';
+  return typeof valor === 'number' ? FORMATO_NUMERO.format(valor) : '—';
 }
 
 export function decimal(valor, unidad = '') {
-  return typeof valor === 'number'
-    ? `${new Intl.NumberFormat('es-PE', { maximumFractionDigits: 1 }).format(valor)}${unidad}`
-    : '—';
+  return typeof valor === 'number' ? `${FORMATO_DECIMAL.format(valor)}${unidad}` : '—';
 }
 
 export function minutos(valor) {

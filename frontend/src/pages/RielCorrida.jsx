@@ -43,6 +43,8 @@ export default function RielCorrida({ cfg, ejecucion, corriendo, ocupado, rutas,
     unidadAveriada, tipoAveria, flota } = cfg;
   // Costo y distancia del plan vigente. El backend ya los publica por ruta (`RutaVista`); el
   // resumen con el costo total solo llega al terminar la corrida, y esto se ve mientras corre.
+  // Antes de iniciar una simulación solo se piden fecha y hora: nada de pedidos ni de flota.
+  const soloConfiguracion = !ejecucion && escenario !== 'OPERACION_DIARIA';
   const totalRutas = rutas.reduce((acumulado, ruta) => ({
     km: acumulado.km + (ruta.distanciaKm || 0),
     costo: acumulado.costo + (ruta.costo || 0)
@@ -123,6 +125,7 @@ export default function RielCorrida({ cfg, ejecucion, corriendo, ocupado, rutas,
       </form>
     </Acordeon>
 
+    {!soloConfiguracion && <>
     <Acordeon titulo={<><IconoUI nombre="ruta" size={17}
       className="rutas-instante-icono" />Rutas del instante</>} nota={numero(rutas.length)}>
       {calculandoRutas ? <p className="vacio" role="status">Calculando rutas…</p>
@@ -229,5 +232,6 @@ export default function RielCorrida({ cfg, ejecucion, corriendo, ocupado, rutas,
           <div><dt>Fin de simulación</dt><dd>{fecha(ejecucion.resumen.fin)}</dd></div>
         </dl>}
     </Acordeon>
+    </>}
   </>;
 }

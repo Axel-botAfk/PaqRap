@@ -222,7 +222,11 @@ export function trazosConRecorrido(rutas, preparados, bloqueados = new Set()) {
   });
 }
 
-/** Divide una polilínea en aristas ya recorridas y pendientes con el mismo paso que el vehículo. */
+/**
+ * Divide una polilínea en lo ya recorrido y lo pendiente. El corte cae exactamente donde se dibuja
+ * la unidad (la misma cuenta que `posicionContinuaEnCamino`), no en el último nodo que pasó: así lo
+ * pendiente arranca bajo el vehículo y no una celda atrás.
+ */
 export function segmentosEnInstante(detalle, instanteMs) {
   const { camino, origenMs, destinoMs } = detalle;
   if (!Number.isFinite(origenMs) || !Number.isFinite(destinoMs)
@@ -231,12 +235,24 @@ export function segmentosEnInstante(detalle, instanteMs) {
     return [{ camino, recorrido: false }];
   }
   const duracion = destinoMs - origenMs;
-  const progreso = duracion > 0 ? (instanteMs - origenMs) / duracion : 1;
-  const paso = Math.min(camino.length - 1, Math.floor(Math.max(0, progreso) * (camino.length - 1)));
-  if (paso === 0) return [{ camino, recorrido: false }];
-  if (paso === camino.length - 1) return [{ camino, recorrido: true }];
-  return [{ camino: camino.slice(0, paso + 1), recorrido: true },
-    { camino: camino.slice(paso), recorrido: false }];
+  const progreso = duracion > 0 ? Math.min(1, (instanteMs - origenMs) / duracion) : 1;
+  if (progreso >= 1 || camino.length < 2) return [{ camino, recorrido: true }];
+  const avance = Math.max(0, progreso) * (camino.length - 1);
+  if (avance <= 0) return [{ camino, recorrido: false }];
+  const arista = Math.min(camino.length - 2, Math.floor(avance));
+  const fraccion = avance - arista;
+  if (fraccion === 0) {
+    return [{ camino: camino.slice(0, arista + 1), recorrido: true },
+      { camino: camino.slice(arista), recorrido: false }];
+  }
+  const desde = camino[arista];
+  const hasta = camino[arista + 1];
+  const punto = { x: desde.x + (hasta.x - desde.x) * fraccion, y: desde.y + (hasta.y - desde.y) * fraccion };
+  // `desfase` (km desde el último nodo) permite anclar el patrón discontinuo a la calle: sin él,
+  // las rayas avanzarían pegadas a la unidad.
+  return [{ camino: [...camino.slice(0, arista + 1), punto], recorrido: true },
+    { camino: [punto, ...camino.slice(arista + 1)], recorrido: false,
+      desfase: Math.hypot(punto.x - desde.x, punto.y - desde.y) }];
 }
 
 /** La ruta termina al concluir cada entrega; algunas no tienen tiempo de acondicionamiento. */

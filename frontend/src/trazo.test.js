@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { posicionEnTrayecto, prepararTrayectos, cargaEnTrayecto, orientacionEnTrayecto, tramosDeRuta,
+import { posicionEnTrayecto, posicionContinuaEnTrayecto, prepararTrayectos, cargaEnTrayecto, orientacionEnTrayecto, tramosDeRuta,
   trazosConRecorrido, segmentosEnInstante, rutaFinalizadaEn } from './mapa.js';
 import { aMs } from './reloj.js';
 
@@ -86,16 +86,35 @@ test('las aristas recorridas siguen el hito, incluso al retroceder y durante una
     paradas: [{ id: 'P-1', destino: { x: 2, y: 1 } }, { id: 'P-2', destino: { x: 1, y: 1 } }]
   }], preparado);
   const visibles = instante => trazo.detalles.flatMap(detalle => segmentosEnInstante(detalle, aMs(instante)));
-  const contarAristas = (segmentos, recorrido) => segmentos
+  // Kilómetros dibujados de cada clase; el corte puede caer a mitad de una arista.
+  const longitud = (segmentos, recorrido) => segmentos
     .filter(segmento => segmento.recorrido === recorrido)
-    .reduce((total, segmento) => total + segmento.camino.length - 1, 0);
-  assert.equal(contarAristas(visibles('2026-09-01T02:02:00'), true), 1);
-  assert.equal(contarAristas(visibles('2026-09-01T02:06:00'), true), 3);
-  assert.equal(contarAristas(visibles('2026-09-01T02:06:00'), false), 1);
-  assert.equal(contarAristas(visibles('2026-09-01T02:10:00'), true), 4);
-  assert.equal(contarAristas(visibles('2026-09-01T02:01:00'), true), 0);
-  assert.deepEqual(visibles('2026-09-01T02:02:00')[0].camino.at(-1),
-    posicionEnTrayecto(preparado.get('TA01'), aMs('2026-09-01T02:02:00')));
+    .reduce((total, { camino }) => total + camino.slice(1)
+      .reduce((suma, punto, i) => suma + Math.hypot(punto.x - camino[i].x, punto.y - camino[i].y), 0), 0);
+  assert.equal(longitud(visibles('2026-09-01T02:02:00'), true), 1.5);
+  assert.equal(longitud(visibles('2026-09-01T02:02:00'), false), 2.5);
+  assert.equal(longitud(visibles('2026-09-01T02:06:00'), true), 3);
+  assert.equal(longitud(visibles('2026-09-01T02:06:00'), false), 1);
+  assert.equal(longitud(visibles('2026-09-01T02:10:00'), true), 4);
+  assert.equal(longitud(visibles('2026-09-01T02:01:00'), true), .75);
+  assert.equal(longitud(visibles('2026-09-01T02:00:00'), true), 0);
+});
+
+test('lo pendiente empieza justo donde se dibuja la unidad, no un nodo atrás', () => {
+  const preparado = prepararTrayectos([{ vehiculoId: 'TA01', pasos: [
+    { ubicacion: { x: 0, y: 0 }, instante: '2026-09-01T02:00:00', hito: 'SALIDA' },
+    { ubicacion: { x: 4, y: 0 }, instante: '2026-09-01T02:04:00', hito: 'ENTREGA', pedidoId: 'P-1' }
+  ] }], aMs);
+  const [trazo] = trazosConRecorrido([{ id: 'R1', vehiculoId: 'TA01', origen: { x: 0, y: 0 },
+    paradas: [{ id: 'P-1', destino: { x: 4, y: 0 } }] }], preparado);
+  for (const instante of ['2026-09-01T02:01:30', '2026-09-01T02:02:00', '2026-09-01T02:03:45']) {
+    const [hecho, pendiente] = segmentosEnInstante(trazo.detalles[0], aMs(instante));
+    const unidad = posicionContinuaEnTrayecto(preparado.get('TA01'), aMs(instante));
+    assert.deepEqual(hecho.camino.at(-1), unidad);
+    assert.deepEqual(pendiente.camino[0], unidad);
+    assert.equal(hecho.recorrido, true);
+    assert.equal(pendiente.recorrido, false);
+  }
 });
 
 test('dos viajes de la misma unidad conservan sus tramos y resaltado por ruta', () => {
@@ -112,8 +131,8 @@ test('dos viajes de la misma unidad conservan sus tramos y resaltado por ruta', 
   ], preparados);
   assert.equal(primera.detalles.filter(detalle => detalle.origenMs !== undefined).length, 1);
   assert.equal(segunda.detalles.filter(detalle => detalle.origenMs !== undefined).length, 1);
-  assert.equal(segmentosEnInstante(segunda.detalles[0], aMs('2026-09-01T02:04:00'))[0].recorrido, false);
-  assert.equal(segmentosEnInstante(primera.detalles[0], aMs('2026-09-01T02:04:00'))[0].recorrido, true);
+  assert.equal(segmentosEnInstante(segunda.detalles[0], aMs('2026-09-01T02:03:00'))[0].recorrido, false);
+  assert.equal(segmentosEnInstante(primera.detalles[0], aMs('2026-09-01T02:03:00'))[0].recorrido, true);
 });
 
 test('la ruta se atenúa después del fin de entrega, nunca durante el servicio', () => {

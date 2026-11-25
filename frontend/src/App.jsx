@@ -6,8 +6,7 @@ import { averiasEn } from './averias.js';
 import { pedidosEnInstante } from './pedidosEnVivo.js';
 import { aIso, aMs, crearRelojAnclado, desfaseConServidor, transcurridoObjetivo,
   tiempoRealTranscurrido } from './reloj.js';
-import { fecha, fechaConSegundos, numero, duracion, VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA,
-  DURACION_5_DIAS_MIN } from './formato.js';
+import { VELOCIDAD_DIA_A_DIA, VELOCIDADES_DIA_A_DIA, DURACION_5_DIAS_MIN } from './formato.js';
 import BarraSuperior from './components/BarraSuperior.jsx';
 import BarraLateral from './components/BarraLateral.jsx';
 import { ESCENARIO_DE_SECCION, TITULOS_SECCION, seccionActiva } from './secciones.js';
@@ -31,6 +30,8 @@ const ID_VALIDO = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const LISTA_VACIA = [];
 const ALGORITMO = 'TABU';          // el planificador del caso; ya no se elige desde la pantalla
 const SIN_LIMITES = { desde: '', hasta: '' };
+/** Cada cuánto se redibuja el mapa mientras corre una corrida: unas 20 veces por segundo. */
+const LATIDO_MS = 50;
 
 /** El periodo de datos (aaaamm) sale de la fecha elegida, no de un selector aparte. */
 const periodoDe = dia => (dia && dia.length >= 7 ? dia.slice(0, 4) + dia.slice(5, 7) : '');
@@ -126,6 +127,8 @@ export default function App() {
   const estadoPrevio = useRef(null);
   const [menuAbierto, setMenuAbierto] = useState(false);
   const [rielAbierto, setRielAbierto] = useState(false);
+  // Lugar de la cabecera donde el mapa pone sus controles, para no taparse con ellos.
+  const [ranuraControles, setRanuraControles] = useState(null);
 
   const periodo = periodoDe(dia);
   // El calendario se acota al catálogo: así no se puede pedir un mes sin datos.
@@ -371,13 +374,13 @@ export default function App() {
   const corriendo = !!ejecucion && (ejecucion.estado === 'EN_CURSO' || ejecucion.estado === 'PAUSADA');
   const modoVivo = corriendo && enVivo && !!ejecucion.ritmo;
 
-  // Latido de pantalla (~10 por segundo); el instante sale del reloj anclado, no del latido.
+  // Latido de pantalla (~20 por segundo); el instante sale del reloj anclado, no del latido.
   useEffect(() => {
     if (!corriendo) return undefined;
     let cuadro;
     let ultimo = 0;
     const latir = marca => {
-      if (marca - ultimo >= 100) { ultimo = marca; setAhora(Date.now()); }
+      if (marca - ultimo >= LATIDO_MS) { ultimo = marca; setAhora(Date.now()); }
       cuadro = requestAnimationFrame(latir);
     };
     cuadro = requestAnimationFrame(latir);
@@ -504,17 +507,32 @@ export default function App() {
     ? inventarioEn(fotogramas, inventario, instanteReproducido) : null,
   [ejecucion?.id, fotogramas, inventario, instanteReproducido]);
   const planReproducido = planVigenteEn(planes, instanteReproducido);
+  // Situación de pedidos y envíos: recorren todos los planes, así que se recalculan una vez por
+  // minuto simulado y no en cada latido. Los hitos del simulador caen en minutos enteros.
+  const minutoReproducido = instanteReproducido ? `${instanteReproducido.slice(0, 16)}:00` : null;
   const rutasReproducidas = modoVivo ? planReproducido?.rutas || ejecucion.rutas || LISTA_VACIA
     : planReproducido?.rutas || (!fotogramas.length ? ejecucion?.rutas : null) || LISTA_VACIA;
   const enInstanteActual = modoVivo || !fotogramas.length || indiceFotograma >= fotogramas.length - 1;
   const calculandoRutas = !!ejecucion && (ejecucion.estado === 'PENDIENTE'
     || (ejecucion.estado === 'EN_CURSO' && ejecucion.calculandoRutas && enInstanteActual));
-  const rutasVisibles = calculandoRutas ? LISTA_VACIA : rutasReproducidas.map(ruta => ({
-    ...ruta, paradas: ruta.paradas.filter(p => !p.fechaRegistro
-      || aMs(p.fechaRegistro) <= aMs(instanteReproducido))
-  })).filter(ruta => ruta.paradas.length > 0);
-  const enviosDelInstante = useMemo(() => enviosEn(planes, instanteReproducido),
-    [planes, instanteReproducido]);
+  // Las rutas solo cambian al llegar otro plan o al registrarse un pedido; entre latidos se
+  // devuelve el mismo arreglo para que el mapa no recalcule todos los caminos 20 veces por segundo.
+  const rutasVisiblesPrevias = useRef({ fuente: null, firma: '', rutas: LISTA_VACIA });
+  const rutasVisibles = (() => {
+    if (calculandoRutas) return LISTA_VACIA;
+    const instanteMs = aMs(instanteReproducido);
+    const visibles = rutasReproducidas.map(ruta => ruta.paradas.filter(p => !p.fechaRegistro
+      || aMs(p.fechaRegistro) <= instanteMs));
+    const firma = visibles.map(paradas => paradas.length).join(',');
+    const previas = rutasVisiblesPrevias.current;
+    if (previas.fuente === rutasReproducidas && previas.firma === firma) return previas.rutas;
+    const rutas = rutasReproducidas.map((ruta, indice) => ({ ...ruta, paradas: visibles[indice] }))
+      .filter(ruta => ruta.paradas.length > 0);
+    rutasVisiblesPrevias.current = { fuente: rutasReproducidas, firma, rutas };
+    return rutas;
+  })();
+  const enviosDelInstante = useMemo(() => enviosEn(planes, minutoReproducido),
+    [planes, minutoReproducido]);
   const rutasDelEnvio = useMemo(() => rutasDeEnvioEnMapa(
     enviosDelInstante, seleccionEnvio, rutasVisibles),
   [enviosDelInstante, seleccionEnvio, rutasVisibles]);
@@ -549,25 +567,25 @@ export default function App() {
   }, [ejecucion?.estado]);
 
   // «En ruta» y «entregado» no existen en la API: se deducen de los hitos de los trayectos.
-  const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(instanteReproducido), aMs),
-    [planes, instanteReproducido]);
+  const estadosPedido = useMemo(() => estadosDePedido(planes, aMs(minutoReproducido), aMs),
+    [planes, minutoReproducido]);
   const pedidosDelInstante = useMemo(() => pedidosEnInstante(
-    planes, aMs(instanteReproducido), aMs, estadosPedido),
-  [planes, instanteReproducido, estadosPedido]);
+    planes, aMs(minutoReproducido), aMs, estadosPedido),
+  [planes, minutoReproducido, estadosPedido]);
   // Las cuatro situaciones usan la misma colección temporal que el mapa y la tabla.
   // Cada ID de fracción se conserva: no equivale al número de originales completos.
+  // Se cuentan productos (lo que pide el caso) y, como dato secundario, pedidos/fracciones.
   const resumenPedidos = useMemo(() => {
-    if (!ejecucion) return { entregados: null, enRuta: null, planificados: null, porPlanificar: null };
-    let enRuta = 0, planificados = 0;
+    const vacio = () => ({ productos: 0, pedidos: 0 });
+    const resumen = { ENTREGADO: vacio(), EN_RUTA: vacio(), PLANIFICADO: vacio(), NO_ASIGNADO: vacio() };
+    if (!ejecucion) return null;
     for (const pedido of pedidosDelInstante) {
-      if (pedido.situacion === 'EN_RUTA') enRuta += 1;
-      else if (pedido.situacion === 'PLANIFICADO') planificados += 1;
+      const grupo = resumen[pedido.situacion];
+      if (!grupo) continue;
+      grupo.pedidos += 1;
+      grupo.productos += Number(pedido.cantidad) || 0;
     }
-    return {
-      entregados: pedidosDelInstante.filter(p => p.situacion === 'ENTREGADO').length,
-      enRuta, planificados,
-      porPlanificar: pedidosDelInstante.filter(p => p.situacion === 'NO_ASIGNADO').length
-    };
+    return resumen;
   }, [ejecucion, pedidosDelInstante]);
 
   // Duración de reproducción de Simulación: ventanas publicadas más la ventana actual.
@@ -806,27 +824,18 @@ export default function App() {
     } finally { accionCorrida.current = false; setOcupado(false); }
   }
 
-  // La franja superior solo reparte los pedidos entre sus cuatro situaciones; el resto de
-  // cifras de la corrida vive en el riel y en el mapa.
-  const numeroMetrica = valor => numero(valor ?? 0);
-  const chips = ES_MAPA(vista) ? [
-    { etiqueta: 'ENTREGADOS', valor: numeroMetrica(resumenPedidos.entregados),
-      titulo: 'Pedidos/fracciones conocidos con entrega observada hasta el reloj visible.' },
-    { etiqueta: 'EN RUTA', valor: numeroMetrica(resumenPedidos.enRuta),
+  // Indicador flotante del mapa: productos por situación, con los pedidos como dato menor.
+  const indicadoresPedidos = resumenPedidos ? [
+    { clave: 'ENTREGADO', etiqueta: 'Entregados', icono: 'caja', ...resumenPedidos.ENTREGADO,
+      titulo: 'Productos con entrega observada hasta el reloj visible.' },
+    { clave: 'EN_RUTA', etiqueta: 'En ruta', icono: 'ruta', ...resumenPedidos.EN_RUTA,
       titulo: 'Su unidad ya salió y el pedido sigue pendiente. Deducido de los hitos del simulador.' },
-    { etiqueta: 'PLANIFICADOS', valor: numeroMetrica(resumenPedidos.planificados),
+    { clave: 'PLANIFICADO', etiqueta: 'Planificados', icono: 'calendario', ...resumenPedidos.PLANIFICADO,
       titulo: 'Con ruta en el plan vigente, pero su unidad todavía no sale.' },
-    { etiqueta: 'POR PLANIFICAR', valor: numeroMetrica(resumenPedidos.porPlanificar),
-      alerta: !!resumenPedidos.porPlanificar,
-      titulo: 'Pedidos/fracciones conocidos sin ruta en el instante visible.' }
-  ] : [];
-
-  const meta = vista === 'simulacion' ? [
-    { etiqueta: 'Fecha y hora de simulación', valor: fechaConSegundos(instanteReproducido) },
-    { etiqueta: 'Duración', valor: duracion(transcurridoMs ?? 0) }
-  ] : vista === 'operacion' ? [
-    { etiqueta: modoVivo ? 'En vivo' : 'Reloj', valor: fecha(instanteReproducido) }
-  ] : [];
+    { clave: 'NO_ASIGNADO', etiqueta: 'Por planificar', icono: 'reloj', ...resumenPedidos.NO_ASIGNADO,
+      alerta: resumenPedidos.NO_ASIGNADO.pedidos > 0,
+      titulo: 'Productos conocidos sin ruta en el instante visible.' }
+  ] : LISTA_VACIA;
 
   const configuracion = {
     escenario, setEscenario: cambiarEscenario, detalle, limites,
@@ -851,8 +860,9 @@ export default function App() {
 
   return <div className={`app ${menuAbierto ? '' : 'mini'} ${enMapa ? 'mapview' : ''} ${vista === 'operacion' ? 'vista-operacion' : ''} ${enMapa && rielAbierto ? 'con-riel' : ''}`}>
     <BarraSuperior titulo={TITULOS_SECCION[seccionActiva(vista, escenario)]} menuAbierto={menuAbierto} ejecucion={ejecucion}
-      alAlternarMenu={() => setMenuAbierto(!menuAbierto)} chips={chips} meta={meta}
-      modoOperacion={enMapa} ahoraReal={enMapa ? ahora : null} />
+      alAlternarMenu={() => setMenuAbierto(!menuAbierto)} enMapa={enMapa}
+      ahoraReal={enMapa ? ahora : null} instanteSimulado={ejecucion ? instanteReproducido : null}
+      alRanuraControles={setRanuraControles} />
 
     <BarraLateral vista={vista} escenario={escenario} alCambiar={cambiarSeccion} />
     {menuAbierto && <div className="scrim" onClick={() => setMenuAbierto(false)} />}
@@ -886,7 +896,9 @@ export default function App() {
             setReproduccionIniciada(true);
             setReproduciendo(!reproduciendo);
           }} alCambiarPaso={setPasoMs}
-          instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)} />
+          instante={instanteReproducido || (dia ? `${dia}T${hora}:00` : null)}
+          indicadoresPedidos={indicadoresPedidos} mostrarIndicadores={!!ejecucion}
+          ranuraControles={ranuraControles} />
         {seleccionEnvio && <div className="envio-en-mapa" role="status">
           <span><b>{seleccionEnvio.tipo === 'original' ? 'Envío' : 'Fracción'} {seleccionEnvio.id}</b>
             {rutasDelEnvio.rutas.length

@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ANCHO, ALTO, xEnMapa, yEnMapa, fotogramaObservadoEn, nodosBloqueados,
   prepararTrayectos, posicionEnTrayecto, posicionContinuaEnTrayecto, cargaEnTrayecto, trazosConRecorrido,
   segmentosEnInstante, rutaFinalizadaEn, orientacionEnTrayecto, orientacionEnFotogramas,
@@ -11,6 +12,7 @@ import { fecha, numero, duracion, colorDeRuta, textoRitmo, estadoVehiculo } from
 import DibujoVehiculo, { IconoLeyenda } from './DibujoVehiculo.jsx';
 import FondoUrbano from './FondoUrbano.jsx';
 import IconoUI from './IconoUI.jsx';
+import PanelFlotante from './PanelFlotante.jsx';
 import { estadoDeStock, ETIQUETAS_STOCK, NIVELES_STOCK } from '../stock.js';
 import { estadoDeCarga as nivelDeCarga, estadoDeGrupo as nivelDeGrupo, etiquetasDeCarga,
   NIVELES_CARGA } from '../carga.js';
@@ -95,7 +97,8 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   pedidosDelInstante = [], averias = LISTA_VACIA,
   unidadSeleccionada = null, alSeleccionarUnidad = null,
   almacenSeleccionado = null, alSeleccionarAlmacen = null,
-  umbrales = UMBRALES_POR_OMISION }) {
+  umbrales = UMBRALES_POR_OMISION, indicadoresPedidos = LISTA_VACIA, mostrarIndicadores = true,
+  ranuraControles = null }) {
   // Los cortes del semáforo salen de la configuración del sistema (B06).
   const estadoDeCarga = vehiculo => nivelDeCarga(vehiculo, umbrales.carga);
   const estadoDeGrupo = grupo => nivelDeGrupo(grupo, umbrales.carga);
@@ -108,20 +111,14 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const [tamanoLienzo, setTamanoLienzo] = useState({ ancho: 0, alto: 0 });
   const [arrastrando, setArrastrando] = useState(false);
   const [filtros, setFiltros] = useState(false);
+  const [lugarFiltros, setLugarFiltros] = useState(null);
+  const botonFiltros = useRef(null);
   const [flota, setFlota] = useState('');
   const [estadoPedido, setEstadoPedido] = useState('');
   const [nivelCarga, setNivelCarga] = useState('');
   const [nivelStock, setNivelStock] = useState('');
-  // Cerrada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa.
-  const [pieAbierto, setPieAbierto] = useState(false);
   const [reproductorAbierto, setReproductorAbierto] = useState(false);
   const reproductorId = useId();
-  const [estadoAbierto, setEstadoAbierto] = useState(true);
-  const [estadoPos, setEstadoPos] = useState(() => ({ x: 16,
-    y: typeof window !== 'undefined' && window.innerWidth <= 600 ? 184 : 140 }));
-  const estadoRef = useRef(null);
-  const arrastreEstado = useRef(null);
-  const estadoMovido = useRef(false);
   const svgRef = useRef(null);
   const lienzoRef = useRef(null);
   const tipRef = useRef(null);
@@ -137,20 +134,6 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
 
   useEffect(() => { setReproductorAbierto(false); }, [modoOperacion]);
 
-  function limitarEstado(x, y) {
-    const lienzo = lienzoRef.current?.getBoundingClientRect();
-    const panel = estadoRef.current?.getBoundingClientRect();
-    if (!lienzo || !panel) return { x, y };
-    return { x: limitar(x, 0, Math.max(0, lienzo.width - panel.width)),
-      y: limitar(y, 0, Math.max(0, lienzo.height - panel.height)) };
-  }
-
-  useEffect(() => {
-    const ajustar = () => setEstadoPos(actual => limitarEstado(actual.x, actual.y));
-    window.addEventListener('resize', ajustar);
-    return () => window.removeEventListener('resize', ajustar);
-  }, [estadoAbierto]);
-
   useEffect(() => {
     const lienzo = lienzoRef.current;
     if (!lienzo) return undefined;
@@ -165,22 +148,17 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     return () => { observador?.disconnect(); window.removeEventListener('resize', medir); };
   }, []);
 
-  function iniciarArrastreEstado(evento, desdeBoton = false) {
-    if (evento.button !== 0 || (!desdeBoton && evento.target.closest('button'))) return;
-    estadoMovido.current = false;
-    arrastreEstado.current = { clientX: evento.clientX, clientY: evento.clientY,
-      x: estadoPos.x, y: estadoPos.y };
-    evento.currentTarget.setPointerCapture(evento.pointerId);
-  }
-
-  function moverEstado(evento) {
-    if (!arrastreEstado.current) return;
-    const inicio = arrastreEstado.current;
-    if (Math.hypot(evento.clientX - inicio.clientX, evento.clientY - inicio.clientY) > 4)
-      estadoMovido.current = true;
-    if (!estadoMovido.current) return;
-    setEstadoPos(limitarEstado(inicio.x + evento.clientX - inicio.clientX,
-      inicio.y + evento.clientY - inicio.clientY));
+  // El panel de filtros cuelga del botón de la cabecera, sin salirse del mapa.
+  function alternarFiltros() {
+    if (!filtros) {
+      const boton = botonFiltros.current?.getBoundingClientRect();
+      const lienzo = lienzoRef.current?.getBoundingClientRect();
+      setLugarFiltros(boton && lienzo ? {
+        left: limitar(boton.left - lienzo.left, 8, Math.max(8, lienzo.width - 286)),
+        top: Math.max(8, boton.bottom - lienzo.top + 6), right: 'auto'
+      } : null);
+    }
+    setFiltros(!filtros);
   }
 
   const marco = encuadre(vista);
@@ -463,6 +441,10 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       animacionGiro.current = null;
     };
   }, [firmaGiro]);
+  // Unidades detenidas sobre un almacén: se dibujan como una pastilla al costado del almacén para
+  // no montar el ícono, el semáforo y el contador encima de la casa.
+  const nodosAlmacen = new Set(almacenes.map(a => `${a.ubicacion.x},${a.ubicacion.y}`));
+  const enAlmacen = lugar => nodosAlmacen.has(`${lugar.x},${lugar.y}`);
   const salidas = [...new Map(rutas.filter(ruta => ruta.origen && enFlota(ruta.tipoVehiculo))
     .map(ruta => [`${ruta.origen.x},${ruta.origen.y}`, ruta.origen])).values()];
   const vacio = rutas.length === 0 && vehiculosTodos.length === 0 && noAsignados.length === 0 && !mapaDatos;
@@ -471,9 +453,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const y = yEnMapa;
   // Los marcadores logísticos crecen con el zoom sin llegar a tapar el mapa.
   const escala = 1 / vista.z;
-  const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala})`;
+  // Con muchas paradas o unidades a la vez (25-30 rutas simultáneas) los marcadores se encogen un
+  // poco mientras se mira la ciudad entera; al acercarse recuperan su tamaño.
+  const marcadoresVisibles = puntos.length + adicionales.length;
+  const densidadParadas = vista.z < 2 && marcadoresVisibles > 40 ? .72 : 1;
+  const densidadUnidades = vista.z < 2 && gruposVehiculos.length > 20 ? .82 : 1;
+  const fijo = (px, py) => `translate(${x(px)},${y(py)}) scale(${escala * densidadParadas})`;
   const escalaIcono = Math.min(1.8, Math.sqrt(vista.z)) / vista.z;
   const icono = (px, py) => `translate(${x(px)},${y(py)}) scale(${escalaIcono})`;
+  const iconoUnidad = (px, py) => `translate(${x(px)},${y(py)}) scale(${escalaIcono * densidadUnidades})`;
 
   // Ficha al pasar el cursor: el <title> nativo tarda en salir y no admite varias líneas.
   function mostrarTip(evento, titulo, lineas, vehiculoId = null, almacenId = null) {
@@ -591,29 +579,89 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
   const almacenTip = tip?.almacenId ? almacenes.find(a => a.id === tip.almacenId) : null;
   const fichaAlmacen = almacenTip ? fichaDeAlmacen(almacenTip) : null;
 
-  return <div className="mapa-lienzo" ref={lienzoRef}>
-    {/* El estado conserva los mismos cálculos y puede desplazarse dentro del lienzo. */}
-    <div ref={estadoRef} className={`mapa-estado-flotante ${estadoAbierto ? '' : 'mapa-estado-cerrado'}`}
-      style={{ left: estadoPos.x, top: estadoPos.y }}>
-      {estadoAbierto ? <section className="mapa-estado-panel" aria-label="Estado de flota y almacenes">
-        <header onPointerDown={iniciarArrastreEstado} onPointerMove={moverEstado}
-          onPointerUp={() => { arrastreEstado.current = null; }}
-          onPointerCancel={() => { arrastreEstado.current = null; }}>
-          <IconoUI nombre="metricas" size={18} /><strong>Estado</strong>
-          <button type="button" aria-label="Cerrar estado" onClick={() => setEstadoAbierto(false)}>×</button>
-        </header>
-        <div className="mapa-estado-datos"><IndicadoresMapa flotaGlobal={flotaGlobal}
-          almacenesGlobal={almacenesGlobal} etiquetasCarga={ETIQUETAS_CARGA} /></div>
-      </section> : <button type="button" className="mapa-estado-reabrir"
-        onPointerDown={evento => iniciarArrastreEstado(evento, true)}
-        onPointerMove={moverEstado}
-        onPointerUp={() => { arrastreEstado.current = null; }}
-        onPointerCancel={() => { arrastreEstado.current = null; }}
-        onClick={() => { if (estadoMovido.current) estadoMovido.current = false;
-          else setEstadoAbierto(true); }} aria-label="Mostrar estado de flota y almacenes">
-        <IconoUI nombre="metricas" size={16} /> Estado
-      </button>}
+  // En el teléfono los indicadores empiezan plegados: abiertos taparían medio mapa.
+  const pantallaAngosta = typeof window !== 'undefined' && window.matchMedia('(max-width: 600px)').matches;
+  const posicionDeslizador = enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma;
+  const contadorSimulacion = enVivo
+    ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${ejecucion?.ritmo?.ventana ?? 0}/${ejecucion?.ritmo?.ventanas ?? '—'}`
+    : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length}` : 'Reproducción 0/0';
+  const tituloContador = modoOperacion ? contadorOperacion : enVivo
+    ? `${contadorSimulacion} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
+    : `${contadorSimulacion}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}`;
+  // El momento simulado ya está en la cabecera (SIM): aquí solo quedan las duraciones.
+  const reproductor = <div id={reproductorId}
+    className={`mapa-reproductor ${reproductorAbierto ? '' : 'mapa-reproductor-cerrado'}`}
+    aria-hidden={!reproductorAbierto} inert={!reproductorAbierto}>
+    <div className="reproduccion-controles">
+      {enVivo
+        ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
+            onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
+        : <button type="button" className="reproduccion-principal" disabled={!hayReproduccion} onClick={alReproducir}>
+            <span className="reproduccion-play" aria-hidden="true">{hayReproduccion && reproduciendo ? 'Ⅱ' : '▶'}</span>
+            {!hayReproduccion ? 'Reproducir' : reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}
+          </button>}
+      <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)}
+        disabled={!hayReproduccion} value={posicionDeslizador}
+        style={{ '--progreso': `${Math.round(100 * posicionDeslizador / Math.max(1, fotogramas.length - 1))}%` }}
+        onChange={evento => alCambiarFotograma(Number(evento.target.value))}
+        aria-label="Seleccionar instante de la reproducción" />
+      <span className="reproduccion-contador" title={tituloContador}>
+        {modoOperacion ? contadorOperacion : contadorSimulacion}</span>
+      <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
+        disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
+      <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
+        disabled={indiceFotograma >= fotogramas.length - 1}
+        onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
+      {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo" onClick={alVolverEnVivo}>En vivo</button>}
     </div>
+    <div className="reproduccion-tiempos">
+      {!modoOperacion && <div className="reproduccion-tiempo reproduccion-simulado"
+        title="Tiempo simulado desde el inicio de la corrida hasta el instante mostrado">
+        <IconoUI nombre="reloj" size={22} />
+        <span><small>SIM transcurrido</small><b>{hayReproduccion ? duracion(aMs(instante) - aMs(ejecucion?.inicio)) : '—'}</b></span>
+      </div>}
+      <div className="reproduccion-tiempo reproduccion-real" title="Tiempo real desde que se inició la corrida">
+        <IconoUI nombre="reloj" size={22} />
+        <span><small>REAL transcurrido</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
+      </div>
+      <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!velocidadHabilitada}
+        onChange={evento => alCambiarPaso(Number(evento.target.value))}>
+        <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
+      </select></label>
+    </div>
+  </div>;
+
+  // Controles del mapa: viven en la cabecera para que el lienzo quede libre.
+  const controles = <div className="barra-mapa" role="toolbar" aria-label="Controles del mapa">
+    <div className="barra-mapa-zoom">
+      <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
+      <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
+    </div>
+    <button type="button" className="barra-mapa-boton" onClick={() => animarVista(VISTA_INICIAL)} title="Ver toda la ciudad" aria-label="Ver toda la ciudad">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <path d="M4 9V4h5M4 4l5 5M15 4h5v5M20 4l-5 5M4 15v5h5M4 20l5-5M15 20h5v-5M20 20l-5-5" />
+      </svg>
+      <span>Todo</span>
+    </button>
+    <button type="button" ref={botonFiltros} className={`barra-mapa-boton ${filtros || hayFiltro ? 'activo' : ''}`}
+      aria-expanded={filtros} onClick={alternarFiltros} title="Filtrar el mapa"
+      aria-label={hayFiltro ? 'Filtrar (hay filtros activos)' : 'Filtrar'}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+        <path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z" />
+      </svg>
+      <span>Filtrar{hayFiltro ? ' ·' : ''}</span>
+    </button>
+    {mostrarIndicadores && <button type="button" className={`barra-mapa-boton ${reproductorAbierto ? 'activo' : ''}`}
+      aria-expanded={reproductorAbierto} aria-controls={reproductorId} title="Mostrar u ocultar la reproducción" aria-label="Reproducción"
+      onClick={() => setReproductorAbierto(abierto => !abierto)}>
+      <IconoUI nombre={reproductorAbierto ? 'pausa' : 'reproducir'} size={14} />
+      <span>Reproducción</span>
+    </button>}
+  </div>;
+
+  return <div className="mapa-lienzo" ref={lienzoRef}>
     <svg className="mapa-fondo-urbano"
       viewBox={`${marco.cx - anchoFondo / 2} ${marco.cy - altoFondo / 2} ${anchoFondo} ${altoFondo}`}
       aria-hidden="true" focusable="false" pointerEvents="none">
@@ -627,14 +675,15 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       {bloqueosActivos.flatMap((bloqueo, indice) => bloqueo.nodos.map((nodo, n) =>
         <rect key={`b${indice}-${n}`} x={x(nodo.x) - BLOQUEO.lado / 2} y={y(nodo.y) - BLOQUEO.lado / 2}
           width={BLOQUEO.lado} height={BLOQUEO.lado} rx="1" fill={BLOQUEO.color} fillOpacity={BLOQUEO.opacidad}><title>{`Bloqueo activo hasta ${fecha(bloqueo.fin)}`}</title></rect>))}
-      {segmentosDibujados.map(({ ruta, camino, recorrido, terminada, clave }) => {
+      {segmentosDibujados.map(({ ruta, camino, recorrido, terminada, clave, desfase }) => {
         const coordenadas = camino.map(p => `${x(p.x)},${y(p.y)}`).join(' ');
         const resaltada = ruta.id === rutaSeleccionada || ruta.id === rutaEnFoco;
         const seleccionadaPorEnvio = rutasDelEnvio.has(ruta.id);
         return <g key={clave} style={{ '--ruta-color': colorDeRuta(ruta) }}
           className={`trazo-ruta ${terminada ? 'trazo-final' : ''} ${resaltada ? 'trazo-resaltado' : ''} ${seleccionadaPorEnvio ? 'trazo-envio-resaltado' : rutasDelEnvio.size ? 'trazo-envio-atenuado' : ''}`}>
           <polyline className={`trazo-visible ${recorrido ? 'trazo-recorrido' : 'trazo-pendiente'}`}
-            points={coordenadas} fill="none" />
+            points={coordenadas} fill="none"
+            style={desfase ? { strokeDashoffset: desfase * 10 * escalaFondo } : undefined} />
           <polyline className="trazo-interaccion" points={coordenadas} fill="none"
             tabIndex="0" role="button" aria-label={`Resaltar ruta ${ruta.id} del vehículo ${ruta.vehiculoId}`}
             onMouseEnter={() => setRutaEnFoco(ruta.id)} onMouseLeave={() => setRutaEnFoco(null)}
@@ -715,14 +764,16 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
         const activa = grupo.some(v => v.id === unidadSeleccionada);
         const medidas = medidasDeIcono(grupo[0].tipo);
         const lugar = posicionDibujada(grupo[0]);
+        const aparcadas = enAlmacen(lugar);
+        const ficha = fichaDeUnidades(grupo);
         return <g key={grupo[0].id}
-        className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''} ${activa ? 'unidad-activa' : ''}`}
-        transform={icono(lugar.x, lugar.y)}
+        className={`mapa-unidad ${grupo.length > 1 ? 'grupo-vehiculos' : ''} ${activa ? 'unidad-activa' : ''} ${aparcadas ? 'unidades-aparcadas' : ''}`}
+        transform={iconoUnidad(lugar.x, lugar.y)}
         role={grupo.length > DETALLE_MAXIMO || elegible ? 'button' : 'img'}
         tabIndex={grupo.length > DETALLE_MAXIMO || elegible ? 0 : undefined}
-        aria-label={`${fichaDeUnidades(grupo).titulo}. ${fichaDeUnidades(grupo).lineas.join('. ')}`}
-        onPointerEnter={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
-        onPointerMove={e => { const f = fichaDeUnidades(grupo); mostrarTip(e, f.titulo, f.lineas, grupo.length === 1 ? grupo[0].id : null); }}
+        aria-label={`${ficha.titulo}. ${ficha.lineas.join('. ')}`}
+        onPointerEnter={e => mostrarTip(e, ficha.titulo, ficha.lineas, grupo.length === 1 ? grupo[0].id : null)}
+        onPointerMove={e => mostrarTip(e, ficha.titulo, ficha.lineas, grupo.length === 1 ? grupo[0].id : null)}
         onPointerLeave={ocultarTip}
         onPointerDown={e => { if (grupo.length > DETALLE_MAXIMO || elegible) e.stopPropagation(); }}
         onClick={e => {
@@ -734,64 +785,49 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           if (grupo.length > DETALLE_MAXIMO) { e.preventDefault(); fijarDetalle(e, grupo); }
           else if (elegible) { e.preventDefault(); alSeleccionarUnidad(activa ? null : grupo[0].id); }
         }}>
+        {aparcadas ? <PastillaAparcadas grupo={grupo} activa={activa}
+          nivel={estadoDeGrupo(grupo)} averia={averiaDeGrupo(grupo, averiasVigentes)} /> : <>
         {/* Resalte de la unidad elegida, en el mapa o en la lista del riel (F01). */}
-        {activa && <circle className="unidad-halo" r={medidas.halo} />}
-        {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
-        <g ref={nodo => {
-          if (nodo) {
-            iconosVehiculos.current.set(grupo[0].id, nodo);
-            nodo.setAttribute('transform', `rotate(${angulosMostrados.current.get(grupo[0].id) ?? 0})`);
-          } else iconosVehiculos.current.delete(grupo[0].id);
-        }}>
-          <svg x={-medidas.lado / 2} y={-medidas.lado / 2} width={medidas.lado} height={medidas.lado} viewBox="0 0 32 32">
-            {!TIPOS_CENITALES.has(grupo[0].tipo) && <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />}
-            <DibujoVehiculo tipo={grupo[0].tipo} />
-          </svg>
-        </g>
-        <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
-          cx={medidas.carga.x} cy={medidas.carga.y} r="4.5" pointerEvents="none" />
-        {/* Avería por tipo (D10-D12): triángulo en el hombro izquierdo, para no confundirse con
-            el semáforo de carga —que es un círculo, al otro lado— ni con el color de la ruta. */}
-        {(() => {
-          const averia = averiaDeGrupo(grupo, averiasVigentes);
-          if (!averia) return null;
-          return <g className={`mapa-averia mapa-averia-${averia.tipo.toLowerCase()}`}
-            transform={`translate(${medidas.averia.x}, ${medidas.averia.y})`}
-            pointerEvents="none">
-            <title>{ETIQUETAS_AVERIA[averia.tipo]}</title>
-            <path d="M0 -6.2 L5.6 4 H-5.6 Z" />
-            <text y="3" textAnchor="middle">{averia.tipo.slice(-1)}</text>
-          </g>;
-        })()}
-        {grupo.length > 1 && <>
-          <circle className="grupo-contador" cx="12" cy="11" r="8" />
-          <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
+          {activa && <circle className="unidad-halo" r={medidas.halo} />}
+          {/* Ícono de vehículo con la cantidad en un globito: no debe confundirse con una parada. */}
+          <g ref={nodo => {
+            if (nodo) {
+              iconosVehiculos.current.set(grupo[0].id, nodo);
+              nodo.setAttribute('transform', `rotate(${angulosMostrados.current.get(grupo[0].id) ?? 0})`);
+            } else iconosVehiculos.current.delete(grupo[0].id);
+          }}>
+            <svg x={-medidas.lado / 2} y={-medidas.lado / 2} width={medidas.lado} height={medidas.lado} viewBox="0 0 32 32">
+              {!TIPOS_CENITALES.has(grupo[0].tipo) && <circle cx="16" cy="16" r="15" fill="white" stroke="#c8dce0" strokeWidth="1.5" />}
+              <DibujoVehiculo tipo={grupo[0].tipo} />
+            </svg>
+          </g>
+          <circle className={`mapa-carga mapa-carga-${estadoDeGrupo(grupo)}`}
+            cx={medidas.carga.x} cy={medidas.carga.y} r="4.5" pointerEvents="none" />
+          {/* Avería por tipo (D10-D12): triángulo en el hombro izquierdo, para no confundirse con
+              el semáforo de carga —que es un círculo, al otro lado— ni con el color de la ruta. */}
+          {(() => {
+            const averia = averiaDeGrupo(grupo, averiasVigentes);
+            if (!averia) return null;
+            return <g className={`mapa-averia mapa-averia-${averia.tipo.toLowerCase()}`}
+              transform={`translate(${medidas.averia.x}, ${medidas.averia.y})`}
+              pointerEvents="none">
+              <title>{ETIQUETAS_AVERIA[averia.tipo]}</title>
+              <path d="M0 -6.2 L5.6 4 H-5.6 Z" />
+              <text y="3" textAnchor="middle">{averia.tipo.slice(-1)}</text>
+            </g>;
+          })()}
+          {grupo.length > 1 && <>
+            <circle className="grupo-contador" cx="12" cy="11" r="8" />
+            <text x="12" y="14.5" textAnchor="middle">{grupo.length}</text>
+          </>}
         </>}
       </g>;
       })}
     </svg>
 
-    <div className="mapa-herramientas">
-      <button type="button" onClick={() => acercar(1.5)} disabled={vista.z >= ZOOM_MAX} title="Acercar" aria-label="Acercar">+</button>
-      <button type="button" onClick={() => acercar(1 / 1.5)} disabled={vista.z <= ZOOM_MIN} title="Alejar" aria-label="Alejar">−</button>
-      <button type="button" className="ancho" onClick={() => animarVista(VISTA_INICIAL)} title="Ver toda la ciudad">
-        <svg className="mapa-todo-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-          <path d="M4 9V4h5M4 4l5 5M15 4h5v5M20 4l-5 5M4 15v5h5M4 20l5-5M15 20h5v-5M20 20l-5-5" />
-        </svg>
-        Todo
-      </button>
-      <button type="button" className={`ancho ${filtros || hayFiltro ? 'activo' : ''}`}
-        aria-expanded={filtros} onClick={() => setFiltros(!filtros)}>
-        <svg className="mapa-filtrar-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-          <path d="M3 5h18l-7 8v5l-4 2v-7L3 5Z" />
-        </svg>
-        Filtrar{hayFiltro ? ' ·' : ''}
-      </button>
-    </div>
+    {ranuraControles ? createPortal(controles, ranuraControles) : controles}
 
-    {filtros && <div className="mapa-filtros">
+    {filtros && <div className="mapa-filtros" style={lugarFiltros || undefined}>
       <div><span className="filtro-titulo"><IconoUI nombre="camion" size={19} className="filtro-encabezado-icono" />Flota</span><div className="filtro-opciones">
         <button type="button" className={flota === '' ? 'activo' : ''} onClick={() => setFlota('')}>Todas</button>
         {TIPOS_FLOTA.map(([valor, texto]) => <button key={valor} type="button"
@@ -824,113 +860,33 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
       </div>
     </div>}
 
-    <div className="mapa-abajo">
-    {!modoOperacion ? <div id={reproductorId}
-      className={`mapa-reproductor ${reproductorAbierto ? '' : 'mapa-reproductor-cerrado'}`}
-      aria-hidden={!reproductorAbierto} inert={!reproductorAbierto}>
-      <div className="reproduccion-controles">
-        {enVivo
-          ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
-              onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
-          : <button type="button" className="reproduccion-principal" disabled={!hayReproduccion} onClick={alReproducir}>
-              <span className="reproduccion-play" aria-hidden="true">{hayReproduccion && reproduciendo ? 'Ⅱ' : '▶'}</span>
-              {!hayReproduccion ? 'Reproducir' : reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}
-            </button>}
-        <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)}
-          disabled={!hayReproduccion}
-          value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
-          style={{ '--progreso': `${Math.round(100 * (enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma) / Math.max(1, fotogramas.length - 1))}%` }}
-          onChange={evento => alCambiarFotograma(Number(evento.target.value))}
-          aria-label="Seleccionar instante de la reproducción" />
-        <span className="reproduccion-contador" title={enVivo
-          ? `${ejecucion?.estado === 'PAUSADA' ? 'En pausa' : 'En vivo'} · ${fecha(instante)} · ventana ${ejecucion?.ritmo?.ventana ?? 0} de ${ejecucion?.ritmo?.ventanas ?? '—'} · ${ejecucion?.ritmo ? textoRitmo(ejecucion.ritmo) : ''}`
-          : !hayReproduccion ? 'Sin reproducción disponible'
-            : `Reproducción ${indiceFotograma + 1}/${fotogramas.length} · ${fecha(fotograma?.reloj)}${finalizada && reproduciendo ? ' · cálculo terminado' : ''}`}>
-          {enVivo ? `En vivo · ${ejecucion?.ritmo?.ventana ?? 0}/${ejecucion?.ritmo?.ventanas ?? '—'}`
-            : hayReproduccion ? `Reproducción ${indiceFotograma + 1}/${fotogramas.length}` : 'Reproducción 0/0'}
-        </span>
-        <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
-          disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
-        <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
-          disabled={indiceFotograma >= fotogramas.length - 1}
-          onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
-      </div>
-      <div className="reproduccion-tiempos">
-        <div className="reproduccion-tiempo reproduccion-momento">
-          <IconoUI nombre="calendario" size={22} />
-          <span><small>Momento simulado</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
+    {mostrarIndicadores && <>
+      {indicadoresPedidos.length > 0 && <PanelFlotante id="productos" className="panel-productos"
+        abiertoInicial={!pantallaAngosta}
+        titulo="Productos" icono={<IconoUI nombre="caja" size={15} />}
+        resumen={`${numero(indicadoresPedidos[0].productos)} entregados`}>
+        <div className="productos-rejilla">
+          {indicadoresPedidos.map(dato => <div key={dato.clave} className="productos-celda"
+            data-alerta={dato.alerta ? '' : undefined} title={dato.titulo}>
+            <span className="productos-etiqueta"><IconoUI nombre={dato.icono} size={13} />{dato.etiqueta}</span>
+            <b>{numero(dato.productos)}</b>
+            <small>{numero(dato.pedidos)} pedido(s)</small>
+          </div>)}
         </div>
-        <div className="reproduccion-tiempo reproduccion-simulado">
-          <IconoUI nombre="reloj" size={22} />
-          <span><small>Tiempo simulado transcurrido</small><b>{hayReproduccion ? duracion(aMs(instante) - aMs(ejecucion?.inicio)) : '—'}</b></span>
-        </div>
-        <div className="reproduccion-tiempo reproduccion-real">
-          <IconoUI nombre="reloj" size={22} />
-          <span><small>Tiempo real transcurrido</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
-        </div>
-        <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!velocidadHabilitada}
-          onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-          <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
-        </select></label>
-      </div>
-    </div> : <div id={reproductorId}
-      className={`mapa-reproductor ${reproductorAbierto ? '' : 'mapa-reproductor-cerrado'}`}
-      aria-hidden={!reproductorAbierto} inert={!reproductorAbierto}>
-      <div className="reproduccion-controles">
-        {enVivo
-          ? <button type="button" className="reproduccion-principal" disabled={fotogramas.length < 2}
-              onClick={() => alCambiarFotograma(Math.max(0, fotogramas.length - 2))}>Historial</button>
-          : <button type="button" className="reproduccion-principal" disabled={!hayReproduccion} onClick={alReproducir}>
-              <span className="reproduccion-play" aria-hidden="true">{hayReproduccion && reproduciendo ? 'Ⅱ' : '▶'}</span>
-              {!hayReproduccion ? 'Reproducir' : reproduciendo ? 'Pausar' : indiceFotograma >= fotogramas.length - 1 ? 'Repetir' : 'Reproducir'}
-            </button>}
-        <input type="range" min="0" max={Math.max(0, fotogramas.length - 1)}
-          disabled={!hayReproduccion} value={enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma}
-          style={{ '--progreso': `${Math.round(100 * (enVivo ? Math.max(0, fotogramas.length - 1) : indiceFotograma) / Math.max(1, fotogramas.length - 1))}%` }}
-          onChange={evento => alCambiarFotograma(Number(evento.target.value))}
-          aria-label="Seleccionar instante de la reproducción" />
-        <span className="reproduccion-contador" title={contadorOperacion}>{contadorOperacion}</span>
-        <button type="button" className="reproduccion-flecha" aria-label="Retroceder un instante"
-          disabled={indiceFotograma <= 0} onClick={() => alCambiarFotograma(indiceFotograma - 1)}>‹</button>
-        <button type="button" className="reproduccion-flecha" aria-label="Avanzar un instante"
-          disabled={indiceFotograma >= fotogramas.length - 1}
-          onClick={() => alCambiarFotograma(indiceFotograma + 1)}>›</button>
-        {!enVivo && alVolverEnVivo && <button type="button" className="reproduccion-vivo" onClick={alVolverEnVivo}>En vivo</button>}
-      </div>
-      <div className="reproduccion-tiempos">
-        <div className="reproduccion-tiempo reproduccion-momento">
-          <IconoUI nombre="calendario" size={22} />
-          <span><small>Fecha y hora de simulación</small><b>{hayReproduccion ? fecha(instante) : '—'}</b></span>
-        </div>
-        <div className="reproduccion-tiempo reproduccion-real">
-          <IconoUI nombre="reloj" size={22} />
-          <span><small>Duración</small><b>{hayReproduccion ? duracion(transcurridoMs) : '—'}</b></span>
-        </div>
-        <label className="reproduccion-velocidad">Velocidad <select value={pasoMs} disabled={!velocidadHabilitada}
-          onChange={evento => alCambiarPaso(Number(evento.target.value))}>
-          <option value="800">Lenta</option><option value="300">Normal</option><option value="200">Rápida</option>
-        </select></label>
-      </div>
-    </div>}
-
-    <button type="button" className="mapa-reproduccion-toggle"
-      aria-expanded={reproductorAbierto} aria-controls={reproductorId}
-      onClick={() => setReproductorAbierto(abierto => !abierto)}>
-      <span aria-hidden="true">{reproductorAbierto ? 'Ⅱ' : '▶'}</span>
-      {reproductorAbierto ? 'Contraer' : 'Reproducción'}
-      <i aria-hidden="true" />
-    </button>
-
-    <div className={`mapa-pie ${pieAbierto ? '' : 'mapa-pie-cerrado'}`}>
-      <button type="button" className="mapa-pie-tirador" aria-expanded={pieAbierto}
-        onClick={() => setPieAbierto(!pieAbierto)}>
-        Leyenda <i aria-hidden="true" />
-      </button>
-      {pieAbierto && <div className="mapa-pie-cuerpo">
+      </PanelFlotante>}
+      <PanelFlotante id="estado" className="panel-estado" titulo="Estado" abiertoInicial={!pantallaAngosta}
+        icono={<IconoUI nombre="metricas" size={15} />}
+        resumen={`Flota ${flotaGlobal.porcentaje ?? '—'} % · Alm. ${almacenesGlobal.porcentaje ?? '—'} %`}>
+        <div className="mapa-estado-datos"><IndicadoresMapa flotaGlobal={flotaGlobal}
+          almacenesGlobal={almacenesGlobal} etiquetasCarga={ETIQUETAS_CARGA} /></div>
+      </PanelFlotante>
+      {/* Plegada por omisión: con 25 o 30 rutas simultáneas la leyenda tapa una franja del mapa. */}
+      <PanelFlotante id="leyenda" className="panel-leyenda" titulo="Leyenda" abiertoInicial={false}>
         <div className="leyenda">
+          <span><svg className="leyenda-trazo" viewBox="0 0 28 8" aria-hidden="true" focusable="false"><path d="M1 4h26" /></svg> Ruta pendiente (color de su unidad)</span>
+          <span><svg className="leyenda-trazo leyenda-trazo-recorrido" viewBox="0 0 28 8" aria-hidden="true" focusable="false"><path d="M1 4h26" /></svg> Tramo ya recorrido</span>
           <span><i className="punto punto-salida" /> S: salida</span>
           <span><i className="punto punto-llegada" /> Números: orden de entrega (aro: última)</span>
-          <span><i className="punto punto-ruta" /> Rutas simultáneas por color</span>
           <span><i className="punto punto-alerta" /> Sin asignar</span>
           <span><i className="punto punto-bloqueo" /> Bloqueo activo ({bloqueosActivos.length})</span>
           {['TIPO_1', 'TIPO_2', 'TIPO_3'].map(tipo => <span key={tipo} title={ETIQUETAS_AVERIA[tipo]}>
@@ -947,10 +903,12 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
           <IconoLeyenda tipo="MOTO" texto="Moto" />
           <IconoLeyenda tipo="BICICLETA" texto="Bicicleta" />
           <span><i className="punto punto-vehiculo" /> Ícono con número: varias unidades en el mismo nodo</span>
+          <span><span className="leyenda-aparcadas">▪ 12</span> Unidades detenidas en un almacén</span>
         </div>
-      </div>}
-    </div>
-    </div>
+      </PanelFlotante>
+    </>}
+
+    {mostrarIndicadores && <div className="mapa-abajo">{reproductor}</div>}
 
     {calculandoRutas && <div className="mapa-cartel mapa-calculando" role="status" aria-live="polite">
       <span className="indicador-calculo" aria-hidden="true" />
@@ -992,6 +950,30 @@ export default function Mapa({ ejecucion, rutas, calculandoRutas, rutaSelecciona
     {vacio && <div className="mapa-cartel"><b>Sin operación cargada</b>
       <span>Elige un periodo en el panel de la derecha e inicia una corrida para ver el mapa.</span></div>}
   </div>;
+}
+
+/**
+ * Unidades detenidas en un almacén: una pastilla al lado derecho de la casa con la silueta del tipo
+ * más frecuente y la cantidad. El borde de la pastilla toma el semáforo de carga del grupo.
+ */
+function PastillaAparcadas({ grupo, activa, nivel, averia }) {
+  const porTipo = new Map();
+  for (const v of grupo) porTipo.set(v.tipo, (porTipo.get(v.tipo) || 0) + 1);
+  const tipo = [...porTipo].sort((a, b) => b[1] - a[1])[0][0];
+  const texto = String(grupo.length);
+  const ancho = 25 + texto.length * 6.5;
+  return <g transform="translate(17, 9)">
+    {activa && <rect className="unidad-halo" x="-4" y="-13" width={ancho + 8} height="26" rx="13" />}
+    <rect className={`aparcadas-fondo mapa-carga-${nivel}`} x="0" y="-9" width={ancho} height="18" rx="9" />
+    <svg x="3" y="-7" width="14" height="14" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+      <DibujoVehiculo tipo={tipo} />
+    </svg>
+    <text className="aparcadas-cantidad" x={19} y="3.6">{texto}</text>
+    {averia && <g className={`mapa-averia mapa-averia-${averia.tipo.toLowerCase()}`}
+      transform={`translate(${ancho + 3}, -8) scale(.8)`} pointerEvents="none">
+      <path d="M0 -6.2 L5.6 4 H-5.6 Z" /><text y="3" textAnchor="middle">{averia.tipo.slice(-1)}</text>
+    </g>}
+  </g>;
 }
 
 /**

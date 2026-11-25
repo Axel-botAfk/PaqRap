@@ -148,7 +148,6 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
           <td><button type="button" className="enlace-fila" onClick={() => quitar(c.periodo)}>Quitar carga</button></td>
         </tr>)}</tbody>
       </table></div>
-      <div className="card-pie"><span>Quitar una carga devuelve ese mes a los datos originales del sistema.</span></div>
     </div>}
 
     {resultado && <>

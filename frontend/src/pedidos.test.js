@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { comprobaciones, hayErrores, aRegistro, parsearVentas, periodoDelNombre,
-  diasDelMes, seguimientoDePedido } from './pedidos.js';
+  diasDelMes, seguimientoDePedido, solicitudPedido, recepcionParaCorrida } from './pedidos.js';
 
 const aMs = valor => new Date(valor).getTime();
 
@@ -14,6 +14,57 @@ test('un borrador correcto no deja errores', () => {
   const lista = comprobaciones(valido);
   assert.equal(hayErrores(lista), false);
   assert.equal(lista.filter(c => c.nivel === 'ok').length, 5);
+});
+
+test('el registro envía datos tipados, fecha local e identificador de reintento', () => {
+  assert.deepEqual(solicitudPedido(valido, 'clave', 'corrida'), {
+    solicitudId: 'clave', cliente: 'c4910', destino: { x: 56, y: 30 }, cantidad: 2,
+    horasPlazo: 36, fechaRegistro: '2026-01-01T01:30', ejecucionId: 'corrida'
+  });
+});
+
+test('la recepción propuesta no retrocede al truncar los segundos del próximo corte', () => {
+  assert.equal(recepcionParaCorrida({ ritmo: { relojHasta: '2026-09-01T23:59:30' } }), '2026-09-02T00:00');
+  assert.equal(recepcionParaCorrida({ reloj: '2026-09-01T08:00:00' }), '2026-09-01T08:00');
+  assert.equal(recepcionParaCorrida(null), '');
+});
+
+test('las altas rechazan fechas inexistentes, cantidades excesivas y clientes que rompen el archivo', () => {
+  for (const recepcion of ['nada', '2026-02-30T08:00', '0000-01-01T08:00', '2026-01-01T24:00']) {
+    assert.equal(hayErrores(comprobaciones({ ...valido, recepcion })), true);
+  }
+  for (const cliente of ['a,b', 'a\nb', 'x'.repeat(33)]) {
+    assert.equal(hayErrores(comprobaciones({ ...valido, cliente })), true);
+  }
+  assert.equal(hayErrores(comprobaciones({ ...valido, cantidad: '100001' })), true);
+});
+
+test('la vista previa rechaza periodos invalidos y normaliza BOM y saltos CR', () => {
+  for (const periodo of ['', '202613', '202601extra', '000001']) {
+    assert.equal(parsearVentas('01d08h00m:1,1,c1,1,36', periodo).archivoInvalido, true);
+  }
+  const v = parsearVentas('\uFEFF01d08h00m:1,1,c1,1,36\r02d08h00m:2,2,c2,2,36\r', '202601');
+  assert.equal(v.pedidos.length, 2);
+  assert.equal(v.errores.length, 0);
+});
+
+test('vista previa y API coinciden en límites de cantidad, plazo y cliente', () => {
+  const v = parsearVentas([
+    '01d08h00m:1,1,c1,100000,744',
+    '01d08h00m:1,1,c1,100001,36',
+    '01d08h00m:1,1,c1,1,745',
+    '01d08h00m:1,1,   ,1,36',
+    `01d08h00m:1,1,${'x'.repeat(33)},1,36`,
+    '01d08h00m:1,1,c\t1,1,36',
+    '01d08h00m:1,1,c1,9999999999999999999999999,36'
+  ].join('\n'), '202601');
+  assert.equal(v.pedidos.length, 1);
+  assert.equal(v.errores.length, 6);
+});
+
+test('vista previa limita tamaño y líneas antes de permitir incorporar', () => {
+  assert.equal(parsearVentas('a'.repeat(4 * 1024 * 1024 + 1), '202601').archivoInvalido, true);
+  assert.equal(parsearVentas('\n'.repeat(100000), '202601').archivoInvalido, true);
 });
 
 test('el nodo fuera de la retícula bloquea el registro', () => {

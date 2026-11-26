@@ -17,7 +17,7 @@ La ciudad se modela como una retícula de 70 km por 50 km con nodos cada kilóme
 
 ## Estado actual
 
-Los datos de entrada se leen de los archivos del curso o de MySQL (perfil `mysql`). Las corridas y el mantenimiento de flota viven en memoria mientras el servidor está activo y se pierden al reiniciar. Sobre una corrida se puede pausar, reanudar, detener y registrar averías; la flota se mantiene desde la pantalla «Mantenimiento de flota» (alta y baja de unidades, nodo de partida y capacidad, velocidad y costo por tipo). Al terminar cada escenario se presenta el reporte de la última planificación estable, imprimible y descargable en CSV. El alta de pedidos y la carga de archivos siguen sin endpoint; lo que falta está anotado en [docs/api-pendiente.md](docs/api-pendiente.md). No hay autenticación, así que el despliegue debe permanecer bajo acceso controlado.
+Los datos de entrada se leen de los archivos del curso o de MySQL (perfil `mysql`). Las corridas y el mantenimiento de flota viven en memoria mientras el servidor está activo y se pierden al reiniciar. Sobre una corrida se puede pausar, reanudar, detener y registrar averías; la flota se mantiene desde la pantalla «Mantenimiento de flota» (alta y baja de unidades, nodo de partida y capacidad, velocidad y costo por tipo). Al terminar cada escenario se presenta el reporte de la última planificación estable, imprimible y descargable en CSV. El registro individual de pedidos se guarda en el servidor y puede incorporarse a la corrida activa desde el siguiente corte aplicable. La carga masiva de ventas reemplaza el mes para futuras corridas, conservando las altas individuales. Ambas se conservan en `PAQRAP_UPLOAD_DIR`, sin modificar las ventas originales de MySQL; el contrato está en [backend/README.md](backend/README.md). No hay autenticación, así que el despliegue debe permanecer bajo acceso controlado.
 
 ## Estructura
 
@@ -42,4 +42,4 @@ mvn clean package && java -jar backend/target/paqrap-backend-1.0-SNAPSHOT.jar
 npm ci --prefix frontend && npm run dev --prefix frontend
 ```
 
-El backend escucha en `127.0.0.1:8081` y Vite reenvía `/api` y `/ws` hacia él. Detalles de despliegue en [deploy/README.md](deploy/README.md); cómo trabajamos, en [CONTRIBUTING.md](CONTRIBUTING.md).
+El backend escucha en `127.0.0.1:8080` y Vite reenvía `/api` y `/ws` hacia él. Detalles de despliegue en [deploy/README.md](deploy/README.md); cómo trabajamos, en [CONTRIBUTING.md](CONTRIBUTING.md).

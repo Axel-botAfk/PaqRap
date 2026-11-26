@@ -37,13 +37,30 @@ class ApiController {
     private final EjecucionesService ejecuciones;
     private final FlotaService flota;
     private final CargasDePedidos cargas;
+    private final PedidosManuales pedidos;
 
     ApiController(DatosFuente datos, EjecucionesService ejecuciones, FlotaService flota,
-                  CargasDePedidos cargas) {
+                  CargasDePedidos cargas, PedidosManuales pedidos) {
         this.datos = datos;
         this.ejecuciones = ejecuciones;
         this.flota = flota;
         this.cargas = cargas;
+        this.pedidos = pedidos;
+    }
+
+    @PostMapping("/datos/pedidos")
+    ResponseEntity<ApiModels.PedidoRegistradoVista> registrarPedido(
+            @Valid @RequestBody ApiModels.NuevoPedidoRequest solicitud) {
+        var vista = solicitud.ejecucionId() == null
+                ? pedidos.vista(pedidos.guardar(solicitud), null)
+                : ejecuciones.registrarPedido(solicitud.ejecucionId(), solicitud, pedidos);
+        return ResponseEntity.status(HttpStatus.CREATED).body(vista);
+    }
+
+    @GetMapping("/datos/pedidos")
+    List<ApiModels.PedidoRegistradoVista> pedidosManuales(@RequestParam String periodo) {
+        return pedidos.delMes(DatosService.parsearPeriodo(periodo)).stream()
+                .map(p -> pedidos.vista(p, null)).toList();
     }
 
     /** Carga masiva del archivo mensual de ventas: reemplaza los pedidos de ese mes. */

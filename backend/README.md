@@ -32,6 +32,11 @@ resultados **todavía no** se persisten.
 | `GET /api/datos/periodos` | Lista de periodos `aaaamm` disponibles. |
 | `GET /api/datos/periodos/{aaaamm}` | Conteos del periodo. |
 | `GET /api/datos/mapa/{aaaamm}` | Almacenes y bloqueos del periodo para la GUI. |
+| `POST /api/datos/pedidos` | Guarda un pedido individual; con `ejecucionId` lo incorpora también a esa corrida activa. `solicitudId` permite reintentar sin duplicarlo. |
+| `GET /api/datos/pedidos?periodo=aaaamm` | Consulta las altas manuales del mes, incluso sin una corrida iniciada. |
+| `POST /api/datos/ventas?periodo=aaaamm&nombre=...` | Valida un TXT mensual y reemplaza sus ventas base para las siguientes corridas; conserva altas manuales, bloqueos y mantenimiento. |
+| `GET /api/datos/ventas` | Historial de cargas mensuales vigentes. |
+| `DELETE /api/datos/ventas/{aaaamm}` | Quita la carga mensual y vuelve a la fuente base; conserva las altas individuales. |
 | `POST /api/ejecuciones` | Inicia una corrida; devuelve 202 e identificador. |
 | `GET /api/ejecuciones/{id}` | Estado e instantanea mas reciente. |
 | `GET /api/ejecuciones/{id}/fotogramas?desde=N` | Posiciones ejecutadas al cierre de cada salto, en páginas de hasta 100 fotogramas. |
@@ -59,6 +64,28 @@ Ejemplo de cuerpo para operacion diaria:
 ```json
 {"escenario":"OPERACION_DIARIA","algoritmo":"GRASP","inicio":"2026-09-01T00:00:00","semilla":20260901}
 ```
+
+Alta individual (`POST /api/datos/pedidos`, JSON):
+
+```json
+{"solicitudId":"cf0ac90d-2227-47f3-8a1d-eb99e7d52f07","cliente":"c4910","destino":{"x":28,"y":14},"cantidad":2,"horasPlazo":36,"fechaRegistro":"2026-09-01T08:00","ejecucionId":null}
+```
+
+La GUI genera una clave por alta y la conserva al reintentar; reutilizarla para datos diferentes
+devuelve 409. Con `ejecucionId`, la fecha debe quedar desde el siguiente corte no procesado hasta
+antes del fin de la corrida: no se reescribe el pasado. El pedido se encola, participa en el plan
+posterior y genera `PEDIDO_REGISTRADO`; la aceptación no garantiza su asignación o entrega.
+El mismo pedido queda disponible en futuras corridas, sumado a las ventas del periodo.
+
+Ambas cargas se guardan en `PAQRAP_UPLOAD_DIR` (por defecto `cargas/`), también con la fuente
+MySQL: el usuario SQL sigue siendo de solo lectura. No se insertan en las tablas de ventas.
+Los archivos `pedidos.aaaamm.txt` conservan las altas e identificadores; `ventas.aaaamm.txt`
+conserva la carga mensual. Configurar una carpeta persistente y escribible en el despliegue.
+Si la variable se deja vacía, la respuesta indica `persistente=false`; si una carpeta configurada
+no se puede escribir, la API devuelve 503 sin aplicar la modificación. Las cargas mensuales
+no modifican una corrida ya iniciada. Límite: 4 MiB UTF-8 y 100000 líneas; los errores por línea
+se informan y se descartan, pero un archivo sin pedidos válidos se rechaza y conserva el anterior.
+Al cruzar meses, los correlativos repetidos del TXT se distinguen por el periodo.
 
 Para cinco dias usar `PERIODO_5_DIAS`; para colapso usar `COLAPSO` y,
 opcionalmente, `horizonteDias` entre 1 y 60. El segundo algoritmo se llama

@@ -8,16 +8,42 @@ export const PLAZOS = [4, 8, 12, 18, 36];
 
 /** Capacidad de la unidad más grande. Por encima, el pedido va en entregas parciales. */
 export const CAPACIDAD_MAYOR = 24;
+export const MAX_ARCHIVO_BYTES = 4 * 1024 * 1024;
+export const MAX_LINEAS = 100_000;
 
 // El mismo patrón que compila LectorVentas, para aceptar y rechazar exactamente lo mismo.
 const REGISTRO = /^(\d{1,2})d(\d{1,2})h(\d{1,2})m:(-?\d+),(-?\d+),([^,]+),(\d+),(\d+)$/;
 const PERIODO_EN_NOMBRE = /(\d{4})(\d{2})/;
 
 export function diasDelMes(aaaamm) {
+  if (!/^\d{6}$/.test(String(aaaamm))) return 0;
   const anio = Number(String(aaaamm).slice(0, 4));
   const mes = Number(String(aaaamm).slice(4, 6));
   if (!anio || !mes || mes < 1 || mes > 12) return 0;
-  return new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  return mes === 2 ? (anio % 4 === 0 && (anio % 100 !== 0 || anio % 400 === 0) ? 29 : 28)
+    : [4, 6, 9, 11].includes(mes) ? 30 : 31;
+}
+
+export function fechaPedidoValida(valor) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(valor || '');
+  return !!m && Number(m[3]) >= 1 && Number(m[3]) <= diasDelMes(m[1] + m[2])
+    && Number(m[4]) <= 23 && Number(m[5]) <= 59;
+}
+
+/** El JSON conserva la fecha local del problema; no se convierte a UTC. */
+export function solicitudPedido(borrador, solicitudId, ejecucionId = null) {
+  return { solicitudId, cliente: borrador.cliente.trim(),
+    destino: { x: Number(borrador.x), y: Number(borrador.y) },
+    cantidad: Number(borrador.cantidad), horasPlazo: Number(borrador.plazo),
+    fechaRegistro: borrador.recepcion, ejecucionId };
+}
+
+export function recepcionParaCorrida(ejecucion) {
+  const corte = ejecucion?.ritmo?.relojHasta || ejecucion?.reloj;
+  if (!corte) return '';
+  // Solo aritmética sobre el reloj local del problema: no depende de la zona del navegador.
+  const ms = Date.parse(`${corte}Z`);
+  return Number.isFinite(ms) ? new Date(Math.ceil(ms / 60000) * 60000).toISOString().slice(0, 16) : '';
 }
 
 /** El periodo sale del nombre del archivo, igual que en el backend (`ventas202601.txt`). */
@@ -48,6 +74,8 @@ export function comprobaciones(borrador) {
   const nombre = String(cliente).trim();
   lista.push(!nombre
     ? { clave: 'cliente', nivel: 'error', texto: 'Falta el código de cliente.' }
+    : nombre.length > 32 || /[,\u0000-\u001f\u007f-\u009f]/.test(nombre)
+      ? { clave: 'cliente', nivel: 'error', texto: 'El cliente admite hasta 32 caracteres, sin comas ni saltos de línea.' }
     : /^c\d+$/i.test(nombre)
       ? { clave: 'cliente', nivel: 'ok', texto: `Cliente ${nombre}.` }
       : { clave: 'cliente', nivel: 'aviso', texto: `«${nombre}» no sigue la forma cNNNN del archivo de ventas.` });
@@ -60,19 +88,19 @@ export function comprobaciones(borrador) {
 
   lista.push(vacio(cantidad)
     ? { clave: 'cantidad', nivel: 'error', texto: 'Falta la cantidad de producto P.' }
-    : Number.isInteger(unidades) && unidades > 0
+    : Number.isInteger(unidades) && unidades > 0 && unidades <= 100_000
       ? unidades > CAPACIDAD_MAYOR
         ? { clave: 'cantidad', nivel: 'aviso', texto: `${unidades} unidades superan los ${CAPACIDAD_MAYOR} de un auto: se atenderá con entregas parciales.` }
         : { clave: 'cantidad', nivel: 'ok', texto: `${unidades} unidades caben en una sola unidad de transporte.` }
-      : { clave: 'cantidad', nivel: 'error', texto: 'La cantidad debe ser un entero mayor que cero.' });
+      : { clave: 'cantidad', nivel: 'error', texto: 'La cantidad debe ser un entero entre 1 y 100000.' });
 
   lista.push(PLAZOS.includes(horas)
     ? { clave: 'plazo', nivel: 'ok', texto: horas === 36 ? 'Plazo regular de 36 h.' : `Plazo priorizado de ${horas} h.` }
     : { clave: 'plazo', nivel: 'error', texto: `El plazo debe ser uno de ${PLAZOS.join(', ')} horas.` });
 
-  lista.push(recepcion
+  lista.push(fechaPedidoValida(recepcion)
     ? { clave: 'recepcion', nivel: 'ok', texto: 'Fecha y hora de recepción registradas.' }
-    : { clave: 'recepcion', nivel: 'error', texto: 'Falta la fecha y hora de recepción.' });
+    : { clave: 'recepcion', nivel: 'error', texto: 'Falta una fecha y hora de recepción válida.' });
 
   return lista;
 }
@@ -92,8 +120,8 @@ export function aRegistro({ cliente, x, y, cantidad, plazo, recepcion }) {
 
 /**
  * Lee el archivo mensual de ventas y valida su estructura antes de incorporarlo, que es lo
- * que pide la exigencia. A diferencia del backend —que aborta en la primera línea mala— aquí
- * se recorren todas y se devuelven los fallos juntos: el operador necesita verlos de una vez.
+ * que pide la exigencia. Tanto aquí como en la API se recorren todas las líneas y se reúnen
+ * los fallos: el operador necesita verlos de una vez.
  * El correlativo avanza con cada línea leída, válida o no, para que los identificadores
  * coincidan con los que asignaría el backend una vez corregido el archivo.
  */
@@ -104,7 +132,15 @@ export function parsearVentas(texto, aaaamm) {
   let correlativo = 0;
   let leidas = 0;
 
-  String(texto || '').split(/\r?\n/).forEach((cruda, indice) => {
+  const normalizado = String(texto || '').replaceAll('\uFEFF', '').replace(/\r\n?/g, '\n');
+  const lineas = normalizado.split('\n');
+  if (!dias || new TextEncoder().encode(normalizado).length > MAX_ARCHIVO_BYTES || lineas.length > MAX_LINEAS) {
+    return { pedidos, errores: [{ numero: 0, linea: '', motivo: !dias
+      ? 'Indique un periodo válido (aaaamm).'
+      : 'El archivo supera el límite de 4 MiB o 100000 líneas.' }], leidas, archivoInvalido: true };
+  }
+
+  lineas.forEach((cruda, indice) => {
     const linea = cruda.trim();
     if (!linea || linea.startsWith('#')) return;   // el lector salta vacías y comentarios
     leidas += 1;
@@ -130,8 +166,11 @@ export function parsearVentas(texto, aaaamm) {
     if (dias && (dia < 1 || dia > dias)) return falla(`El día ${dia} no existe en el periodo ${aaaamm}.`);
     if (hora > 23 || minuto > 59) return falla(`La hora ${hora}:${minuto} no es válida.`);
     if (!enLaReticula(x, y)) return falla(`El nodo (${x}, ${y}) cae fuera de la retícula de ${ANCHO} × ${ALTO}.`);
-    if (cantidad <= 0) return falla('La cantidad debe ser mayor que cero.');
-    if (horas <= 0) return falla('El plazo debe ser mayor que cero.');
+    if (!cliente || cliente.length > 32 || /[\u0000-\u001f\u007f-\u009f]/.test(cliente)) {
+      return falla('El código de cliente debe tener entre 1 y 32 caracteres, sin caracteres de control.');
+    }
+    if (!Number.isSafeInteger(cantidad) || cantidad < 1 || cantidad > 100_000) return falla('La cantidad debe ser un entero entre 1 y 100000.');
+    if (!Number.isSafeInteger(horas) || horas < 1 || horas > 744) return falla('El plazo debe ser un entero entre 1 y 744 horas.');
 
     pedidos.push({
       id: `P-${String(correlativo).padStart(5, '0')}`,

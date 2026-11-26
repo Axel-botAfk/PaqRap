@@ -5,6 +5,7 @@ import PedidoCargaMasiva from './PedidoCargaMasiva.jsx';
 import PedidoSeguimiento from './PedidoSeguimiento.jsx';
 import IconoUI from '../components/IconoUI.jsx';
 import EnviosOriginales from './EnviosOriginales.jsx';
+import PedidosManualesLista from './PedidosManualesLista.jsx';
 
 const ETIQUETA = {
   PLANIFICADO: ['Planificado', 'n'], EN_RUTA: ['En ruta', 'a'],
@@ -24,14 +25,16 @@ const LIMITE = 100;
  * pantallas de pedidos del prototipo —gestión, alta, carga masiva y seguimiento— en pestañas,
  * para no añadir entradas al menú lateral, que sigue teniendo las cuatro vistas del caso.
  *
- * La tabla muestra lo que publica el backend. El alta y la carga masiva no tienen endpoint:
- * cada una dice en su pie hasta dónde llega.
+ * Las altas manuales se consultan al servidor; el historial operativo muestra solo lo que
+ * realmente publica la corrida. La carga mensual afecta a las siguientes corridas.
  */
 export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo, mapaDatos, fuente,
   pedidosDelInstante = null, instante = null, alVerEnMapa = null, alActualizarDatos = () => {} }) {
   const [pestana, setPestana] = useState('registrados');
   const [filtro, setFiltro] = useState('');
   const [seguido, setSeguido] = useState(null);
+  const [version, setVersion] = useState(0);
+  const actualizarDatos = () => { setVersion(v => v + 1); alActualizarDatos(); };
 
   const filas = useMemo(() => pedidosDelInstante ?? [
     ...(ejecucion?.rutas || []).flatMap(ruta => ruta.paradas.map(pedido => ({
@@ -54,13 +57,15 @@ export default function HojaPedidos({ ejecucion, estadosPedido, planes, periodo,
         onClick={() => { setPestana(clave); setSeguido(null); }}>{titulo}</button>)}
     </div>
 
-    {pestana === 'nuevo' && <PedidoNuevo almacenes={mapaDatos?.almacenes || []} />}
-    {pestana === 'masiva' && <PedidoCargaMasiva periodo={periodo} alActualizarDatos={alActualizarDatos} />}
+    {pestana === 'nuevo' && <PedidoNuevo almacenes={mapaDatos?.almacenes || []}
+      ejecucion={ejecucion} alActualizarDatos={actualizarDatos} />}
+    {pestana === 'masiva' && <PedidoCargaMasiva periodo={periodo} alActualizarDatos={actualizarDatos} />}
 
     {pestana === 'registrados' && (enSeguimiento
       ? <PedidoSeguimiento pedido={enSeguimiento} planes={planes}
         situacion={enSeguimiento.situacion} alVolver={() => setSeguido(null)} />
       : <>
+        <PedidosManualesLista periodo={periodo} version={version} />
         <EnviosOriginales planes={planes} instante={instante || ejecucion?.reloj}
           alVerEnMapa={ejecucion ? alVerEnMapa : null} />
         <div className="kpis">

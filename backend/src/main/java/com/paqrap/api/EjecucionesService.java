@@ -146,6 +146,8 @@ final class EjecucionesService {
                 datos.almacenes().stream().map(Vistas::stock).toList());
         // La flota se fija al crear la corrida: el mantenimiento posterior no la altera.
         ejecucion.flota = flota.vigente();
+        entrada.ventas().stream().map(Pedido::getId).filter(p -> p.startsWith("MAN-"))
+                .forEach(ejecucion.pedidosManuales::add);
         ejecuciones.put(id, ejecucion);
         try {
             ejecucion.tarea = executor.submit(() -> correr(ejecucion, request, dias, entrada));
@@ -219,6 +221,35 @@ final class EjecucionesService {
             registrarEvento(ejecucion, "AVERIA_REGISTRADA", instante, unidadId, null, null,
                     "Avería " + solicitud.tipo() + " registrada; se aplica en el siguiente corte.");
             return vista;
+        }
+    }
+
+    ApiModels.PedidoRegistradoVista registrarPedido(UUID id, ApiModels.NuevoPedidoRequest solicitud,
+                                                    PedidosManuales pedidos) {
+        Pedido candidato = PedidosManuales.validar(solicitud);
+        Ejecucion ejecucion = obtener(id);
+        synchronized (ejecucion) {
+            // Un reintento con la misma solicitud devuelve el mismo pedido, sin volver a encolarlo.
+            if (ejecucion.pedidosManuales.contains(candidato.getId())) {
+                return pedidos.vista(pedidos.guardar(solicitud), id);
+            }
+            if ((ejecucion.vista.estado() != Estado.EN_CURSO && ejecucion.vista.estado() != Estado.PAUSADA)
+                    || ejecucion.simulador == null) {
+                throw new ApiException(HttpStatus.CONFLICT, "EJECUCION_NO_ACTIVA",
+                        "La corrida ya no acepta pedidos. Puede registrarlo para una siguiente corrida.");
+            }
+            synchronized (ejecucion.simulador) {
+                try { ejecucion.simulador.validarPedidoEnVivo(candidato); }
+                catch (IllegalArgumentException e) {
+                    throw new ApiException(HttpStatus.CONFLICT, "FECHA_PEDIDO_FUERA_DE_CORRIDA", e.getMessage());
+                }
+                Pedido guardado = pedidos.guardar(solicitud);
+                ejecucion.simulador.registrarPedidoEnVivo(guardado);
+                ejecucion.pedidosManuales.add(guardado.getId());
+                registrarEvento(ejecucion, "PEDIDO_REGISTRADO", guardado.getFechaRegistro(), null,
+                        guardado.getId(), null, "Pedido manual recibido; se incorpora al siguiente corte aplicable.");
+                return pedidos.vista(guardado, id);
+            }
         }
     }
 
@@ -500,6 +531,7 @@ final class EjecucionesService {
                     }
                     });
 
+            simulador.habilitarPedidosEnVivo(request.inicio(), request.inicio().plusDays(dias));
             ejecucion.simulador = simulador;
             actualizar(ejecucion, conRitmo(cambiarEstado(ejecucion.vista, Estado.EN_CURSO,
                     null, null), ritmoVista(ejecucion)), "INICIADA");
@@ -860,6 +892,7 @@ final class EjecucionesService {
         final ArrayDeque<EventoOperacionVista> eventos = new ArrayDeque<>();
         final Set<String> averiadasConocidas = new HashSet<>();
         final Set<String> replanificados = new HashSet<>();
+        final Set<String> pedidosManuales = new HashSet<>();
         Map<String, String> asignacionAnterior = Map.of();
         long siguienteIndice;
         long siguientePlan;

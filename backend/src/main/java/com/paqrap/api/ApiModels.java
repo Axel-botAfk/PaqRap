@@ -49,6 +49,15 @@ public final class ApiModels {
     }
 
     public record RegistrarAveriaRequest(@NotBlank String unidadId, @NotNull TipoAveria tipo) { }
+
+    public record NodoPedidoRequest(@NotNull Integer x, @NotNull Integer y) { }
+    public record NuevoPedidoRequest(@NotNull UUID solicitudId, @NotBlank String cliente,
+            @NotNull @jakarta.validation.Valid NodoPedidoRequest destino, @NotNull Integer cantidad,
+            @NotNull Integer horasPlazo, @NotNull LocalDateTime fechaRegistro, UUID ejecucionId) { }
+
+    public record PedidoRegistradoVista(String id, String cliente, Coordenada destino,
+            int cantidad, int horasPlazo, LocalDateTime fechaRegistro,
+            LocalDateTime fechaLimite, boolean persistente, UUID ejecucionId) { }
     public record AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,
                              String estado, int pedidosAfectados) {
         public AveriaVista(String unidadId, TipoAveria tipo, LocalDateTime instante,

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { fecha, numero } from '../formato.js';
-import { parsearVentas, periodoDelNombre } from '../pedidos.js';
+import { parsearVentas, periodoDelNombre, MAX_ARCHIVO_BYTES } from '../pedidos.js';
 import { api } from '../services/api.js';
 import IconoUI from '../components/IconoUI.jsx';
 
@@ -19,19 +19,28 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
   const [leyendo, setLeyendo] = useState(false);
   const [texto, setTexto] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [quitando, setQuitando] = useState(false);
   const [incorporada, setIncorporada] = useState(null);
   const [error, setError] = useState('');
   const [cargas, setCargas] = useState(null);
+  const [errorCargas, setErrorCargas] = useState('');
   const entrada = useRef(null);
 
-  const refrescarCargas = () => api.cargasVentas().then(setCargas).catch(() => setCargas(null));
+  const refrescarCargas = () => api.cargasVentas().then(lista => {
+    setCargas(lista); setErrorCargas('');
+  }).catch(e => { setCargas(null); setErrorCargas(`No se pudo consultar el historial de cargas: ${e.message}`); });
   useEffect(() => { refrescarCargas(); }, []);
 
   async function tomar(evento) {
     const elegido = evento.target.files?.[0];
     if (!elegido) return;
     setLeyendo(true);
+    setResultado(null);
+    setTexto('');
+    setIncorporada(null);
+    setError('');
     try {
+      if (elegido.size > MAX_ARCHIVO_BYTES) throw new Error('El archivo supera los 4 MiB permitidos.');
       const contenido = await elegido.text();
       const delNombre = periodoDelNombre(elegido.name);
       const usado = delNombre || aaaamm;
@@ -41,6 +50,9 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
       setIncorporada(null);
       setError('');
       setResultado({ ...parsearVentas(contenido, usado), periodo: usado, delNombre: !!delNombre });
+    } catch (e) {
+      setArchivo('');
+      setError(e.message || 'No se pudo leer el archivo. Vuelva a seleccionarlo.');
     } finally {
       setLeyendo(false);
     }
@@ -49,12 +61,15 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
   // Si el periodo se corrige a mano, la vista previa se vuelve a calcular con él.
   function cambiarPeriodo(valor) {
     setAaaamm(valor);
+    setError('');
+    setIncorporada(null);
     if (texto && resultado && !resultado.delNombre) {
       setResultado({ ...parsearVentas(texto, valor), periodo: valor, delNombre: false });
     }
   }
 
   async function incorporar() {
+    if (enviando || leyendo || resultado?.archivoInvalido || !resultado?.pedidos.length) return;
     setEnviando(true);
     setError('');
     try {
@@ -67,6 +82,8 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
   }
 
   async function quitar(periodoCarga) {
+    if (enviando || quitando) return;
+    setQuitando(true);
     setError('');
     try {
       await api.quitarVentas(periodoCarga);
@@ -74,6 +91,7 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
       refrescarCargas();
       alActualizarDatos();
     } catch (e) { setError(e.message); }
+    finally { setQuitando(false); }
   }
 
   function limpiar() {
@@ -90,17 +108,17 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
   return <>
     <div className="card">
       <header><h2>ARCHIVO MENSUAL DE VENTAS</h2>
-        {resultado && <button type="button" className="btn btn-secondary" onClick={limpiar}>Elegir otro</button>}
+        {resultado && <button type="button" className="btn btn-secondary" disabled={enviando || quitando || leyendo} onClick={limpiar}>Elegir otro</button>}
       </header>
       <div className="card-cuerpo">
         <div className="row">
           <div className="field"><label htmlFor="cm-archivo">Archivo</label>
             <input id="cm-archivo" ref={entrada} className="input" type="file" accept=".txt,text/plain"
-              onChange={tomar} /></div>
+              onChange={tomar} disabled={leyendo || enviando || quitando} /></div>
           <div className="field"><label htmlFor="cm-periodo">Periodo (aaaamm)</label>
             <input id="cm-periodo" className="input" value={aaaamm} placeholder="202601"
               onChange={e => cambiarPeriodo(e.target.value.trim())}
-              disabled={resultado?.delNombre} /></div>
+              disabled={resultado?.delNombre || leyendo || enviando || quitando} /></div>
         </div>
         <p className="nota nota-carga"><IconoUI nombre="info" size={24} /><span>Un registro por línea, con el formato
           <code> ##d##h##m:posX,posY,cIdCliente,qq,hl</code>. El periodo sale del nombre del
@@ -111,6 +129,7 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
     </div>
 
     {error && <div role="alert" className="flota-mensaje flota-error">{error}</div>}
+    {errorCargas && <div role="alert" className="flota-mensaje flota-error">{errorCargas}</div>}
 
     {resultado && <div className="card carga-incorporar">
       <header><h2>INCORPORAR AL SISTEMA</h2></header>
@@ -119,15 +138,17 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
           Se incorporaron {numero(incorporada.registros)} pedidos de {incorporada.periodo.slice(0, 4)}-{incorporada.periodo.slice(4)}
           {incorporada.descartados ? ` y se descartaron ${numero(incorporada.descartados)} línea(s) con error` : ''}.
           {incorporada.reemplazo ? ' Reemplazan los pedidos que el sistema tenía para ese mes.' : ' El mes se agregó al calendario.'}
-          {' '}Rige para las corridas que se inicien a partir de ahora.
+          {' '}Rige para las corridas que se inicien a partir de ahora; las corridas activas conservan sus datos.
+          {' '}Los pedidos registrados manualmente se mantienen y se suman a esta carga.
           {!incorporada.persistente && ' Atención: el servidor no pudo guardarlo en disco y se perderá al reiniciarse.'}
         </div> : <>
           <p className="nota">Se enviarán {numero(resultado.pedidos.length)} pedidos válidos de
             {' '}{resultado.periodo ? `${resultado.periodo.slice(0, 4)}-${resultado.periodo.slice(4)}` : '—'}
             {resultado.errores.length ? `; las ${numero(resultado.errores.length)} línea(s) con error se descartan` : ''}.
-            Reemplazan los pedidos de ese mes; los bloqueos y el mantenimiento no cambian.</p>
+            Reemplazan las ventas base o la carga anterior de ese mes; los pedidos manuales,
+            los bloqueos y el mantenimiento no cambian. Las corridas activas conservan sus datos.</p>
           <button type="button" className="btn btn-primary"
-            disabled={enviando || !resultado.pedidos.length || !/^\d{6}$/.test(resultado.periodo || '')}
+            disabled={enviando || leyendo || quitando || resultado.archivoInvalido || !resultado.pedidos.length || !/^\d{6}$/.test(resultado.periodo || '')}
             onClick={incorporar}>
             {enviando ? 'Incorporando…' : `Incorporar ${numero(resultado.pedidos.length)} pedidos`}</button>
         </>}
@@ -145,7 +166,7 @@ export default function PedidoCargaMasiva({ periodo = '', alActualizarDatos = ()
           <td>{numero(c.descartados)}</td>
           <td>{fecha(c.primerPedido)} · {fecha(c.ultimoPedido)}</td>
           <td>{fecha(c.cargadoEn)}</td>
-          <td><button type="button" className="enlace-fila" onClick={() => quitar(c.periodo)}>Quitar carga</button></td>
+          <td><button type="button" className="enlace-fila" disabled={enviando || quitando || leyendo} onClick={() => quitar(c.periodo)}>Quitar carga</button></td>
         </tr>)}</tbody>
       </table></div>
     </div>}

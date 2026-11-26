@@ -157,6 +157,10 @@ public final class Simulador {
     private PlanMantenimiento mantenimiento = PlanMantenimiento.vacio();
     private PlanAverias averias = PlanAverias.vacio();
     private final List<Averia> averiasRegistradasEnVivo = new ArrayList<>();
+    private final List<Pedido> pedidosRegistradosEnVivo = new ArrayList<>();
+    private final Set<String> pedidosEnVivoConocidos = new HashSet<>();
+    private LocalDateTime recepcionDesde;
+    private LocalDateTime recepcionHasta;
     private boolean permiteEntregasParciales = true;
 
     /** Hasta dónde ya se revisaron las averías; evita aplicar dos veces la misma. */
@@ -270,6 +274,29 @@ public final class Simulador {
         averiasRegistradasEnVivo.add(Objects.requireNonNull(averia));
     }
 
+    /** El límite avanza antes de calcular: nunca se modifica una ventana ya ejecutada. */
+    public synchronized void habilitarPedidosEnVivo(LocalDateTime inicio, LocalDateTime fin) {
+        recepcionDesde = inicio;
+        recepcionHasta = fin;
+    }
+
+    public synchronized void validarPedidoEnVivo(Pedido pedido) {
+        if (recepcionDesde == null || recepcionHasta == null
+                || !recepcionDesde.isBefore(recepcionHasta)
+                || pedido.getFechaRegistro().isBefore(recepcionDesde)
+                || !pedido.getFechaRegistro().isBefore(recepcionHasta)) {
+            throw new IllegalArgumentException("La recepción debe estar desde " + recepcionDesde
+                    + " hasta antes de " + recepcionHasta + ". Use el próximo corte de la corrida.");
+        }
+    }
+
+    public synchronized void registrarPedidoEnVivo(Pedido pedido) {
+        if (pedidosEnVivoConocidos.contains(pedido.getId())) return;
+        validarPedidoEnVivo(pedido);
+        pedidosEnVivoConocidos.add(pedido.getId());
+        pedidosRegistradosEnVivo.add(pedido);
+    }
+
     /**
      * Ritmo de reloj de la corrida.
      *
@@ -366,45 +393,55 @@ public final class Simulador {
         while (reloj.isBefore(fin)) {
             long arranqueDelSalto = System.currentTimeMillis();
 
-            // Primero entran los pedidos que ya llegaron: recién entonces la cabeza de la cola
-            // es la próxima llegada de verdad, que es el evento que dispara el corte siguiente.
-            while (!porLlegar.isEmpty() && !porLlegar.get(0).getFechaRegistro().isAfter(reloj)) {
-                Pedido llegado = porLlegar.remove(0);
-                pendientes.add(llegado);
-                recibidos++;
-                productosRecibidos += llegado.getCantidad();
-                cantidadPorPedidoOriginal.merge(
-                        llegado.getIdOriginal(), llegado.getCantidad(), Integer::sum);
-                recibidosPorDia.merge(llegado.getFechaRegistro().toLocalDate(), 1, Integer::sum);
-            }
-
-            aplicarAverias(reloj, unidades, cargaDeLaUnidad, averiadas, averiasOcurridas);
-            trasladarAveriadas(reloj, unidades, cargaDeLaUnidad, averiadas);
-            reincorporarReparadas(reloj, unidades, averiadas);
-
-            LocalDateTime corte = proximoCorte(reloj, fin, porLlegar);
-            for (Averia averia : averiadas.values()) {
-                for (LocalDateTime limite : List.of(averia.instante().plus(
-                        averia.tipo().permanenciaEnElLugar()), averia.reingreso())) {
-                    if (limite.isAfter(reloj) && limite.isBefore(corte)) corte = limite;
+            LocalDateTime corte;
+            synchronized (this) {
+                if (!pedidosRegistradosEnVivo.isEmpty()) {
+                    porLlegar.addAll(pedidosRegistradosEnVivo);
+                    pedidosRegistradosEnVivo.clear();
+                    porLlegar.sort(java.util.Comparator.comparing(Pedido::getFechaRegistro));
                 }
-            }
 
-            // Con lectura por bloques entran además los pedidos que se registrarán durante el
-            // tramo que está por ejecutarse. No se admite nada más allá del fin de la corrida:
-            // un pedido que se registra después no pertenece a este escenario.
-            if (leePorBloques) {
-                while (!porLlegar.isEmpty()
-                        && !porLlegar.get(0).getFechaRegistro().isAfter(corte)
-                        && !porLlegar.get(0).getFechaRegistro().isAfter(fin)) {
-                    Pedido delBloque = porLlegar.remove(0);
-                    pendientes.add(delBloque);
+                // Primero entran los pedidos que ya llegaron: recién entonces la cabeza de la cola
+                // es la próxima llegada de verdad, que es el evento que dispara el corte siguiente.
+                while (!porLlegar.isEmpty() && !porLlegar.get(0).getFechaRegistro().isAfter(reloj)) {
+                    Pedido llegado = porLlegar.remove(0);
+                    pendientes.add(llegado);
                     recibidos++;
-                    productosRecibidos += delBloque.getCantidad();
+                    productosRecibidos += llegado.getCantidad();
                     cantidadPorPedidoOriginal.merge(
-                            delBloque.getIdOriginal(), delBloque.getCantidad(), Integer::sum);
-                    recibidosPorDia.merge(delBloque.getFechaRegistro().toLocalDate(), 1, Integer::sum);
+                            llegado.getIdOriginal(), llegado.getCantidad(), Integer::sum);
+                    recibidosPorDia.merge(llegado.getFechaRegistro().toLocalDate(), 1, Integer::sum);
                 }
+
+                aplicarAverias(reloj, unidades, cargaDeLaUnidad, averiadas, averiasOcurridas);
+                trasladarAveriadas(reloj, unidades, cargaDeLaUnidad, averiadas);
+                reincorporarReparadas(reloj, unidades, averiadas);
+
+                corte = proximoCorte(reloj, fin, porLlegar);
+                for (Averia averia : averiadas.values()) {
+                    for (LocalDateTime limite : List.of(averia.instante().plus(
+                            averia.tipo().permanenciaEnElLugar()), averia.reingreso())) {
+                        if (limite.isAfter(reloj) && limite.isBefore(corte)) corte = limite;
+                    }
+                }
+
+                // Con lectura por bloques entran además los pedidos que se registrarán durante el
+                // tramo que está por ejecutarse. No se admite nada más allá del fin de la corrida:
+                // un pedido que se registra después no pertenece a este escenario.
+                if (leePorBloques) {
+                    while (!porLlegar.isEmpty()
+                            && !porLlegar.get(0).getFechaRegistro().isAfter(corte)
+                            && !porLlegar.get(0).getFechaRegistro().isAfter(fin)) {
+                        Pedido delBloque = porLlegar.remove(0);
+                        pendientes.add(delBloque);
+                        recibidos++;
+                        productosRecibidos += delBloque.getCantidad();
+                        cantidadPorPedidoOriginal.merge(
+                                delBloque.getIdOriginal(), delBloque.getCantidad(), Integer::sum);
+                        recibidosPorDia.merge(delBloque.getFechaRegistro().toLocalDate(), 1, Integer::sum);
+                    }
+                }
+                recepcionDesde = corte;
             }
 
             if (!pendientes.isEmpty()) {
@@ -482,6 +519,8 @@ public final class Simulador {
                 break;
             }
         }
+
+        synchronized (this) { recepcionDesde = fin; }
 
         int enPlazo = 0;
         for (Entrega entrega : entregas) {

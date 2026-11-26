@@ -19,6 +19,7 @@ class ErroresApi {
 
     @ExceptionHandler({MethodArgumentNotValidException.class,
             HttpMessageNotReadableException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class,
             MethodArgumentTypeMismatchException.class})
     ResponseEntity<ErrorVista> solicitudInvalida(Exception error) {
         return ResponseEntity.badRequest().body(new ErrorVista("SOLICITUD_INVALIDA",

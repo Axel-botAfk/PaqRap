@@ -120,11 +120,11 @@ final class DatosService implements DatosFuente {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SIN_PEDIDOS",
                     "No hay pedidos en las fechas seleccionadas.");
         }
-        return new DatosEntrada(List.copyOf(ventas), List.copyOf(bloqueos), mantenimiento);
+        return new DatosEntrada(DatosFuente.distinguirMeses(ventas), List.copyOf(bloqueos), mantenimiento);
     }
 
     static YearMonth parsearPeriodo(String valor) {
-        if (!valor.matches("[0-9]{6}")) {
+        if (valor == null || !valor.matches("[0-9]{6}") || valor.startsWith("0000")) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "PERIODO_INVALIDO",
                     "El periodo debe tener formato aaaamm.");
         }

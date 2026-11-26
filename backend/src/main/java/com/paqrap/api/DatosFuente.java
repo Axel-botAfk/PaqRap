@@ -23,6 +23,15 @@ interface DatosFuente {
     List<Almacen> almacenes();
     List<Vehiculo> flota();
 
+    /** Los correlativos del TXT empiezan en uno cada mes; no deben colisionar al cruzar meses. */
+    static List<Pedido> distinguirMeses(List<Pedido> ventas) {
+        var frecuencias = ventas.stream().collect(java.util.stream.Collectors.groupingBy(
+                Pedido::getId, java.util.stream.Collectors.counting()));
+        return ventas.stream().map(p -> frecuencias.get(p.getId()) <= 1 ? p : new Pedido(
+                DatosConCargas.aaaamm(java.time.YearMonth.from(p.getFechaRegistro())) + "-" + p.getId(),
+                p.getClienteId(), p.getDestino(), p.getCantidad(), p.getFechaRegistro(), p.getHorasPlazo())).toList();
+    }
+
     record DatosEntrada(List<Pedido> ventas, List<Bloqueo> bloqueos,
                         PlanMantenimiento mantenimiento) { }
 }

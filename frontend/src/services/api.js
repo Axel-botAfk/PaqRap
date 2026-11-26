@@ -61,6 +61,10 @@ export const api = {
   pausar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/pausar`, { method: 'POST' }),
   reanudar: (id) => solicitud(`/api/ejecuciones/${encodeURIComponent(id)}/reanudar`, { method: 'POST' }),
   cargasVentas: () => solicitud('/api/datos/ventas'),
+  pedidosManuales: (periodo) => solicitud(`/api/datos/pedidos?periodo=${encodeURIComponent(periodo)}`),
+  registrarPedido: (datos) => solicitud('/api/datos/pedidos', {
+    method: 'POST', headers: JSON_CUERPO, body: JSON.stringify(datos)
+  }),
   cargarVentas: (periodo, nombre, contenido) => solicitud(
     `/api/datos/ventas?periodo=${encodeURIComponent(periodo)}&nombre=${encodeURIComponent(nombre || '')}`, {
       method: 'POST', headers: { 'Content-Type': 'text/plain; charset=utf-8' }, body: contenido

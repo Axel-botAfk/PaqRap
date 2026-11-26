@@ -40,10 +40,11 @@ final class DatosConCargas implements DatosFuente {
         @Bean
         @Primary
         DatosFuente datosFuente(ObjectProvider<DatosService> archivos,
-                                ObjectProvider<MysqlDatosService> mysql, CargasDePedidos cargas) {
+                                ObjectProvider<MysqlDatosService> mysql, CargasDePedidos cargas,
+                                PedidosManuales manuales) {
             MysqlDatosService deMysql = mysql.getIfAvailable();
             DatosFuente base = deMysql != null ? deMysql : archivos.getObject();
-            return new DatosConCargas(base, cargas);
+            return new DatosConPedidosManuales(new DatosConCargas(base, cargas), manuales);
         }
     }
 
@@ -110,7 +111,7 @@ final class DatosConCargas implements DatosFuente {
             throw new ApiException(HttpStatus.BAD_REQUEST, "SIN_PEDIDOS",
                     "No hay pedidos en las fechas seleccionadas.");
         }
-        return new DatosEntrada(List.copyOf(ventas), List.copyOf(bloqueos), mantenimiento);
+        return new DatosEntrada(DatosFuente.distinguirMeses(ventas), List.copyOf(bloqueos), mantenimiento);
     }
 
     @Override public DatosEntrada entorno(YearMonth mes) { return base.entorno(mes); }
@@ -119,7 +120,7 @@ final class DatosConCargas implements DatosFuente {
 
     @Override public List<Vehiculo> flota() { return base.flota(); }
 
-    private static int jornadasDelMes(PlanMantenimiento plan, YearMonth mes) {
+    static int jornadasDelMes(PlanMantenimiento plan, YearMonth mes) {
         int jornadas = 0;
         for (LocalDate dia = mes.atDay(1); !dia.isAfter(mes.atEndOfMonth()); dia = dia.plusDays(1)) {
             if (!plan.unidadesDelDia(dia).isEmpty()) jornadas++;

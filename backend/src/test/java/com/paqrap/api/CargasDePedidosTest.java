@@ -15,6 +15,44 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CargasDePedidosTest {
     private static final YearMonth FEB = YearMonth.of(2026, 2);
+
+    @Test void dosMesesCargadosNoRepitenElIdDelPedido(@TempDir Path carpeta) {
+        var cargas = new CargasDePedidos("");
+        cargas.guardar(YearMonth.of(2031, 7), "ventas.203107.txt", "31d08h00m:1,1,c1,1,36");
+        cargas.guardar(YearMonth.of(2031, 8), "ventas.203108.txt", "01d08h00m:1,1,c2,1,36");
+        var datos = new DatosConCargas(new DatosService(carpeta.toString()), cargas);
+        var ventas = datos.cargar(LocalDateTime.of(2031, 7, 31, 0, 0), 5).ventas();
+        assertEquals(2, ventas.size());
+        assertEquals(2, ventas.stream().map(com.paqrap.modelo.Pedido::getId).distinct().count());
+        assertEquals("203107-P-00001", ventas.get(0).getId());
+        assertEquals("203108-P-00001", ventas.get(1).getId());
+    }
+
+    @Test void limitaCamposYNormalizaSinAceptarPedidosInvalidos() {
+        var cargas = new CargasDePedidos("");
+        var carga = cargas.guardar(FEB, "ventas.202602.txt", "\uFEFF01d08h00m:1,1,c1,100000,744\r"
+                + "01d08h00m:1,1,c1,100001,36\r01d08h00m:1,1,c1,1,745\r"
+                + "01d08h00m:1,1,   ,1,36\r01d08h00m:1,1,c\t1,1,36\r");
+        assertEquals(1, carga.pedidos().size());
+        assertEquals(4, carga.errores().size());
+        assertThrows(ApiException.class, () -> cargas.guardar(FEB, "ventas.202603.txt", ARCHIVO));
+        assertThrows(ApiException.class, () -> cargas.guardar(FEB, "x", "a".repeat(CargasDePedidos.MAX_CARACTERES + 1)));
+        assertThrows(ApiException.class, () -> cargas.guardar(FEB, "x", "\n".repeat(CargasDePedidos.MAX_LINEAS)));
+        assertEquals(1, cargas.de(FEB).orElseThrow().pedidos().size());
+    }
+
+    @Test void falloAlGuardarOEliminarNoCambiaElEstado(@TempDir Path carpeta) throws Exception {
+        var cargas = new CargasDePedidos(carpeta.toString());
+        cargas.guardar(FEB, "ventas.202602.txt", ARCHIVO);
+        Path destino = carpeta.resolve("ventas.202602.txt");
+        Files.delete(destino);
+        Files.createDirectory(destino);
+        Files.writeString(destino.resolve("ocupado"), "x");
+        assertThrows(ApiException.class, () -> cargas.guardar(FEB, "x", "01d08h00m:1,1,c1,1,36"));
+        assertEquals(2, cargas.de(FEB).orElseThrow().pedidos().size());
+        assertThrows(ApiException.class, () -> cargas.eliminar(FEB));
+        assertEquals(2, cargas.de(FEB).orElseThrow().pedidos().size());
+    }
     private static final String ARCHIVO = String.join("\r\n",
             "# comentario",
             "01d08h05m:10,20,c0001,5,36",

@@ -13,7 +13,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.util.ArrayList;
@@ -67,6 +66,12 @@ final class CargasDePedidos {
     List<Carga> todas() { return List.copyOf(cargas.values()); }
 
     synchronized Carga guardar(YearMonth periodo, String nombre, String texto) {
+        if (nombre != null) {
+            Matcher mesDelNombre = Pattern.compile("(\\d{6})").matcher(nombre);
+            if (mesDelNombre.find() && !mesDelNombre.group(1).equals(DatosConCargas.aaaamm(periodo))) {
+                throw invalido("El periodo no coincide con el nombre del archivo.");
+            }
+        }
         if (texto == null || texto.isBlank()) {
             throw invalido("El archivo está vacío.");
         }
@@ -75,6 +80,10 @@ final class CargasDePedidos {
                     "El archivo supera los 4 MB permitidos.");
         }
         String normalizado = texto.replace("﻿", "").replace("\r\n", "\n").replace('\r', '\n');
+        if (normalizado.getBytes(StandardCharsets.UTF_8).length > MAX_CARACTERES) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ARCHIVO_DEMASIADO_GRANDE",
+                    "El archivo supera los 4 MiB permitidos.");
+        }
         Validacion validacion = validar(normalizado, periodo);
         if (validacion.pedidos().isEmpty()) {
             throw invalido("Ninguna línea del archivo es un pedido válido para "
@@ -88,11 +97,15 @@ final class CargasDePedidos {
     }
 
     synchronized boolean eliminar(YearMonth periodo) {
-        Carga quitada = cargas.remove(periodo);
+        Carga quitada = cargas.get(periodo);
         if (carpeta != null) {
             try { Files.deleteIfExists(archivo(periodo)); }
-            catch (IOException e) { LOG.warn("No se pudo borrar la carga de {}", periodo, e); }
+            catch (IOException e) {
+                throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "CARGA_NO_ELIMINADA",
+                        "No se pudo eliminar el archivo del servidor. La carga sigue vigente.");
+            }
         }
+        cargas.remove(periodo);
         return quitada != null;
     }
 
@@ -139,11 +152,11 @@ final class CargasDePedidos {
                 return "El nodo (" + x + ", " + y + ") cae fuera de la retícula de "
                         + Ciudad.ANCHO_KM + " × " + Ciudad.ALTO_KM + ".";
             }
-            if (cliente.isEmpty() || cliente.length() > 32) {
+            if (cliente.isEmpty() || cliente.length() > 32 || cliente.codePoints().anyMatch(Character::isISOControl)) {
                 return "El código de cliente debe tener entre 1 y 32 caracteres.";
             }
-            if (cantidad <= 0 || cantidad > 100_000) return "La cantidad debe ser mayor que cero.";
-            if (horas <= 0 || horas > 24 * 31) return "El plazo debe ser mayor que cero.";
+            if (cantidad <= 0 || cantidad > 100_000) return "La cantidad debe ser un entero entre 1 y 100000.";
+            if (horas <= 0 || horas > 24 * 31) return "El plazo debe ser un entero entre 1 y 744 horas.";
             return null;
         } catch (NumberFormatException e) {
             return "Contiene un número fuera de rango.";
@@ -152,18 +165,8 @@ final class CargasDePedidos {
 
     private boolean escribir(YearMonth periodo, String texto) {
         if (carpeta == null) return false;
-        try {
-            Files.createDirectories(carpeta);
-            Path destino = archivo(periodo);
-            Path temporal = Files.createTempFile(carpeta, "carga-", ".tmp");
-            Files.writeString(temporal, texto, StandardCharsets.UTF_8);
-            Files.move(temporal, destino, StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
-            return true;
-        } catch (IOException | RuntimeException e) {
-            LOG.warn("No se pudo guardar la carga de {} en {}; queda solo en memoria", periodo, carpeta, e);
-            return false;
-        }
+        ArchivosDePedidos.escribir(carpeta, archivo(periodo), texto);
+        return true;
     }
 
     private void recuperar() {
